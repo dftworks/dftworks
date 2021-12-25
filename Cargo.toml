@@ -15,6 +15,7 @@ members = [
 	"fifo",
 	"vector3",
  	"lapack_sys",
-	"matrix"
+	"matrix",
+	"ndarray"
 ]
 
