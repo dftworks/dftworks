@@ -12,6 +12,7 @@ members = [
 	"types",
 	"dwconsts",
 	"integral",
-	"fifo"
+	"fifo",
+	"vector3"
 ]
 
