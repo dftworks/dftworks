@@ -1,0 +1,15 @@
+[profile.release]
+debug = true
+lto = true
+rpath = false
+incremental = true
+opt-level = 3
+codegen-units = 6
+
+[workspace]
+
+members = [
+	"types",
+	"dwconsts"
+]
+
