@@ -3,7 +3,6 @@ use crate::AtomPSP;
 
 use dwconsts::*;
 use matrix::*;
-use ndarray::Array2;
 use utility;
 
 use std::{
