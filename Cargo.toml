@@ -10,6 +10,7 @@ codegen-units = 6
 
 members = [
 	"types",
-	"dwconsts"
+	"dwconsts",
+	"integral"
 ]
 
