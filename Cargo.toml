@@ -18,6 +18,7 @@ members = [
 	"matrix",
 	"ndarray",
 	"lattice",
-	"utility"
+	"utility",
+	"gvector"
 ]
 

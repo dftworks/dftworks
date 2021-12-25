@@ -1,0 +1,14 @@
+[package]
+name = "gvector"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lattice = { path = "../lattice" }
+utility = { path = "../utility" }
+vector3 = { path = "../vector3" }
+dwconsts = { path = "../dwconsts" }
+itertools = "*"
