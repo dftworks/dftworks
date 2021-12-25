@@ -16,6 +16,7 @@ members = [
 	"vector3",
  	"lapack_sys",
 	"matrix",
-	"ndarray"
+	"ndarray",
+	"lattice"
 ]
 
