@@ -13,6 +13,7 @@ members = [
 	"dwconsts",
 	"integral",
 	"fifo",
-	"vector3"
+	"vector3",
+ 	"lapack_sys"
 ]
 
