@@ -19,6 +19,7 @@ members = [
 	"ndarray",
 	"lattice",
 	"utility",
-	"gvector"
+	"gvector",
+	"atompsp"
 ]
 
