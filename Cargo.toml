@@ -17,6 +17,7 @@ members = [
  	"lapack_sys",
 	"matrix",
 	"ndarray",
-	"lattice"
+	"lattice",
+	"utility"
 ]
 
