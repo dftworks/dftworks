@@ -28,6 +28,7 @@ members = [
 	"pwbasis",
 	"dwfft3d",
 	"smearing",
-	"rgtransform"
+	"rgtransform",
+	"ewald"
 ]
 
