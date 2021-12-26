@@ -1,7 +1,6 @@
 use dfttypes::*;
 use ndarray::Array3;
 use types::c64;
-use utility;
 
 use crate::XC;
 
@@ -81,7 +80,7 @@ fn corr_pz(rho: f64, zeta: f64) -> (f64, f64, f64) {
 
     let mut f = (1.0 + zeta).powf(4.0 / 3.0) + (1.0 - zeta).powf(4.0 / 3.0) - 2.0;
 
-    f /= (2.0_f64.powf(4.0 / 3.0) - 2.0);
+    f /= 2.0_f64.powf(4.0 / 3.0) - 2.0;
 
     let ec = ec_u + f * (ec_p - ec_u);
 
@@ -91,7 +90,7 @@ fn corr_pz(rho: f64, zeta: f64) -> (f64, f64, f64) {
 
     df *= 4.0 / 3.0;
 
-    df /= (2.0_f64.powf(4.0 / 3.0) - 2.0);
+    df /= 2.0_f64.powf(4.0 / 3.0) - 2.0;
 
     let vc_up = vc_comm + df * (ec_p - ec_u) * (1.0 - zeta);
 

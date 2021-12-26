@@ -1,0 +1,30 @@
+[package]
+name = "density"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+types = { path = "../types" }
+vector3 = { path = "../vector3" }
+ndarray = { path = "../ndarray" }
+crystal = { path = "../crystal" }
+dwconsts = { path = "../dwconsts" }
+gvector = { path = "../gvector" }
+atompsp = { path = "../atompsp" }
+pspot = { path = "../pspot" }
+rgtransform = { path = "../rgtransform" }
+pwdensity = { path = "../pwdensity" }
+fhkl = { path = "../fhkl" }
+integral = { path = "../integral" }
+itertools = "*"
+kscf = { path = "../kscf" }
+matrix = { path = "../matrix" }
+symmetry = { path = "../symmetry" }
+fftgrid = { path = "../fftgrid" }
+utility = { path = "../utility" }
+magmom = { path = "../magmom" }
+dfttypes = { path = "../dfttypes" }
+num-traits = "*"

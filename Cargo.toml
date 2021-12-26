@@ -45,6 +45,9 @@ members = [
 	"nlcc",
 	"force",
 	"symmetry",
-	"stress"
+	"stress",
+	"scf",
+	"magmom",
+	"density"
 ]
 

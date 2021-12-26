@@ -1,0 +1,43 @@
+[package]
+name = "scf"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+control = { path = "../control" }
+crystal = { path = "../crystal" }
+lattice = { path = "../lattice" }
+gvector = { path = "../gvector" }
+pspot = { path = "../pspot" }
+rgtransform = { path = "../rgtransform" }
+pwdensity = { path = "../pwdensity" }
+types = { path = "../types" }
+ndarray = { path = "../ndarray" }
+dwconsts = { path = "../dwconsts" }
+kpts = { path = "../kpts" }
+fftgrid = { path = "../fftgrid" }
+xc = { path = "../xc" }
+vloc = { path = "../vloc" }
+itertools = "*"
+pwbasis = { path = "../pwbasis" }
+vnl = { path = "../vnl" }
+mixing = { path = "../mixing" }
+utility = { path = "../utility" }
+atompsp = { path = "../atompsp" }
+vector3 = { path = "../vector3" }
+fhkl = { path = "../fhkl" }
+kscf = { path = "../kscf" }
+matrix = { path = "../matrix" }
+fermilevel = { path = "../fermilevel" }
+density = { path = "../density" }
+energy = { path = "../energy" }
+ewald = { path = "../ewald" }
+symmetry = { path = "../symmetry" }
+force = { path = "../force" }
+stress = { path = "../stress" }
+rayon = "*"
+dfttypes = { path = "../dfttypes" }
+num-traits = "*"
