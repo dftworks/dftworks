@@ -88,3 +88,6 @@ pub const EPS35: f64 = 1E-35;
 pub const EPS50: f64 = 1E-50;
 pub const EPS80: f64 = 1E-80;
 
+pub const OUT_WIDTH1: usize = 28;
+pub const OUT_WIDTH2: usize = 18;
+pub const OUT_WIDTH3: usize = 25;

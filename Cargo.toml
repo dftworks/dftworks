@@ -44,6 +44,7 @@ members = [
 	"fermilevel",
 	"nlcc",
 	"force",
-	"symmetry"
+	"symmetry",
+	"stress"
 ]
 

@@ -1,0 +1,32 @@
+[package]
+name = "stress"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+atompsp = { path = "../atompsp" }
+crystal = { path = "../crystal" }
+dwconsts = { path = "../dwconsts" }
+energy = { path = "../energy" }
+gvector = { path = "../gvector" }
+kscf = { path = "../kscf" }
+lattice = { path = "../lattice" }
+matrix = { path = "../matrix" }
+ndarray = { path = "../ndarray" }
+pspot = { path = "../pspot" }
+pwbasis = { path = "../pwbasis" }
+pwdensity = { path = "../pwdensity" }
+types = { path = "../types" }
+symmetry = { path = "../symmetry" }
+vector3 = { path = "../vector3" }
+vloc = { path = "../vloc" }
+nlcc = { path = "../nlcc" }
+fhkl = { path = "../fhkl" }
+kgylm = { path = "../kgylm" }
+itertools = "*"
+dfttypes = { path = "../dfttypes" }
+num-traits = "*"
+utility = { path = "../utility" }
