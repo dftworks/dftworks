@@ -48,6 +48,7 @@ members = [
 	"stress",
 	"scf",
 	"magmom",
-	"density"
+	"density",
+	"geom"
 ]
 

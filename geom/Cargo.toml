@@ -1,0 +1,16 @@
+[package]
+name = "geom"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+vector3 = { path = "../vector3" }
+optimization = { path = "../optimization" }
+crystal = { path = "../crystal" }
+matrix = { path = "../matrix" }
+lattice = { path = "../lattice" }
+force = { path = "../force" }
+stress = { path = "../stress" }
