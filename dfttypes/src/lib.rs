@@ -1,3 +1,4 @@
+use kscf::*;
 use matrix::*;
 use ndarray::*;
 use types::*;
@@ -14,6 +15,12 @@ pub enum VKEigenValue {
 pub enum VKEigenVector {
     NonSpin(Vec<Matrix<c64>>),
     Spin(Vec<Matrix<c64>>, Vec<Matrix<c64>>),
+}
+
+#[derive(EnumAsInner)]
+pub enum VKSCF<'a> {
+    NonSpin(Vec<KSCF<'a>>),
+    Spin(Vec<KSCF<'a>>, Vec<KSCF<'a>>),
 }
 
 #[derive(Debug, EnumAsInner)]

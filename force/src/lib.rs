@@ -283,17 +283,17 @@ pub fn get_max_force(force: &[Vector3f64]) -> f64 {
     // v_max
 }
 
-fn frac_to_cart(latt: &Lattice, vf: &[Vector3f64], vc: &mut [Vector3f64]) {
-    let a = latt.get_vector_a();
-    let b = latt.get_vector_b();
-    let c = latt.get_vector_c();
-
-    for (tf, tc) in multizip((vf.iter(), vc.iter_mut())) {
-        tc.x = a.x * tf.x + b.x * tf.y + c.x * tf.z;
-        tc.y = a.y * tf.x + b.y * tf.y + c.y * tf.z;
-        tc.z = a.z * tf.x + b.z * tf.y + c.z * tf.z;
-    }
-}
+//fn frac_to_cart(latt: &Lattice, vf: &[Vector3f64], vc: &mut [Vector3f64]) {
+//    let a = latt.get_vector_a();
+//    let b = latt.get_vector_b();
+//    let c = latt.get_vector_c();
+//
+//    for (tf, tc) in multizip((vf.iter(), vc.iter_mut())) {
+//        tc.x = a.x * tf.x + b.x * tf.y + c.x * tf.z;
+//        tc.y = a.y * tf.x + b.y * tf.y + c.y * tf.z;
+//        tc.z = a.z * tf.x + b.z * tf.y + c.z * tf.z;
+//    }
+//}
 
 pub fn cart_to_frac(latt: &Lattice, vc: &[Vector3f64], vf: &mut [Vector3f64]) {
     let mut mat = latt.as_matrix().clone();

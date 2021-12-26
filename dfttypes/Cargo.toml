@@ -10,4 +10,5 @@ edition = "2018"
 types = { path = "../types" }
 matrix = { path = "../matrix" }
 ndarray = { path = "../ndarray" }
+kscf = { path = "../kscf" }
 enum-as-inner = "*"
