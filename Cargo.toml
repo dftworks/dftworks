@@ -25,6 +25,7 @@ members = [
 	"dfttypes",
 	"special",
 	"fftgrid",
-	"pwbasis"
+	"pwbasis",
+	"dwfft3d"
 ]
 
