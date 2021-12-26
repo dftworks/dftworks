@@ -527,7 +527,6 @@ impl Control {
     pub fn display(&self) {
         const OUT_WIDTH1: usize = 28;
         const OUT_WIDTH2: usize = 18;
-        const OUT_WIDTH3: usize = 25;
 
         println!("   {:-^80}", " control parameters ");
         println!();

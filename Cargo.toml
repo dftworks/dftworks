@@ -41,6 +41,9 @@ members = [
 	"hpsi",
 	"kscf",
 	"kpts",
-	"fermilevel"
+	"fermilevel",
+	"nlcc",
+	"force",
+	"symmetry"
 ]
 
