@@ -39,6 +39,7 @@ members = [
 	"vloc",
 	"eigensolver",
 	"hpsi",
-	"kscf"
+	"kscf",
+	"kpts"
 ]
 
