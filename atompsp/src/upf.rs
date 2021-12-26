@@ -382,7 +382,10 @@ impl fmt::Display for AtomPSPUPF {
 
 #[test]
 fn test_upf_xml() {
-    let pspfile = std::env::current_dir().unwrap().to_str().unwrap().to_owned() + "/src/Si-sr.upf";
+    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    d.push("src/Si-sr.upf");
+
+    let pspfile = d.to_str().unwrap();
     println!("{}", pspfile);
     
     let mut atompsp = AtomPSPUPF::new();

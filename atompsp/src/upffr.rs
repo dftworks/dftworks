@@ -518,10 +518,16 @@ impl fmt::Display for AtomPSPUPFFR {
 
 #[test]
 fn test_upffr_xml() {
-    let pspfile = std::env::current_dir().unwrap().to_str().unwrap().to_owned() + "/src/Si-fr.upf";
+    let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    d.push("src/Si-fr.upf");
+
+    let pspfile = d.to_str().unwrap();
+
     let mut atompsp = AtomPSPUPFFR::new();
     atompsp.read_file(&pspfile);
+
     println!("{}", atompsp);
+
     for i in 0..atompsp.get_nbeta() {
         let l = atompsp.get_lbeta(i);
         let beta = atompsp.get_beta(i);
