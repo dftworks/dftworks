@@ -1,0 +1,32 @@
+[package]
+name = "kscf"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+control = { path = "../control" }
+crystal = { path = "../crystal" }
+dwconsts = { path = "../dwconsts" }
+fftgrid = { path = "../fftgrid" }
+gvector = { path = "../gvector" }
+vector3 = { path = "../vector3" }
+kgylm = { path = "../kgylm" }
+kpts = { path = "../kpts" }
+lattice = { path = "../lattice" }
+matrix = { path = "../matrix" }
+ndarray = { path = "../ndarray" }
+pspot = { path = "../pspot" }
+pwbasis = { path = "../pwbasis" }
+rgtransform = { path = "../rgtransform" }
+smearing = { path = "../smearing" }
+eigensolver = { path = "../eigensolver" }
+types = { path = "../types" }
+utility = { path = "../utility" }
+vnl = { path = "../vnl" }
+itertools = "*"
+hpsi = { path = "../hpsi" }
+linalg = { path = "../linalg" }
+num-traits = "*"

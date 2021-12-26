@@ -38,6 +38,7 @@ members = [
 	"vnl",
 	"vloc",
 	"eigensolver",
-	"hpsi"
+	"hpsi",
+	"kscf"
 ]
 
