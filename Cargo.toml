@@ -27,6 +27,7 @@ members = [
 	"fftgrid",
 	"pwbasis",
 	"dwfft3d",
-	"smearing"
+	"smearing",
+	"rgtransform"
 ]
 
