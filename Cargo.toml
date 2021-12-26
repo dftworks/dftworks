@@ -24,6 +24,7 @@ members = [
 	"crystal",
 	"dfttypes",
 	"special",
-	"fftgrid"
+	"fftgrid",
+	"pwbasis"
 ]
 
