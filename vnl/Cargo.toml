@@ -1,0 +1,16 @@
+[package]
+name = "vnl"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dwconsts = { path = "../dwconsts" }
+crystal = { path = "../crystal" }
+integral = { path = "../integral" }
+pwbasis = { path = "../pwbasis" }
+special = { path = "../special" }
+pspot = { path = "../pspot" }
+atompsp = { path = "../atompsp" }
