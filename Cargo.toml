@@ -20,6 +20,7 @@ members = [
 	"lattice",
 	"utility",
 	"gvector",
-	"atompsp"
+	"atompsp",
+	"crystal"
 ]
 
