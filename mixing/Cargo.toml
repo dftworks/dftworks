@@ -1,0 +1,16 @@
+[package]
+name = "mixing"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dwconsts = { path = "../dwconsts" }
+fifo = { path = "../fifo" }
+matrix = { path = "../matrix" }
+types = { path = "../types" }
+utility = { path = "../utility" }
+control = { path = "../control" }
+num-traits = "*"
