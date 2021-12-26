@@ -1,0 +1,11 @@
+combine_control_expr = false
+fn_args_layout = "Compressed"
+indent_style = "Visual"
+fn_args_density = "Compressed"
+"Function calls" = "Visual"
+struct_field_align_threshold = 20
+use_small_heuristics = "Max"
+max_width=180
+merge_imports = true
+force_multiline_blocks = true
+wrap_comments = false
