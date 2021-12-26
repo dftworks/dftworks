@@ -32,6 +32,10 @@ members = [
 	"ewald",
 	"linalg",
 	"optimization",
-	"mixing"
+	"mixing",
+	"fhkl",
+	"kgylm",
+	"vnl",
+	"vloc"
 ]
 
