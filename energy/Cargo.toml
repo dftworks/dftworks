@@ -1,0 +1,29 @@
+[package]
+name = "energy"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dwconsts = { path = "../dwconsts" }
+atompsp = { path = "../atompsp" }
+control = { path = "../control" }
+crystal = { path = "../crystal" }
+gvector = { path = "../gvector" }
+kscf = { path = "../kscf" }
+lattice = { path = "../lattice" }
+matrix = { path = "../matrix" }
+ndarray = { path = "../ndarray" }
+pspot = { path = "../pspot" }
+pwbasis = { path = "../pwbasis" }
+pwdensity = { path = "../pwdensity" }
+types = { path = "../types" }
+itertools = "*"
+fhkl = { path = "../fhkl" }
+kgylm = { path = "../kgylm" }
+vector3 = { path = "../vector3" }
+utility = { path = "../utility" }
+dfttypes = { path = "../dfttypes" }
+num-traits =  "*"
