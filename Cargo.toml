@@ -49,6 +49,7 @@ members = [
 	"scf",
 	"magmom",
 	"density",
-	"geom"
+	"geom",
+	"pw"
 ]
 

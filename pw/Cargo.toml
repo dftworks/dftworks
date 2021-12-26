@@ -1,0 +1,38 @@
+[package]
+name = "pw"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+types = { path = "../types" }
+dwconsts = { path = "../dwconsts" }
+matrix = { path = "../matrix" }
+crystal = { path = "../crystal" }
+control = { path = "../control" }
+kpts = { path = "../kpts" }
+pspot = { path = "../pspot" }
+gvector = { path = "../gvector" }
+fftgrid = { path = "../fftgrid" }
+pwdensity = { path = "../pwdensity" }
+xc = { path = "../xc" }
+ewald = { path = "../ewald" }
+rgtransform = { path = "../rgtransform" }
+density = { path = "../density" }
+nlcc = { path = "../nlcc" }
+ndarray = { path = "../ndarray" }
+scf = { path = "../scf" }
+symmetry = { path = "../symmetry" }
+vector3 = { path = "../vector3" }
+force = { path = "../force" }
+stress = { path = "../stress" }
+geom = { path = "../geom" }
+lattice = { path = "../lattice" }
+pwbasis = { path = "../pwbasis" }
+vnl = { path = "../vnl" }
+kscf = { path = "../kscf" }
+linalg = { path = "../linalg" }
+dfttypes = { path = "../dfttypes" }
+num-traits = "*"
