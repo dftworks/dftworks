@@ -1,0 +1,29 @@
+[package]
+name = "force"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+atompsp = { path ="../atompsp" }
+crystal = { path ="../crystal" }
+dwconsts = { path = "../dwconsts" }
+vector3 = { path = "../vector3" }
+gvector = { path = "../gvector" }
+pspot = { path = "../pspot" }
+kscf = { path = "../kscf" }
+lattice = { path = "../lattice" }
+matrix = { path = "../matrix" }
+pwbasis = { path = "../pwbasis" }
+pwdensity = { path = "../pwdensity" }
+types = { path = "../types" }
+vloc = { path = "../vloc" }
+nlcc = { path = "../nlcc" }
+fhkl = { path = "../fhkl" }
+kgylm = { path = "../kgylm" }
+ndarray = { path = "../ndarray" }
+itertools = "*"
+num-traits = "*"
+utility = { path = "../utility" }

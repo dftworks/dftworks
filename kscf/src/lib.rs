@@ -289,7 +289,7 @@ impl<'a> KSCF<'a> {
                 &self.occ,
                 eigval_epsilon,
                 max_scf_iter_wfc,
-                self.control,
+                self.control.get_scf_max_iter(),
             );
 
             n_band_converged = n_band_converged_this_loop;

@@ -48,11 +48,11 @@ impl<T: num_traits::identities::Zero + Copy + std::ops::Mul<Output = T>> Vector3
     }
 }
 
-pub fn v3slice_to_mut_vslice<T>(v: &mut [Vector3<T>]) -> &mut [T] {
+pub fn as_mut_slice_of_element<T>(v: &mut [Vector3<T>]) -> &mut [T] {
     unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr() as *mut T, v.len() * 3) }
 }
 
-pub fn v3slice_to_vslice<T>(v: &[Vector3<T>]) -> &[T] {
+pub fn as_slice_of_element<T>(v: &[Vector3<T>]) -> &[T] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const T, v.len() * 3) }
 }
 

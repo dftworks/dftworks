@@ -10,3 +10,4 @@ edition = "2018"
 vector3 = { path = "../vector3" }
 crystal = { path = "../crystal" }
 lattice = { path = "../lattice" }
+symmetry = { path = "../symmetry" }
