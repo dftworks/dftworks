@@ -23,6 +23,7 @@ members = [
 	"atompsp",
 	"crystal",
 	"dfttypes",
-	"special"
+	"special",
+	"fftgrid"
 ]
 
