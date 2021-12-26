@@ -21,6 +21,7 @@ members = [
 	"utility",
 	"gvector",
 	"atompsp",
-	"crystal"
+	"crystal",
+	"dfttypes"
 ]
 
