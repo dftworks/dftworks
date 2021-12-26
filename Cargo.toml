@@ -29,6 +29,8 @@ members = [
 	"dwfft3d",
 	"smearing",
 	"rgtransform",
-	"ewald"
+	"ewald",
+	"linalg",
+	"optimization"
 ]
 
