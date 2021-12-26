@@ -1,0 +1,22 @@
+[package]
+name = "hpsi"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fhkl = { path = "../fhkl" }
+ndarray = { path = "../ndarray" }
+utility = { path = "../utility" }
+types = { path = "../types" }
+itertools = "*"
+atompsp = { path = "../atompsp" }
+vector3 = { path = "../vector3" }
+pwbasis = { path = "../pwbasis" }
+gvector = { path = "../gvector" }
+dwconsts = { path = "../dwconsts" }
+rgtransform = { path = "../rgtransform" }
+kgylm = { path = "../kgylm" }
+num-traits = "*"

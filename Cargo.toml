@@ -37,6 +37,7 @@ members = [
 	"kgylm",
 	"vnl",
 	"vloc",
-	"eigensolver"
+	"eigensolver",
+	"hpsi"
 ]
 
