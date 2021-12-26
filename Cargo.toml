@@ -26,6 +26,7 @@ members = [
 	"special",
 	"fftgrid",
 	"pwbasis",
-	"dwfft3d"
+	"dwfft3d",
+	"smearing"
 ]
 
