@@ -27,6 +27,10 @@ Running <code>source ~/.bash_profile</code> will update PATH.
     git clone https://github.com/dftworks/dftworks.git
 </code>
 
+## Intel MKL library
+
+The Intel MKL library is used for diagalization and FFT. It should be installed into the directory <code>/opt/intel/oneapi/mkl/2021.1.1/lib</code>.
+
 ## Build the code
 
 In the directory dftworks, run the following command.
