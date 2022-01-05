@@ -29,7 +29,12 @@ Running <code>source ~/.bash_profile</code> will update PATH.
 
 ## Intel MKL library
 
-The Intel MKL library is used for diagalization and FFT. It should be installed into the directory <code>/opt/intel/oneapi/mkl/2021.1.1/lib</code>.
+The [Intel MKL library](https://www.intel.com/content/www/us/en/develop/documentation/get-started-with-mkl-for-dpcpp/top.html) is used for diagalization and FFT. It should be installed into the directory <code>/opt/intel/oneapi/mkl/2021.1.1/lib</code>. If the library is installed in other directories, the library location specified in matrix/build.rs and dwfft/build.rs should be updated.
+
+## Symmetry analysis library
+
+[Spglib](http://spglib.github.io/spglib/
+) is used for finding and handling crystal symmetries. It should be installed into the directory <code>/opt/spglib/lib</code>. If the library is installed in other directories, the library location specified in symmetry/build.rs should be updated.
 
 ## Build the code
 
