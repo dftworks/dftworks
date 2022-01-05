@@ -6,8 +6,8 @@ If you are running macOS, Linux, or another Unix-like Operating Systems, to set 
 
 <code>
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-</code>
-
+</code><br/>
+<br/>
 
 All Rust development tools will be installed to the ~/.cargo/bin directory which needs to be added to the definition of the environmental variable PATH. This can be done by adding the following line to ~/.bash_profile.
 
@@ -15,5 +15,7 @@ All Rust development tools will be installed to the ~/.cargo/bin directory which
     export PATH=~/.cargo/bin:$PATH
 </code>
 
+<br/>
+<br/>
 
 Running <code>source ~/.bash_profile</code> will update PATH.
