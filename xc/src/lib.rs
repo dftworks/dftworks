@@ -8,7 +8,13 @@ use ndarray::*;
 use types::*;
 
 pub trait XC {
-    fn potential_and_energy(&self, rho: &RHOR, vxc: &mut VXCR, exc: &mut Array3<c64>);
+    fn potential_and_energy(
+        &self,
+        rho: &RHOR,
+        drho: &Option<&DRHOR>,
+        vxc: &mut VXCR,
+        exc: &mut Array3<c64>,
+    );
 }
 
 pub fn new(xc_scheme: &str) -> Box<dyn XC> {

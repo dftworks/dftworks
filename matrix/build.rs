@@ -1,7 +1,7 @@
 fn main() {
     println!(
         "cargo:rustc-link-search={}",
-        "/opt/intel/oneapi/mkl/2021.1.1/lib"
+        "/opt/intel/oneapi/mkl/latest/lib"
     );
     println!("cargo:rustc-link-lib={}", "mkl_intel_lp64");
     println!("cargo:rustc-link-lib={}", "mkl_core");

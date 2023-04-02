@@ -15,7 +15,13 @@ impl XCLDAPZ {
 }
 
 impl XC for XCLDAPZ {
-    fn potential_and_energy(&self, rho: &RHOR, vxc: &mut VXCR, exc: &mut Array3<c64>) {
+    fn potential_and_energy(
+        &self,
+        rho: &RHOR,
+        _drho: &Option<&DRHOR>,
+        vxc: &mut VXCR,
+        exc: &mut Array3<c64>,
+    ) {
         let rho = rho.as_non_spin().unwrap();
         let vxc = vxc.as_non_spin_mut().unwrap();
 

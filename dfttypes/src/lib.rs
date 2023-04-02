@@ -36,6 +36,13 @@ pub enum RHOR {
 }
 
 #[derive(Debug, EnumAsInner)]
+pub enum DRHOR {
+    NonSpin(Array3<c64>),
+    Spin(Array3<c64>, Array3<c64>),
+}
+
+
+#[derive(Debug, EnumAsInner)]
 pub enum VXCG {
     NonSpin(Vec<c64>),
     Spin(Vec<c64>, Vec<c64>),

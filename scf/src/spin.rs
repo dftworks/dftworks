@@ -128,7 +128,9 @@ impl SCF for SCFSpin {
             }
         }
 
-        xc.potential_and_energy(rho_3d, &mut vxc_3d, &mut exc_3d);
+        // for lda, drho_3d = None
+        let drho_3d = None;
+        xc.potential_and_energy(rho_3d, &drho_3d, &mut vxc_3d, &mut exc_3d);
 
         // rho_3d <-- rho_3d - rhocore_3d
         if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
@@ -379,7 +381,6 @@ impl SCF for SCFSpin {
 
             // if symmetry enabled, the charge density need to be symmetrized
 
-
             //
             // rhog_out: out rho in G
             // rho_3d:   out rho in r
@@ -393,7 +394,9 @@ impl SCF for SCFSpin {
                 }
             }
 
-            xc.potential_and_energy(rho_3d, &mut vxc_3d, &mut exc_3d);
+            // for lda, drho_3d = None
+            let drho_3d = None;
+            xc.potential_and_energy(rho_3d, &drho_3d, &mut vxc_3d, &mut exc_3d);
 
             // rho_3d <-- rho_3d - rhocore_3d
 
@@ -544,7 +547,9 @@ impl SCF for SCFSpin {
                 }
             }
 
-            xc.potential_and_energy(rho_3d, &mut vxc_3d, &mut exc_3d);
+            // for lda, drho_3d = None
+            let drho_3d = None;
+            xc.potential_and_energy(rho_3d, &drho_3d, &mut vxc_3d, &mut exc_3d);
 
             // rho_3d <-- rho_3d - rhocore_3d
 
