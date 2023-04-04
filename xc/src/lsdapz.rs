@@ -18,7 +18,7 @@ impl XC for XCLSDAPZ {
     fn potential_and_energy(
         &self,
         rho: &RHOR,
-        _drho: &Option<&DRHOR>,
+        _drho: Option<&DRHOR>,
         vxc: &mut VXCR,
         exc: &mut Array3<c64>,
     ) {

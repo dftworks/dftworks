@@ -47,7 +47,7 @@ pub fn compute_v_e_xc_of_r(
 
     // for lda, drho_3d = None
     let drho_3d = None;
-    xc.potential_and_energy(rho_3d, &drho_3d, vxc_3d, exc_3d);
+    xc.potential_and_energy(rho_3d, drho_3d, vxc_3d, exc_3d);
 
     if let RHOR::NonSpin(rho_3d) = rho_3d {
         // rho_3d <-- rho_3d - rhocore_3d

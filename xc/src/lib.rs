@@ -11,7 +11,7 @@ pub trait XC {
     fn potential_and_energy(
         &self,
         rho: &RHOR,
-        drho: &Option<&DRHOR>,
+        drho: Option<&DRHOR>,
         vxc: &mut VXCR,
         exc: &mut Array3<c64>,
     );

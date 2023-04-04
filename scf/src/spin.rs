@@ -130,7 +130,7 @@ impl SCF for SCFSpin {
 
         // for lda, drho_3d = None
         let drho_3d = None;
-        xc.potential_and_energy(rho_3d, &drho_3d, &mut vxc_3d, &mut exc_3d);
+        xc.potential_and_energy(rho_3d, drho_3d, &mut vxc_3d, &mut exc_3d);
 
         // rho_3d <-- rho_3d - rhocore_3d
         if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
@@ -396,7 +396,7 @@ impl SCF for SCFSpin {
 
             // for lda, drho_3d = None
             let drho_3d = None;
-            xc.potential_and_energy(rho_3d, &drho_3d, &mut vxc_3d, &mut exc_3d);
+            xc.potential_and_energy(rho_3d, drho_3d, &mut vxc_3d, &mut exc_3d);
 
             // rho_3d <-- rho_3d - rhocore_3d
 
@@ -549,7 +549,7 @@ impl SCF for SCFSpin {
 
             // for lda, drho_3d = None
             let drho_3d = None;
-            xc.potential_and_energy(rho_3d, &drho_3d, &mut vxc_3d, &mut exc_3d);
+            xc.potential_and_energy(rho_3d, drho_3d, &mut vxc_3d, &mut exc_3d);
 
             // rho_3d <-- rho_3d - rhocore_3d
 
