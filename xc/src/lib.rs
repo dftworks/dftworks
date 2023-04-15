@@ -1,7 +1,13 @@
+#![allow(warnings)]
+
 mod ldapz;
-mod lsdapz;
 use ldapz::*;
+
+mod lsdapz;
 use lsdapz::*;
+
+mod pbe;
+use pbe::*;
 
 use dfttypes::*;
 use ndarray::*;
@@ -27,6 +33,10 @@ pub fn new(xc_scheme: &str) -> Box<dyn XC> {
 
         "lsda-pz" => {
             xc = Box::new(XCLSDAPZ::new());
+        }
+
+        "pbe" => {
+            xc = Box::new(XCPBE::new());
         }
 
         &_ => {
