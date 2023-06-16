@@ -189,15 +189,15 @@ impl<'a> KSCF<'a> {
         let mut unk_3d = Array3::<c64>::new(fft_shape);
         let mut fft_workspace = Array3::<c64>::new(fft_shape);
 
-        // 
+        //
 
         let mut hamiltonian_on_psi = |vin: &[c64], vout: &mut [c64]| {
             for v in vout.iter_mut() {
                 *v = c64::zero();
             }
 
-	    // compute vloc on |psi>
-	    
+            // compute vloc on |psi>
+
             hpsi::vloc_on_psi(
                 self.gvec,
                 self.pwwfc,
@@ -338,6 +338,10 @@ impl<'a> KSCF<'a> {
             }
         }
     }
+
+    pub fn set_valence_occ(&mut self, fermi_level: f64, evals: &[f64], homo: f64) {}
+
+    pub fn set_conduction_occ(&mut self, fermi_level: f64, evals: &[f64], lumo: f64) {}
 }
 
 fn sort_eigen_values_and_vectors(evals: &mut [f64], evecs: &mut Matrix<c64>) {

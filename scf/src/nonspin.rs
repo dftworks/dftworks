@@ -158,6 +158,16 @@ impl SCF for SCFNonspin {
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
 
+            // recalculate the occ
+
+            fermi_driver.set_occ(
+                vkscf,
+                ntot_elec,
+                &vkevals,
+                fermi_level,
+                control.get_occ_inversion(),
+            );
+
             // calculate Harris energy
 
             let energy_harris = utils::compute_total_energy(

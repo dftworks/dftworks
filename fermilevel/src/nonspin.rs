@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use crate::FermiLevel;
 use dfttypes::*;
 use dwconsts::*;
@@ -51,6 +53,25 @@ impl FermiLevel for FermiLevelNonspin {
         }
 
         fermi_level
+    }
+
+    fn set_occ(
+        &self,
+        vkscf: &mut VKSCF,
+        nelec: f64,
+        vevals: &VKEigenValue,
+        fermi_level: f64,
+        occ_inversion: f64,
+    ) {
+        if occ_inversion < EPS10 {
+            return;
+        }
+
+        let vkscf = vkscf.as_non_spin_mut().unwrap();
+
+        // valence bands
+
+        // conduction bands
     }
 }
 
