@@ -127,6 +127,18 @@ impl<'a> KSCF<'a> {
         self.occ.iter().sum()
     }
 
+    pub fn get_total_occ_below(&self, evals: &[f64], energy_level: f64) -> f64 {
+        let mut ntot = 0.0;
+
+        for (i, &ev) in evals.iter().enumerate() {
+            if ev < energy_level {
+                ntot += self.occ[i];
+            }
+        }
+
+        ntot
+    }
+
     pub fn get_unk(
         &self,
         rgtrans: &RGTransform,

@@ -67,11 +67,61 @@ impl FermiLevel for FermiLevelNonspin {
             return;
         }
 
+        let vevals = vevals.as_non_spin().unwrap();
         let vkscf = vkscf.as_non_spin_mut().unwrap();
+
+        let total_electrons_below = |energy_level| {
+            let mut ntot_local = 0.0;
+
+            for (ik, kscf) in vkscf.iter().enumerate() {
+                let evals = &vevals[ik];
+
+                ntot_local += kscf.get_total_occ_below(evals, energy_level) * kscf.get_k_weight();
+            }
+
+            let ntot = ntot_local;
+
+            ntot
+        };
+
+        let mut ntot = total_electrons_below(fermi_level);
+
+        let mut upper = fermi_level;
+        let mut lower = fermi_level;
 
         // valence bands
 
+        let nelec_occ = nelec * (1.0 - occ_inversion);
+
+        while ntot < nelec_occ {
+            upper += EPS2 * EV_TO_HA;
+            ntot = total_electrons_below(upper);
+        }
+
+        while ntot > nelec_occ {
+            lower -= EPS2 * EV_TO_HA;
+            ntot = total_electrons_below(lower);
+        }
+
+        let mut vbm_level = 0.0;
+
+        while (ntot - nelec_occ).abs() > EPS12 {
+            vbm_level = (upper + lower) / 2.0;
+
+            ntot = total_electrons_below(vbm_level);
+
+            if ntot > nelec_occ {
+                upper = vbm_level;
+            }
+
+            if ntot < nelec_occ {
+                lower = vbm_level;
+            }
+        }
+
         // conduction bands
+
+	// set occupation numbers
     }
 }
 
