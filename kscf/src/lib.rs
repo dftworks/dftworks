@@ -127,12 +127,36 @@ impl<'a> KSCF<'a> {
         self.occ.iter().sum()
     }
 
-    pub fn get_total_occ_below(&self, evals: &[f64], energy_level: f64) -> f64 {
+    pub fn get_total_valence_occ_below(&self, evals: &[f64], energy_level: f64) -> f64 {
         let mut ntot = 0.0;
 
         for (i, &ev) in evals.iter().enumerate() {
-            if ev < energy_level {
+            if ev <= energy_level {
                 ntot += self.occ[i];
+            }
+        }
+
+        ntot
+    }
+
+    pub fn get_total_conduction_occ_between(
+        &self,
+        evals: &[f64],
+        upper_level: f64,
+        lower_level: f64,
+    ) -> f64 {
+        let mut ntot = 0.0;
+
+        let mut occ = 1.0;
+        if self.control.is_spin() {
+            occ = 2.0;
+        } else {
+            occ = 1.0;
+        }
+
+        for (i, &ev) in evals.iter().enumerate() {
+            if ev >= lower_level && ev <= upper_level {
+                ntot += occ;
             }
         }
 
