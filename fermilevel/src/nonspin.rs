@@ -70,102 +70,81 @@ impl FermiLevel for FermiLevelNonspin {
         let vevals = vevals.as_non_spin().unwrap();
         let vkscf = vkscf.as_non_spin_mut().unwrap();
 
-        let total_electrons_below = |energy_level| {
-            let mut ntot_local = 0.0;
+        // valence bands
 
-            for (ik, kscf) in vkscf.iter().enumerate() {
-                let evals = &vevals[ik];
+        let nelec_ref = nelec * (1.0 - occ_inversion);
 
-                ntot_local +=
-                    kscf.get_total_valence_occ_below(evals, energy_level) * kscf.get_k_weight();
-            }
-
-            let ntot = ntot_local;
-
-            ntot
-        };
-
-        let mut ntot = total_electrons_below(fermi_level);
+        let mut nelec_below = total_electrons_below(vkscf, vevals, fermi_level);
 
         let mut upper = fermi_level;
         let mut lower = fermi_level;
 
-        // valence bands
-
-        let nelec_occ = nelec * (1.0 - occ_inversion);
-
-        while ntot < nelec_occ {
+        while nelec_below < nelec_ref {
             upper += EPS2 * EV_TO_HA;
-            ntot = total_electrons_below(upper);
+            nelec_below = total_electrons_below(vkscf, vevals, upper);
         }
 
-        while ntot > nelec_occ {
+        while nelec_below > nelec_ref {
             lower -= EPS2 * EV_TO_HA;
-            ntot = total_electrons_below(lower);
+            nelec_below = total_electrons_below(vkscf, vevals, lower);
         }
 
-        let mut vbm_level = 0.0;
+        let mut vb_level = 0.0;
 
-        while (ntot - nelec_occ).abs() > EPS12 {
-            vbm_level = (upper + lower) / 2.0;
+        while (nelec_below - nelec_ref).abs() > EPS12 {
+            vb_level = (upper + lower) / 2.0;
 
-            ntot = total_electrons_below(vbm_level);
+            nelec_below = total_electrons_below(vkscf, vevals, vb_level);
 
-            if ntot > nelec_occ {
-                upper = vbm_level;
+            if nelec_below > nelec_ref {
+                upper = vb_level;
             }
 
-            if ntot < nelec_occ {
-                lower = vbm_level;
+            if nelec_below < nelec_ref {
+                lower = vb_level;
             }
         }
 
         // conduction bands
-        let total_conduction_electrons_between = |upper_level, lower_level| {
-            let mut ntot_local = 0.0;
 
-            for (ik, kscf) in vkscf.iter().enumerate() {
-                let evals = &vevals[ik];
-
-                ntot_local +=
-                    kscf.get_total_conduction_occ_between(evals, upper_level, lower_level)
-                        * kscf.get_k_weight();
-            }
-
-            let ntot = ntot_local;
-
-            ntot
-        };
-
-        let mut ntot = 0.0;
+        let nelec_ref = nelec * occ_inversion;
 
         let mut upper = fermi_level;
         let mut lower = fermi_level;
 
-        let nelec_occ = nelec * occ_inversion;
+        let mut nelec_between = 0.0;
 
-        while ntot < nelec_occ {
+        while nelec_between < nelec_ref {
             upper += EPS2 * EV_TO_HA;
-            ntot = total_conduction_electrons_between(upper, lower);
+            nelec_between = total_conduction_electrons_between(vkscf, vevals, upper, fermi_level);
         }
 
         let mut cb_level = 0.0;
 
-        while (ntot - nelec_occ).abs() > EPS12 {
+        while (nelec_between - nelec_ref).abs() > EPS12 {
             cb_level = (upper + lower) / 2.0;
 
-            ntot = total_conduction_electrons_between(upper, lower);
+            nelec_between =
+                total_conduction_electrons_between(vkscf, vevals, cb_level, fermi_level);
 
-            if ntot > nelec_occ {
+            if nelec_between > nelec_ref {
                 upper = cb_level;
             }
 
-            if ntot < nelec_occ {
+            if nelec_between < nelec_ref {
                 lower = cb_level;
             }
         }
 
         // set occupation numbers
+        // For all energy states below vb_level and between fermi_level and cb_level,
+        // it should be fully occupied (2 for nonspin, 1 for spin).
+
+        for (ik, kscf) in vkscf.iter_mut().enumerate() {
+            let evals = &vevals[ik];
+
+            kscf.set_occ_inversion(evals, vb_level, fermi_level, cb_level);
+        }
     }
 }
 
@@ -207,6 +186,40 @@ pub fn get_total_electrons(vkscf: &mut [KSCF], vevals: &Vec<Vec<f64>>, fermi: f6
         kscf.compute_occ(fermi, evals);
 
         ntot_local += kscf.get_total_occ() * kscf.get_k_weight();
+    }
+
+    let ntot = ntot_local;
+
+    ntot
+}
+
+fn total_electrons_below(vkscf: &[KSCF], vevals: &Vec<Vec<f64>>, energy_level: f64) -> f64 {
+    let mut ntot_local = 0.0;
+
+    for (ik, kscf) in vkscf.iter().enumerate() {
+        let evals = &vevals[ik];
+
+        ntot_local += kscf.get_total_valence_occ_below(evals, energy_level) * kscf.get_k_weight();
+    }
+
+    let ntot = ntot_local;
+
+    ntot
+}
+
+fn total_conduction_electrons_between(
+    vkscf: &[KSCF],
+    vevals: &Vec<Vec<f64>>,
+    upper_level: f64,
+    lower_level: f64,
+) -> f64 {
+    let mut ntot_local = 0.0;
+
+    for (ik, kscf) in vkscf.iter().enumerate() {
+        let evals = &vevals[ik];
+
+        ntot_local += kscf.get_total_conduction_occ_between(evals, upper_level, lower_level)
+            * kscf.get_k_weight();
     }
 
     let ntot = ntot_local;

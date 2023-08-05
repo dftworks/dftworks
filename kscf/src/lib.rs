@@ -375,9 +375,27 @@ impl<'a> KSCF<'a> {
         }
     }
 
-    pub fn set_valence_occ(&mut self, fermi_level: f64, evals: &[f64], homo: f64) {}
+    pub fn set_occ_inversion(
+        &mut self,
+        evals: &[f64],
+        vb_level: f64,
+        fermi_level: f64,
+        cb_level: f64,
+    ) {
+        let occ_val = if self.control.is_spin() { 1.0 } else { 2.0 };
 
-    pub fn set_conduction_occ(&mut self, fermi_level: f64, evals: &[f64], lumo: f64) {}
+        for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
+            if ev <= vb_level {
+                *occ = occ_val;
+            } else if ev < fermi_level {
+                *occ = 0.0;
+            } else if ev <= cb_level {
+                *occ = occ_val;
+            } else {
+                *occ = 0.0;
+            }
+        }
+    }
 }
 
 fn sort_eigen_values_and_vectors(evals: &mut [f64], evecs: &mut Matrix<c64>) {
