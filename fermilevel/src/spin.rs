@@ -73,12 +73,14 @@ impl FermiLevel for FermiLevelSpin {
         vevals: &VKEigenValue,
         fermi_level: f64,
         occ_inversion: f64,
-    ) {
+    ) -> Option<f64> {
         if occ_inversion < EPS10 {
-            return;
+            return None;
         }
 
         let _vkscf = vkscf.as_spin_mut().unwrap();
+
+        Some(nelec)
     }
 }
 

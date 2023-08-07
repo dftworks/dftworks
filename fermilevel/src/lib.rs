@@ -15,7 +15,7 @@ pub trait FermiLevel {
         vevals: &VKEigenValue,
         fermi_level: f64,
         occ_inversion: f64,
-    );
+    ) -> Option<f64>;
 }
 
 pub fn new(spin_scheme: &str) -> Box<dyn FermiLevel> {

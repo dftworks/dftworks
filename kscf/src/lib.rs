@@ -375,23 +375,9 @@ impl<'a> KSCF<'a> {
         }
     }
 
-    pub fn set_occ_inversion(
-        &mut self,
-        evals: &[f64],
-        vb_level: f64,
-        fermi_level: f64,
-        cb_level: f64,
-    ) {
-        let occ_val = if self.control.is_spin() { 1.0 } else { 2.0 };
-
+    pub fn set_occ_inversion(&mut self, evals: &[f64], vb_level: f64, fermi_level: f64) {
         for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
-            if ev <= vb_level {
-                *occ = occ_val;
-            } else if ev < fermi_level {
-                *occ = 0.0;
-            } else if ev <= cb_level {
-                *occ = occ_val;
-            } else {
+            if ev > vb_level {
                 *occ = 0.0;
             }
         }

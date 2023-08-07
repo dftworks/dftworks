@@ -38,3 +38,5 @@ pot_scheme = upf
 temperature = 0
 smearing_scheme = mp2
 output_atomic_density = true
+
+occ_inversion=0.05

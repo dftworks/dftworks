@@ -160,7 +160,7 @@ impl SCF for SCFNonspin {
 
             // recalculate the occ
 
-            fermi_driver.set_occ(
+            let nelec_below = fermi_driver.set_occ(
                 vkscf,
                 ntot_elec,
                 &vkevals,
@@ -192,6 +192,19 @@ impl SCF for SCFNonspin {
                 crystal.get_latt().volume(),
                 rho_3d,
             );
+
+            // add the removed electrons back in term of jellium
+
+            if let Some(nelec_occupied) = nelec_below {
+                let nelec_jellium = ntot_elec - nelec_occupied;
+
+                rho_3d
+                    .as_non_spin_mut()
+                    .unwrap()
+                    .add(nelec_jellium / crystal.get_latt().volume());
+            }
+
+            // calculate the total charge
 
             let charge = rho_3d.as_non_spin().unwrap().sum().re * crystal.get_latt().volume()
                 / fftgrid.get_ntotf64();
