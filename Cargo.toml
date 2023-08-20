@@ -9,6 +9,8 @@ codegen-units = 6
 [workspace]
 
 members = [
+	"dwmpi",
+        "mpi_sys",
 	"types",
 	"dwconsts",
 	"integral",
