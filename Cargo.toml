@@ -52,6 +52,7 @@ members = [
 	"magmom",
 	"density",
 	"geom",
-	"pw"
+	"pw",
+	"test_mpi"
 ]
 
