@@ -43,6 +43,7 @@ members = [
 	"hpsi",
 	"kscf",
 	"kpts",
+	"kpts_distribution",
 	"fermilevel",
 	"nlcc",
 	"force",
