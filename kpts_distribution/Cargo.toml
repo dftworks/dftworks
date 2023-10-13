@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 dwmpi = { path = "../dwmpi" }
-mpi_sys = { path = "../mpi_sys" }

@@ -38,12 +38,20 @@ pub fn finalize() -> i32 {
     unsafe { MPI_Finalize() }
 }
 
-pub fn comm_rank(comm: MpiComm, rank: &mut i32) -> i32 {
-    unsafe { MPI_Comm_rank(comm, rank) }
+pub fn get_comm_world_rank() -> i32 {
+    let mut rank = 0;
+
+    comm_rank(MPI_COMM_WORLD, &mut rank);
+
+    rank
 }
 
-pub fn comm_size(comm: MpiComm, size: &mut i32) -> i32 {
-    unsafe { MPI_Comm_size(comm, size) }
+pub fn get_comm_world_size() -> i32 {
+    let mut size = 0;
+
+    comm_size(MPI_COMM_WORLD, &mut size);
+
+    size
 }
 
 pub fn send_scalar<T: MPIDataType>(buf: &T, dest: i32, tag: i32, comm: MpiComm) -> i32 {
@@ -158,15 +166,23 @@ pub fn reduce_sum<T: MPIDataType + Default>(sbuf: &[T], dbuf: &mut [T], comm: Mp
     }
 }
 
+fn comm_rank(comm: MpiComm, rank: &mut i32) -> i32 {
+    unsafe { MPI_Comm_rank(comm, rank) }
+}
+
+fn comm_size(comm: MpiComm, size: &mut i32) -> i32 {
+    unsafe { MPI_Comm_size(comm, size) }
+}
+
+
+// mpirun --np 3 target/debug/test_mpi
+
 #[test]
 fn test_mpi() {
-    let mut rank = 0;
-    let mut size = 0;
-
     init();
 
-    comm_rank(MPI_COMM_WORLD, &mut rank);
-    comm_size(MPI_COMM_WORLD, &mut size);
+    let rank = get_comm_world_rank();
+    let size = get_comm_world_size();
 
     if rank == MPI_ROOT {
         println!("send and receive scalar values");

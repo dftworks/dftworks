@@ -1,6 +1,5 @@
 #![allow(warnings)]
 use dwmpi;
-use mpi_sys::MPI_COMM_WORLD;
 use std::slice::Chunks;
 
 fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
@@ -27,9 +26,7 @@ pub fn get_k_last(nkpt: usize, nrank: usize, rank: usize) -> usize {
 }
 
 pub fn get_my_k_first(nkpt: usize, nrank: usize) -> usize {
-    let mut rank = 0;
-
-    dwmpi::comm_rank(MPI_COMM_WORLD, &mut rank);
+    let rank = dwmpi::get_comm_world_rank();
 
     let chunks = get_chunks(nkpt, nrank);
 
@@ -37,9 +34,7 @@ pub fn get_my_k_first(nkpt: usize, nrank: usize) -> usize {
 }
 
 pub fn get_my_k_last(nkpt: usize, nrank: usize) -> usize {
-    let mut rank = 0;
-
-    dwmpi::comm_rank(MPI_COMM_WORLD, &mut rank);
+    let rank = dwmpi::get_comm_world_rank();
 
     let chunks = get_chunks(nkpt, nrank);
 
@@ -47,9 +42,7 @@ pub fn get_my_k_last(nkpt: usize, nrank: usize) -> usize {
 }
 
 pub fn get_my_k_total(nkpt: usize, nrank: usize) -> usize {
-    let mut rank = 0;
-
-    dwmpi::comm_rank(MPI_COMM_WORLD, &mut rank);
+    let rank = dwmpi::get_comm_world_rank();
 
     let chunks = get_chunks(nkpt, nrank);
 
