@@ -14,17 +14,18 @@ use kpts::KPTS;
 use kscf::KSCF;
 use matrix::Matrix;
 use mixing::Mixing;
+use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::Zero;
 use pspot::PSPot;
 use pwbasis::*;
 use pwdensity::*;
 use rgtransform::RGTransform;
+use std::io::Write;
 use symmetry::SymmetryDriver;
 use types::*;
 use vector3::Vector3f64;
 use xc::*;
-use mpi_sys::MPI_COMM_WORLD;
 
 pub fn compute_v_hartree(pwden: &PWDensity, rhog: &RHOG, vhg: &mut [c64]) {
     if let RHOG::NonSpin(rhog) = rhog {
@@ -130,17 +131,60 @@ pub fn display_eigen_values(
     let t_vkscf = vkscf.as_non_spin().unwrap();
     let t_vkevals = vkevals.as_non_spin().unwrap();
 
-    for (ik, evals) in t_vkevals.iter().enumerate() {
-        let k_frac = kpts.get_k_frac(ik);
-        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-        let npw_wfc = vpwwfc[ik].get_n_plane_waves();
+    let rank = dwmpi::get_comm_world_rank();
 
-        print_k_point(ik, k_frac, k_cart, npw_wfc);
+    if dwmpi::is_root() {
+        for (ik, evals) in t_vkevals.iter().enumerate() {
+            let k_frac = kpts.get_k_frac(ik);
+            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+            let npw_wfc = vpwwfc[ik].get_n_plane_waves();
 
-        let occ = t_vkscf[ik].get_occ();
+            print_k_point(ik, k_frac, k_cart, npw_wfc);
 
-        print_eigen_values(evals, occ);
+            let occ = t_vkscf[ik].get_occ();
+
+            print_eigen_values(evals, occ);
+        }
+
+        if dwmpi::get_comm_world_size() > 1 {
+            let signal: bool = true;
+            dwmpi::send_scalar(&signal, 1, 1, MPI_COMM_WORLD);
+        }
+    } else {
+        let mut signal: bool = false;
+        dwmpi::recv_scalar(&mut signal, rank - 1, 1, MPI_COMM_WORLD);
+
+        for (ik, evals) in t_vkevals.iter().enumerate() {
+            let g_ik = t_vkscf[ik].get_ik();
+            let k_frac = kpts.get_k_frac(g_ik);
+            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+            let npw_wfc = vpwwfc[ik].get_n_plane_waves();
+
+            print_k_point(g_ik, k_frac, k_cart, npw_wfc);
+
+            let occ = t_vkscf[ik].get_occ();
+
+            print_eigen_values(evals, occ);
+        }
+
+        std::io::stdout().flush();
+
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        dwmpi::send_scalar(&signal, rank - 1, 1, MPI_COMM_WORLD);
     }
+
+    let mut done = true;
+
+    if dwmpi::get_comm_world_rank() < dwmpi::get_comm_world_size() - 1 {
+        dwmpi::send_scalar(&done, rank + 1, 1, MPI_COMM_WORLD);
+
+        dwmpi::recv_scalar(&mut done, rank + 1, 1, MPI_COMM_WORLD);
+    }
+
+    std::io::stdout().flush();
+
+    dwmpi::barrier(MPI_COMM_WORLD);
 }
 
 pub fn print_eigen_values(v: &[f64], occ: &[f64]) {
@@ -189,6 +233,7 @@ pub fn compute_force(
     let natoms = crystal.get_n_atoms();
 
     let mut force_loc = vec![Vector3f64::zeros(); natoms];
+    let mut force_vnl_local = vec![Vector3f64::zeros(); natoms];
     let mut force_vnl = vec![Vector3f64::zeros(); natoms];
 
     force::vpsloc(
@@ -207,6 +252,14 @@ pub fn compute_force(
         &mut force_vnl,
     );
 
+    dwmpi::reduce_slice_sum(
+        vector3::as_slice_of_element(&force_vnl_local),
+        vector3::as_mut_slice_of_element(&mut force_vnl),
+        MPI_COMM_WORLD,
+    );
+
+    dwmpi::bcast_slice(vector3::as_slice_of_element(&force_vnl), MPI_COMM_WORLD);
+
     let force_ewald = ewald.get_force();
 
     let mut force_nlcc = vec![Vector3f64::zeros(); natoms];
@@ -224,14 +277,16 @@ pub fn compute_force(
         force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat];
     }
 
-    force::display(
-        crystal,
-        &force_total,
-        &force_ewald,
-        &force_loc,
-        &force_vnl,
-        &force_nlcc,
-    );
+    if dwmpi::is_root() {
+        force::display(
+            crystal,
+            &force_total,
+            &force_ewald,
+            &force_loc,
+            &force_vnl,
+            &force_nlcc,
+        );
+    }
 }
 
 pub fn compute_stress(
@@ -252,17 +307,37 @@ pub fn compute_stress(
     symdrv: &Box<dyn SymmetryDriver>,
     stress_total: &mut Matrix<f64>,
 ) {
-    let mut stress_kin = stress::kinetic(
+    let mut stress_kin_local = stress::kinetic(
         crystal,
         &vkscf.as_non_spin().unwrap(),
         &vkevecs.as_non_spin().unwrap(),
     );
 
-    let mut stress_vnl = stress::vnl(
+    let mut stress_kin = Matrix::new(3, 3);
+
+    dwmpi::reduce_slice_sum(
+        stress_kin_local.as_slice(),
+        stress_kin.as_mut_slice(),
+        MPI_COMM_WORLD,
+    );
+
+    dwmpi::bcast_slice(stress_kin.as_slice(), MPI_COMM_WORLD);
+
+    let mut stress_vnl_local = stress::vnl(
         crystal,
         &vkscf.as_non_spin().unwrap(),
         &vkevecs.as_non_spin().unwrap(),
     );
+
+    let mut stress_vnl = Matrix::new(3, 3);
+
+    dwmpi::reduce_slice_sum(
+        stress_vnl_local.as_slice(),
+        stress_vnl.as_mut_slice(),
+        MPI_COMM_WORLD,
+    );
+
+    dwmpi::bcast_slice(stress_vnl.as_slice(), MPI_COMM_WORLD);
 
     let stress_hartree = stress::hartree(gvec, pwden, rhog.as_non_spin().unwrap());
     let stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, rhog.as_non_spin().unwrap());
@@ -291,16 +366,18 @@ pub fn compute_stress(
         }
     }
 
-    stress::display_stress_by_parts(
-        &stress_kin,
-        &stress_hartree,
-        &stress_xc,
-        &stress_xc_nlcc,
-        &stress_loc,
-        &stress_vnl,
-        &stress_ewald,
-        &stress_total,
-    );
+    if dwmpi::is_root() {
+        stress::display_stress_by_parts(
+            &stress_kin,
+            &stress_hartree,
+            &stress_xc,
+            &stress_xc_nlcc,
+            &stress_loc,
+            &stress_vnl,
+            &stress_ewald,
+            &stress_total,
+        );
+    }
 }
 
 pub fn get_n_plane_waves_max(vpwwfc: &[PWBasis]) -> usize {
@@ -338,6 +415,8 @@ pub fn solve_eigen_equations(
     let mut vk_n_hpsi = vec![0; nkpt];
 
     for (ik, kscf) in t_vkscf.iter().enumerate() {
+        // println!("rank: {} ik: {}", dwmpi::get_comm_world_rank(), ik);
+
         let (n_band_converged, n_hpsi) = kscf.run(
             crystal,
             &fftgrid,

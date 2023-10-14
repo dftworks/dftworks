@@ -18,6 +18,12 @@ impl MPIDataType for f64 {
     }
 }
 
+impl MPIDataType for bool {
+    fn get_mpi_data_type(&self) -> i32 {
+        MPI_INT
+    }
+}
+
 impl MPIDataType for i32 {
     fn get_mpi_data_type(&self) -> i32 {
         MPI_INT
@@ -170,7 +176,11 @@ pub fn reduce_sum<T: MPIDataType + Default>(sbuf: &[T], dbuf: &mut [T], comm: Mp
     }
 }
 
-pub fn reduce_slice_sum<T: MPIDataType + Default>(sbuf: &[T], dbuf: &mut [T], comm: MpiComm) -> i32 {
+pub fn reduce_slice_sum<T: MPIDataType + Default>(
+    sbuf: &[T],
+    dbuf: &mut [T],
+    comm: MpiComm,
+) -> i32 {
     unsafe {
         let t: T = Default::default();
 

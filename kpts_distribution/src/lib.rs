@@ -5,10 +5,34 @@ use std::slice::Chunks;
 fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
     assert!(nkpt >= nrank);
 
-    let v: Vec<usize> = (0..nkpt).collect();
-    let chunks = v.chunks(nrank);
+    let mut vchunks_size = vec![0; nrank];
+    for ik in 0..nkpt {
+        let irank = ik % nrank;
 
-    let vchunks = chunks.map(|chunk| chunk.to_owned()).collect();
+        // println!("ik = {}, irank = {}", ik, irank);
+
+        vchunks_size[irank] += 1;
+    }
+
+    // println!("{:?}", vchunks_size);
+
+    let mut vchunks = Vec::new();
+
+    let mut n = 0;
+    for irank in 0..nrank {
+        let mut t = Vec::new();
+
+        for i in 0..vchunks_size[irank] {
+            t.push(n);
+            n += 1;
+        }
+
+        vchunks.push(t);
+    }
+
+    // println!("nkpt = {}, nrank = {}", nkpt, nrank);
+
+    // println!("vchunks = {:?}", vchunks);
 
     vchunks
 }
@@ -45,6 +69,8 @@ pub fn get_my_k_total(nkpt: usize, nrank: usize) -> usize {
     let rank = dwmpi::get_comm_world_rank();
 
     let chunks = get_chunks(nkpt, nrank);
+
+    // println!("chunks: {:?}", chunks);
 
     chunks[rank as usize].len()
 }

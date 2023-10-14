@@ -359,8 +359,10 @@ fn main() {
                 }
             }
         } else {
-            vkevals =
-                VKEigenValue::Spin(vec![vec![0.0; nband]; my_nkpt], vec![vec![0.0; nband]; my_nkpt]);
+            vkevals = VKEigenValue::Spin(
+                vec![vec![0.0; nband]; my_nkpt],
+                vec![vec![0.0; nband]; my_nkpt],
+            );
             vkevecs = VKEigenVector::Spin(vec![Matrix::new(0, 0); 0], vec![Matrix::new(0, 0); 0]);
 
             if let VKEigenVector::Spin(ref mut vkevc_up, ref mut vkevc_dn) = vkevecs {
@@ -378,9 +380,9 @@ fn main() {
 
         // ions optimization
 
-	if dwmpi::is_root() {
+        if dwmpi::is_root() {
             println!("\n   #step: geom-{}\n", geom_iter);
-	}
+        }
 
         //loop {
         scf_driver.run(
@@ -407,16 +409,18 @@ fn main() {
 
         // save rho
 
-        if control.get_save_rho() {
-            if let RHOR::NonSpin(ref rho_3d) = &rho_3d {
-                rho_3d.save("out.scf.rho");
-            } else if let RHOR::Spin(ref rho_3d_up, ref rho_3d_dn) = &rho_3d {
-                rho_3d_up.save("out.scf.rho.up");
-                rho_3d_dn.save("out.scf.rho.dn");
+        if dwmpi::is_root() {
+            if control.get_save_rho() {
+                if let RHOR::NonSpin(ref rho_3d) = &rho_3d {
+                    rho_3d.save("out.scf.rho");
+                } else if let RHOR::Spin(ref rho_3d_up, ref rho_3d_dn) = &rho_3d {
+                    rho_3d_up.save("out.scf.rho.up");
+                    rho_3d_dn.save("out.scf.rho.dn");
+                }
             }
-        }
 
-        crystal.output();
+            crystal.output();
+        }
 
         // if converged, then exit
 
@@ -428,14 +432,20 @@ fn main() {
             if force_max < control.get_geom_optim_force_tolerance() * FORCE_EV_TO_HA
                 && stress_max < control.get_geom_optim_stress_tolerance() * STRESS_KB_TO_HA
             {
-                println!("\n   {} : {:<5}", "geom_exit_tolerance_reached", geom_iter);
+                if dwmpi::is_root() {
+                    println!("\n   {} : {:<5}", "geom_exit_tolerance_reached", geom_iter);
+                }
+
                 post_processing(&control, &vkevals, &vkevecs, &vkscf);
 
                 break;
             }
         } else {
             if force_max < control.get_geom_optim_force_tolerance() * FORCE_EV_TO_HA {
-                println!("\n   {} : {:<5}", "geom_exit_tolerance_reached", geom_iter);
+                if dwmpi::is_root() {
+                    println!("\n   {} : {:<5}", "geom_exit_tolerance_reached", geom_iter);
+                }
+
                 post_processing(&control, &vkevals, &vkevecs, &vkscf);
 
                 break;
@@ -445,7 +455,9 @@ fn main() {
         // if not converged, but reach the max geometry optimization steps, then exit
 
         if geom_iter >= control.get_geom_optim_max_steps() {
-            println!("\n   {} : {:<5}", "geom_exit_max_steps_reached", geom_iter);
+            if dwmpi::is_root() {
+                println!("\n   {} : {:<5}", "geom_exit_max_steps_reached", geom_iter);
+            }
 
             break;
         }
@@ -478,20 +490,29 @@ fn main() {
     }
 
     // computing time statistics
-
-    println!();
-    println!("   {:-^88}", " statistics ");
-    println!();
     let elapsed_main_seconds = stopwatch_main.elapsed().as_secs_f64();
-    println!(
-        "   {:16}{:5}{:16.2} seconds {:16.2} hours",
-        "Total",
-        ":",
-        elapsed_main_seconds,
-        elapsed_main_seconds / 3600.0
-    );
+
+    if dwmpi::is_root() {
+        println!();
+        println!("   {:-^88}", " statistics ");
+        println!();
+
+        println!(
+            "   {:16}{:5}{:16.2} seconds {:16.2} hours",
+            "Total",
+            ":",
+            elapsed_main_seconds,
+            elapsed_main_seconds / 3600.0
+        );
+    }
 
     // last statement
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    
+    dwmpi::barrier(MPI_COMM_WORLD);
+
+    dwmpi::finalize();
 }
 
 fn post_processing(
@@ -502,7 +523,7 @@ fn post_processing(
 ) {
     // total density of states
 
-    println!("   compute total density of states");
+    // println!("   compute total density of states");
 
     //dos::compute_total_density_of_states(control, vkevals, vkevecs, vkscf);
 }

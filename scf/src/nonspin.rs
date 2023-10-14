@@ -339,46 +339,44 @@ impl SCF for SCFNonspin {
 
         // display eigenvalues
 
-	if dwmpi::is_root() {
-            utils::display_eigen_values(crystal, kpts, vpwwfc, vkscf, vkevals);
-	}
+        utils::display_eigen_values(crystal, kpts, vpwwfc, vkscf, vkevals);
 
         // force
 
-        // utils::compute_force(
-        //     control,
-        //     crystal,
-        //     gvec,
-        //     pwden,
-        //     pots,
-        //     ewald,
-        //     vkscf,
-        //     vkevecs,
-        //     rhog,
-        //     &vxcg,
-        //     symdrv,
-        //     force_total,
-        // );
+        utils::compute_force(
+            control,
+            crystal,
+            gvec,
+            pwden,
+            pots,
+            ewald,
+            vkscf,
+            vkevecs,
+            rhog,
+            &vxcg,
+            symdrv,
+            force_total,
+        );
 
         // stress
 
-        // utils::compute_stress(
-        //     control,
-        //     crystal,
-        //     gvec,
-        //     pwden,
-        //     pots,
-        //     ewald,
-        //     vkscf,
-        //     vkevecs,
-        //     rhog,
-        //     rho_3d,
-        //     rhocore_3d,
-        //     &vxcg,
-        //     &vxc_3d,
-        //     &exc_3d,
-        //     symdrv,
-        //     stress_total,
-        // );
+        utils::compute_stress(
+            control,
+            crystal,
+            gvec,
+            pwden,
+            pots,
+            ewald,
+            vkscf,
+            vkevecs,
+            rhog,
+            rho_3d,
+            rhocore_3d,
+            &vxcg,
+            &vxc_3d,
+            &exc_3d,
+            symdrv,
+            stress_total,
+        );
     }
 }

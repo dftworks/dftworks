@@ -1,15 +1,12 @@
 use dwmpi::*;
-use types::*;
 use mpi_sys::*;
+use types::*;
 
 fn main() {
-    let mut rank = 0;
-    let mut size = 0;
-
     init();
 
-    comm_rank(MPI_COMM_WORLD, &mut rank);
-    comm_size(MPI_COMM_WORLD, &mut size);
+    let rank = get_comm_world_rank();
+    let size = get_comm_world_size();
 
     if rank == MPI_ROOT {
         println!("send and receive scalar values");
