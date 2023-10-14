@@ -120,11 +120,12 @@ impl SCF for SCFNonspin {
 
         let mut scf_iter = 1;
 
-        println!(
-            "    {:>3}  {:>10} {:>10} {:>16} {:>25} {:>25} {:>12}",
-            "", "eps(eV)", "Fermi(eV)", "charge", "Eharris(Ry)", "Escf(Ry)", "dE(eV)"
-        );
-
+        if dwmpi::is_root() {
+            println!(
+                "    {:>3}  {:>10} {:>10} {:>16} {:>25} {:>25} {:>12}",
+                "", "eps(eV)", "Fermi(eV)", "charge", "Eharris(Ry)", "Escf(Ry)", "dE(eV)"
+            );
+        }
         loop {
             // transform v_loc from G to r
 
@@ -160,13 +161,13 @@ impl SCF for SCFNonspin {
 
             // recalculate the occ
 
-            let nelec_below = fermi_driver.set_occ(
-                vkscf,
-                ntot_elec,
-                &vkevals,
-                fermi_level,
-                control.get_occ_inversion(),
-            );
+            // let nelec_below = fermi_driver.set_occ(
+            //     vkscf,
+            //     ntot_elec,
+            //     &vkevals,
+            //     fermi_level,
+            //     control.get_occ_inversion(),
+            // );
 
             // calculate Harris energy
 
@@ -195,14 +196,14 @@ impl SCF for SCFNonspin {
 
             // add the removed electrons back in term of jellium
 
-            if let Some(nelec_occupied) = nelec_below {
-                let nelec_jellium = ntot_elec - nelec_occupied;
+            // if let Some(nelec_occupied) = nelec_below {
+            //     let nelec_jellium = ntot_elec - nelec_occupied;
 
-                rho_3d
-                    .as_non_spin_mut()
-                    .unwrap()
-                    .add(nelec_jellium / crystal.get_latt().volume());
-            }
+            //     rho_3d
+            //         .as_non_spin_mut()
+            //         .unwrap()
+            //         .add(nelec_jellium / crystal.get_latt().volume());
+            // }
 
             // calculate the total charge
 
@@ -249,16 +250,18 @@ impl SCF for SCFNonspin {
 
             //
 
-            println!(
-                "    {:>3}: {:>10.3E} {:>10.3E} {:>16.6E} {:>25.12E} {:>25.12E} {:>12.3E}",
-                scf_iter,
-                eigvalue_epsilon * HA_TO_EV,
-                fermi_level * HA_TO_EV,
-                charge,
-                energy_harris * HA_TO_RY,
-                energy_scf * HA_TO_RY,
-                energy_diff * HA_TO_EV
-            );
+            if dwmpi::is_root() {
+                println!(
+                    "    {:>3}: {:>10.3E} {:>10.3E} {:>16.6E} {:>25.12E} {:>25.12E} {:>12.3E}",
+                    scf_iter,
+                    eigvalue_epsilon * HA_TO_EV,
+                    fermi_level * HA_TO_EV,
+                    charge,
+                    energy_harris * HA_TO_RY,
+                    energy_scf * HA_TO_RY,
+                    energy_diff * HA_TO_EV
+                );
+            }
 
             /////////////////////////////////////////////////
             // check convergence
@@ -266,11 +269,13 @@ impl SCF for SCFNonspin {
             // if converged, then exit
 
             if energy_diff < control.get_energy_epsilon() {
-                println!(
-                    "\n     {:<width1$}",
-                    "scf_convergence_success",
-                    width1 = OUT_WIDTH1
-                );
+                if dwmpi::is_root() {
+                    println!(
+                        "\n     {:<width1$}",
+                        "scf_convergence_success",
+                        width1 = OUT_WIDTH1
+                    );
+                }
 
                 break;
             }
@@ -278,11 +283,13 @@ impl SCF for SCFNonspin {
             // if not converged, but exceed the max_scf, then exit
 
             if scf_iter == control.get_scf_max_iter() {
-                println!(
-                    "\n     {:<width1$}",
-                    "scf_convergence_failure",
-                    width1 = OUT_WIDTH1
-                );
+                if dwmpi::is_root() {
+                    println!(
+                        "\n     {:<width1$}",
+                        "scf_convergence_failure",
+                        width1 = OUT_WIDTH1
+                    );
+                }
 
                 break;
             }
@@ -332,44 +339,46 @@ impl SCF for SCFNonspin {
 
         // display eigenvalues
 
-        utils::display_eigen_values(crystal, kpts, vpwwfc, vkscf, vkevals);
+	if dwmpi::is_root() {
+            utils::display_eigen_values(crystal, kpts, vpwwfc, vkscf, vkevals);
+	}
 
         // force
 
-        utils::compute_force(
-            control,
-            crystal,
-            gvec,
-            pwden,
-            pots,
-            ewald,
-            vkscf,
-            vkevecs,
-            rhog,
-            &vxcg,
-            symdrv,
-            force_total,
-        );
+        // utils::compute_force(
+        //     control,
+        //     crystal,
+        //     gvec,
+        //     pwden,
+        //     pots,
+        //     ewald,
+        //     vkscf,
+        //     vkevecs,
+        //     rhog,
+        //     &vxcg,
+        //     symdrv,
+        //     force_total,
+        // );
 
         // stress
 
-        utils::compute_stress(
-            control,
-            crystal,
-            gvec,
-            pwden,
-            pots,
-            ewald,
-            vkscf,
-            vkevecs,
-            rhog,
-            rho_3d,
-            rhocore_3d,
-            &vxcg,
-            &vxc_3d,
-            &exc_3d,
-            symdrv,
-            stress_total,
-        );
+        // utils::compute_stress(
+        //     control,
+        //     crystal,
+        //     gvec,
+        //     pwden,
+        //     pots,
+        //     ewald,
+        //     vkscf,
+        //     vkevecs,
+        //     rhog,
+        //     rho_3d,
+        //     rhocore_3d,
+        //     &vxcg,
+        //     &vxc_3d,
+        //     &exc_3d,
+        //     symdrv,
+        //     stress_total,
+        // );
     }
 }

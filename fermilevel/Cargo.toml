@@ -10,3 +10,5 @@ edition = "2018"
 dwconsts = { path = "../dwconsts" }
 kscf = { path = "../kscf" }
 dfttypes = { path = "../dfttypes" }
+dwmpi = { path = "../dwmpi" }
+mpi_sys = { path = "../mpi_sys" }

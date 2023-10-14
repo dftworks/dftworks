@@ -120,6 +120,10 @@ pub fn recv_slice<T: MPIDataType + Default>(
     }
 }
 
+pub fn is_root() -> bool {
+    get_comm_world_rank() == MPI_ROOT
+}
+
 pub fn barrier(comm: MpiComm) -> i32 {
     unsafe { MPI_Barrier(comm) }
 }
@@ -166,6 +170,70 @@ pub fn reduce_sum<T: MPIDataType + Default>(sbuf: &[T], dbuf: &mut [T], comm: Mp
     }
 }
 
+pub fn reduce_slice_sum<T: MPIDataType + Default>(sbuf: &[T], dbuf: &mut [T], comm: MpiComm) -> i32 {
+    unsafe {
+        let t: T = Default::default();
+
+        MPI_Reduce(
+            sbuf.as_ptr() as *const c_void,
+            dbuf.as_mut_ptr() as *mut c_void,
+            sbuf.len() as i32,
+            t.get_mpi_data_type(),
+            MPI_SUM,
+            MPI_ROOT,
+            comm,
+        )
+    }
+}
+
+pub fn reduce_scalar_sum<T: MPIDataType + Default>(sbuf: &T, dbuf: &mut T, comm: MpiComm) -> i32 {
+    unsafe {
+        let t: T = Default::default();
+
+        MPI_Reduce(
+            sbuf as *const T as *const c_void,
+            dbuf as *mut T as *mut c_void,
+            1,
+            t.get_mpi_data_type(),
+            MPI_SUM,
+            MPI_ROOT,
+            comm,
+        )
+    }
+}
+
+pub fn reduce_scalar_max<T: MPIDataType + Default>(sbuf: &T, dbuf: &mut T, comm: MpiComm) -> i32 {
+    unsafe {
+        let t: T = Default::default();
+
+        MPI_Reduce(
+            sbuf as *const T as *const c_void,
+            dbuf as *mut T as *mut c_void,
+            1,
+            t.get_mpi_data_type(),
+            MPI_MAX,
+            MPI_ROOT,
+            comm,
+        )
+    }
+}
+
+pub fn reduce_scalar_min<T: MPIDataType + Default>(sbuf: &T, dbuf: &mut T, comm: MpiComm) -> i32 {
+    unsafe {
+        let t: T = Default::default();
+
+        MPI_Reduce(
+            sbuf as *const T as *const c_void,
+            dbuf as *mut T as *mut c_void,
+            1,
+            t.get_mpi_data_type(),
+            MPI_MIN,
+            MPI_ROOT,
+            comm,
+        )
+    }
+}
+
 fn comm_rank(comm: MpiComm, rank: &mut i32) -> i32 {
     unsafe { MPI_Comm_rank(comm, rank) }
 }
@@ -173,7 +241,6 @@ fn comm_rank(comm: MpiComm, rank: &mut i32) -> i32 {
 fn comm_size(comm: MpiComm, size: &mut i32) -> i32 {
     unsafe { MPI_Comm_size(comm, size) }
 }
-
 
 // mpirun --np 3 target/debug/test_mpi
 

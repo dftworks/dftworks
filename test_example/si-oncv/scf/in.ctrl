@@ -30,7 +30,7 @@ energy_epsilon = 1E-6
 
 eigen_solver = pcg
 davidson_ndim = 6
-ecut_wfc = 600
+ecut_wfc = 400
 nband = 8
 spin_scheme = nonspin
 xc_scheme = lda-pz

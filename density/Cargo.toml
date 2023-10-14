@@ -28,3 +28,5 @@ utility = { path = "../utility" }
 magmom = { path = "../magmom" }
 dfttypes = { path = "../dfttypes" }
 num-traits = "*"
+dwmpi = { path = "../dwmpi" }
+mpi_sys = { path = "../mpi_sys" }

@@ -24,6 +24,7 @@ use symmetry::SymmetryDriver;
 use types::*;
 use vector3::Vector3f64;
 use xc::*;
+use mpi_sys::MPI_COMM_WORLD;
 
 pub fn compute_v_hartree(pwden: &PWDensity, rhog: &RHOG, vhg: &mut [c64]) {
     if let RHOG::NonSpin(rhog) = rhog {
@@ -434,7 +435,16 @@ pub fn compute_total_energy(
 
     let etot_hartree = energy::hartree(pwden, latt, rhog);
 
-    let etot_bands = get_bands_energy(vkscf, vevals);
+    // bands energy
+
+    let etot_bands_local = get_bands_energy(vkscf, vevals);
+
+    let mut etot_bands = 0.0;
+
+    dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&etot_bands, MPI_COMM_WORLD);
+
+    //
 
     let etot_xc = energy::exc(latt, &rho_3d, &rhocore_3d, &exc_3d);
     let etot_vxc = energy::vxc(
