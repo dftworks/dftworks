@@ -133,56 +133,28 @@ pub fn display_eigen_values(
 
     let rank = dwmpi::get_comm_world_rank();
 
-    if dwmpi::is_root() {
-        for (ik, evals) in t_vkevals.iter().enumerate() {
-            let k_frac = kpts.get_k_frac(ik);
-            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-            let npw_wfc = vpwwfc[ik].get_n_plane_waves();
+    for irank in 0..dwmpi::get_comm_world_size() {
+        dwmpi::barrier(MPI_COMM_WORLD);
 
-            print_k_point(ik, k_frac, k_cart, npw_wfc);
+        if irank == rank {
+            for (ik, evals) in t_vkevals.iter().enumerate() {
+                let g_ik = t_vkscf[ik].get_ik();
+                let k_frac = kpts.get_k_frac(g_ik);
+                let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                let npw_wfc = vpwwfc[ik].get_n_plane_waves();
 
-            let occ = t_vkscf[ik].get_occ();
+                print_k_point(g_ik, k_frac, k_cart, npw_wfc);
 
-            print_eigen_values(evals, occ);
+                let occ = t_vkscf[ik].get_occ();
+
+                print_eigen_values(evals, occ);
+            }
+
+            std::io::stdout().flush();
+
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
-
-        if dwmpi::get_comm_world_size() > 1 {
-            let signal: bool = true;
-            dwmpi::send_scalar(&signal, 1, 1, MPI_COMM_WORLD);
-        }
-    } else {
-        let mut signal: bool = false;
-        dwmpi::recv_scalar(&mut signal, rank - 1, 1, MPI_COMM_WORLD);
-
-        for (ik, evals) in t_vkevals.iter().enumerate() {
-            let g_ik = t_vkscf[ik].get_ik();
-            let k_frac = kpts.get_k_frac(g_ik);
-            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-            let npw_wfc = vpwwfc[ik].get_n_plane_waves();
-
-            print_k_point(g_ik, k_frac, k_cart, npw_wfc);
-
-            let occ = t_vkscf[ik].get_occ();
-
-            print_eigen_values(evals, occ);
-        }
-
-        std::io::stdout().flush();
-
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        dwmpi::send_scalar(&signal, rank - 1, 1, MPI_COMM_WORLD);
     }
-
-    let mut done = true;
-
-    if dwmpi::get_comm_world_rank() < dwmpi::get_comm_world_size() - 1 {
-        dwmpi::send_scalar(&done, rank + 1, 1, MPI_COMM_WORLD);
-
-        dwmpi::recv_scalar(&mut done, rank + 1, 1, MPI_COMM_WORLD);
-    }
-
-    std::io::stdout().flush();
 
     dwmpi::barrier(MPI_COMM_WORLD);
 }
