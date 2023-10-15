@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 atompsp = { path = "../atompsp" }
+dwmpi = { path = "../dwmpi" }

@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 dwconsts = { path = "../dwconsts" }
-
+dwmpi = { path = "../dwmpi" }

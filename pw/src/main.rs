@@ -30,9 +30,7 @@ fn main() {
     let mut control = Control::new();
     control.read_file("in.ctrl");
 
-    if dwmpi::is_root() {
-        control.display();
-    }
+    control.display();
 
     // read in crystal
 
@@ -46,9 +44,7 @@ fn main() {
 
     let pots = PSPot::new(control.get_pot_scheme());
 
-    if dwmpi::is_root() {
-        pots.display();
-    }
+    pots.display();
 
     // zions
 
@@ -60,9 +56,7 @@ fn main() {
 
     let kpts = kpts::new(control.get_kpts_scheme(), &crystal, control.get_symmetry());
 
-    if dwmpi::is_root() {
-        kpts.display();
-    }
+    kpts.display();
 
     //
 
@@ -121,10 +115,8 @@ fn main() {
 
         //loop {
 
-        if dwmpi::is_root() {
-            println!();
-            crystal.display();
-        }
+        println!();
+        crystal.display();
 
         // Ewald
 
@@ -151,14 +143,14 @@ fn main() {
 
         if dwmpi::is_root() {
             if geom_iter == 1 && std::path::Path::new("out.scf.rho").exists() {
-                if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
-                    if let RHOR::NonSpin(ref mut rho_3d) = &mut rho_3d {
-                        rho_3d.load("out.scf.rho");
-                        rgtrans.r3d_to_g1d(&gvec, &pwden, rho_3d.as_slice(), rhog);
-                    }
-                }
-
-                println!("   load charge density from out.scf.rho");
+                density_driver.load_density_from_file(
+                    "out.scf.rho",
+                    &rgtrans,
+                    &gvec,
+                    &pwden,
+                    &mut rhog,
+                    &mut rho_3d,
+                );
             } else {
                 density_driver.from_atomic_super_position(
                     &pots,
@@ -175,21 +167,7 @@ fn main() {
             }
         }
 
-        if control.is_spin() {
-            let (rhog_up, rhog_dn) = rhog.as_spin().unwrap();
-
-            dwmpi::bcast_slice(rhog_up, MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rhog_dn, MPI_COMM_WORLD);
-
-            let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin().unwrap();
-
-            dwmpi::bcast_slice(rho_3d_up.as_slice(), MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rho_3d_dn.as_slice(), MPI_COMM_WORLD);
-        } else {
-            dwmpi::bcast_slice(rhog.as_non_spin().unwrap(), MPI_COMM_WORLD);
-
-            dwmpi::bcast_slice(rho_3d.as_non_spin().unwrap().as_slice(), MPI_COMM_WORLD);
-        }
+        density_driver.bcast(&mut rhog, &mut rho_3d);
 
         let mut total_rho = 0.0;
 
@@ -251,15 +229,17 @@ fn main() {
 
         let blatt = crystal.get_latt().reciprocal();
 
-        // vpwwfc
+        // kpts distribution
 
         let nrank = dwmpi::get_comm_world_size() as usize;
         let my_nkpt = kpts_distribution::get_my_k_total(nkpt, nrank);
 
-        let mut vpwwfc = Vec::<PWBasis>::with_capacity(my_nkpt);
-
         let ik_first = kpts_distribution::get_my_k_first(nkpt, nrank);
         let ik_last = kpts_distribution::get_my_k_last(nkpt, nrank);
+
+        // vpwwfc
+
+        let mut vpwwfc = Vec::<PWBasis>::with_capacity(my_nkpt);
 
         (ik_first..=ik_last).into_iter().for_each(|ik| {
             let k_frac = kpts.get_k_frac(ik);
@@ -409,18 +389,11 @@ fn main() {
 
         // save rho
 
-        if dwmpi::is_root() {
-            if control.get_save_rho() {
-                if let RHOR::NonSpin(ref rho_3d) = &rho_3d {
-                    rho_3d.save("out.scf.rho");
-                } else if let RHOR::Spin(ref rho_3d_up, ref rho_3d_dn) = &rho_3d {
-                    rho_3d_up.save("out.scf.rho.up");
-                    rho_3d_dn.save("out.scf.rho.dn");
-                }
-            }
-
-            crystal.output();
+        if control.get_save_rho() {
+            density_driver.save_rho(&rho_3d);
         }
+
+        crystal.output();
 
         // if converged, then exit
 
@@ -509,7 +482,7 @@ fn main() {
     // last statement
 
     std::thread::sleep(std::time::Duration::from_millis(200));
-    
+
     dwmpi::barrier(MPI_COMM_WORLD);
 
     dwmpi::finalize();

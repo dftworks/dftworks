@@ -6,6 +6,7 @@ use dwconsts::*;
 use fhkl;
 use gvector::GVector;
 use itertools::multizip;
+use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -13,7 +14,6 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 use vector3::*;
-use mpi_sys::MPI_COMM_WORLD;
 
 pub struct DensityNonspin {}
 
@@ -24,6 +24,37 @@ impl DensityNonspin {
 }
 
 impl Density for DensityNonspin {
+    fn save_rho(&self, rho_3d: &RHOR) {
+	if dwmpi::is_root() {
+            rho_3d.as_non_spin().unwrap().save("out.scf.rho");
+	}
+    }
+
+    fn bcast(&self, rhog: &mut RHOG, rho_3d: &mut RHOR) {
+        dwmpi::bcast_slice(rhog.as_non_spin().unwrap(), MPI_COMM_WORLD);
+
+        dwmpi::bcast_slice(rho_3d.as_non_spin().unwrap().as_slice(), MPI_COMM_WORLD);
+    }
+
+    fn load_density_from_file(
+        &self,
+        rho_file: &str,
+        rgtrans: &RGTransform,
+        gvec: &GVector,
+        pwden: &PWDensity,
+        rhog: &mut RHOG,
+        rho_3d: &mut RHOR,
+    ) {
+        if let RHOG::NonSpin(ref mut rhog) = rhog {
+            if let RHOR::NonSpin(ref mut rho_3d) = rho_3d {
+                rho_3d.load(rho_file);
+                rgtrans.r3d_to_g1d(&gvec, &pwden, rho_3d.as_slice(), rhog);
+            }
+        }
+
+        println!("   load charge density from out.scf.rho");
+    }
+
     fn from_atomic_super_position(
         &self,
         pspot: &PSPot,

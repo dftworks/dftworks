@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use crate::Density;
 use atompsp::AtomPSP;
 use crystal::Crystal;
@@ -7,6 +9,7 @@ use fhkl;
 use gvector::GVector;
 use itertools::multizip;
 use magmom::*;
+use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::Zero;
 use pspot::PSPot;
@@ -30,6 +33,38 @@ impl DensitySpin {
 }
 
 impl Density for DensitySpin {
+    fn save_rho(&self, rho_3d: &RHOR) {
+        if dwmpi::is_root() {
+            let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin().unwrap();
+
+            rho_3d_up.save("out.scf.rho.up");
+            rho_3d_dn.save("out.scf.rho.dn");
+        }
+    }
+
+    fn bcast(&self, rhog: &mut RHOG, rho_3d: &mut RHOR) {
+        let (rhog_up, rhog_dn) = rhog.as_spin().unwrap();
+
+        dwmpi::bcast_slice(rhog_up, MPI_COMM_WORLD);
+        dwmpi::bcast_slice(rhog_dn, MPI_COMM_WORLD);
+
+        let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin().unwrap();
+
+        dwmpi::bcast_slice(rho_3d_up.as_slice(), MPI_COMM_WORLD);
+        dwmpi::bcast_slice(rho_3d_dn.as_slice(), MPI_COMM_WORLD);
+    }
+
+    fn load_density_from_file(
+        &self,
+        rho_file: &str,
+        rgtrans: &RGTransform,
+        gvec: &GVector,
+        pwden: &PWDensity,
+        rhog: &mut RHOG,
+        rho_3d: &mut RHOR,
+    ) {
+    }
+
     fn from_atomic_super_position(
         &self,
         pspot: &PSPot,

@@ -303,6 +303,10 @@ impl Crystal {
     }
 
     pub fn output(&self) {
+        if !dwmpi::is_root() {
+            return;
+        }
+
         let mut f = File::create("out.crystal").unwrap();
 
         writeln!(f, "{} {} {}", self.scale_c, self.scale_b, self.scale_c).unwrap();
@@ -354,6 +358,10 @@ impl Crystal {
     }
 
     pub fn display(&self) {
+        if !dwmpi::is_root() {
+            return;
+        }
+
         println!("   {:-^88}", " crystal structure ");
         println!();
 

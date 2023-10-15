@@ -52,6 +52,10 @@ impl PSPot {
     }
 
     pub fn display(&self) {
+        if !dwmpi::is_root() {
+            return;
+        }
+
         for (sp, file) in self.atpsp_file.iter() {
             println!("   {} : {}", sp, file);
         }

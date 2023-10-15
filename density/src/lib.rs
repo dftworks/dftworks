@@ -34,6 +34,20 @@ pub trait Density {
         volume: f64,
         rho_3d: &mut RHOR,
     );
+
+    fn load_density_from_file(
+        &self,
+        rho_file: &str,
+        rgtrans: &RGTransform,
+        gvec: &GVector,
+        pwden: &PWDensity,
+        rhog: &mut RHOG,
+        rho_3d: &mut RHOR,
+    );
+
+    fn bcast(&self, rhog: &mut RHOG, rho_3d: &mut RHOR);
+
+    fn save_rho(&self, rho_3d: &RHOR);
 }
 
 pub fn new(spin_scheme: &str) -> Box<dyn Density> {

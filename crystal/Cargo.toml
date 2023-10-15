@@ -13,3 +13,4 @@ lattice = { path = "../lattice" }
 itertools = "*"
 pspot = { path = "../pspot" }
 matrix = { path = "../matrix" }
+dwmpi = { path = "../dwmpi" }

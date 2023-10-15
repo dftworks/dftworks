@@ -537,6 +537,9 @@ impl Control {
     }
 
     pub fn display(&self) {
+	if !dwmpi::is_root() {
+	    return;
+	}
         const OUT_WIDTH1: usize = 28;
         const OUT_WIDTH2: usize = 18;
 

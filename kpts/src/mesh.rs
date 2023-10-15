@@ -115,6 +115,10 @@ impl KPTS for KptsMesh {
     }
 
     fn display(&self) {
+	if !dwmpi::is_root() {
+	    return;
+	}
+	
         println!();
         println!("   {:-^88}", " k-points (fractional) ");
         println!();
