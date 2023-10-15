@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use crate::FermiLevel;
 use dfttypes::*;
 use dwconsts::*;
@@ -62,6 +64,23 @@ impl FermiLevel for FermiLevelSpin {
         }
 
         fermi_level
+    }
+
+    fn set_occ(
+        &self,
+        vkscf: &mut VKSCF,
+        nelec: f64,
+        vevals: &VKEigenValue,
+        fermi_level: f64,
+        occ_inversion: f64,
+    ) -> Option<f64> {
+        if occ_inversion < EPS10 {
+            return None;
+        }
+
+        let _vkscf = vkscf.as_spin_mut().unwrap();
+
+        Some(nelec)
     }
 }
 

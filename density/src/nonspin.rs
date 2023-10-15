@@ -13,6 +13,7 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 use vector3::*;
+use mpi_sys::MPI_COMM_WORLD;
 
 pub struct DensityNonspin {}
 
@@ -76,6 +77,9 @@ impl Density for DensityNonspin {
 
         let mut fft_work = Array3::<c64>::new([n1, n2, n3]);
 
+        let mut rho_3d_local = Array3::<c64>::new([n1, n2, n3]);
+        rho_3d_local.set_value(c64::zero());
+
         for (ik, kscf) in vkscf.iter().enumerate() {
             let occ = kscf.get_occ();
 
@@ -89,12 +93,19 @@ impl Density for DensityNonspin {
 
                     // |u_nk(r)|^2 -> rho_nk(r)
 
-                    rho_3d.scaled_sqr_add(&unk, occ[ib] * kscf.get_k_weight());
+                    rho_3d_local.scaled_sqr_add(&unk, occ[ib] * kscf.get_k_weight());
                 } else {
                     break;
                 }
             }
         }
+
+        dwmpi::reduce_slice_sum(
+            rho_3d_local.as_slice(),
+            rho_3d.as_mut_slice(),
+            MPI_COMM_WORLD,
+        );
+        dwmpi::bcast_slice(rho_3d.as_slice(), MPI_COMM_WORLD);
     }
 }
 

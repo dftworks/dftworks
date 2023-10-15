@@ -9,6 +9,8 @@ codegen-units = 6
 [workspace]
 
 members = [
+	"dwmpi",
+        "mpi_sys",
 	"types",
 	"dwconsts",
 	"integral",
@@ -41,6 +43,7 @@ members = [
 	"hpsi",
 	"kscf",
 	"kpts",
+	"kpts_distribution",
 	"fermilevel",
 	"nlcc",
 	"force",
@@ -50,6 +53,7 @@ members = [
 	"magmom",
 	"density",
 	"geom",
-	"pw"
+	"pw",
+	"test_mpi"
 ]
 

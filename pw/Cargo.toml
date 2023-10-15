@@ -36,3 +36,6 @@ kscf = { path = "../kscf" }
 linalg = { path = "../linalg" }
 dfttypes = { path = "../dfttypes" }
 num-traits = "*"
+dwmpi = { path = "../dwmpi" }
+mpi_sys = { path = "../mpi_sys" }
+kpts_distribution = { path = "../kpts_distribution" }

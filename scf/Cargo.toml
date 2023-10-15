@@ -41,3 +41,5 @@ stress = { path = "../stress" }
 rayon = "*"
 dfttypes = { path = "../dfttypes" }
 num-traits = "*"
+dwmpi = { path = "../dwmpi" }
+mpi_sys = { path = "../mpi_sys" }

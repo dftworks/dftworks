@@ -60,6 +60,8 @@ pub struct Control {
     kpts_scheme: String,
 
     symmetry: bool,
+
+    occ_inversion: f64,
 }
 
 impl Control {
@@ -262,6 +264,10 @@ impl Control {
         self.save_rho
     }
 
+    pub fn get_occ_inversion(&self) -> f64 {
+        self.occ_inversion
+    }
+
     pub fn read_file(&mut self, inpfile: &str) {
         self.task = "scf".to_string();
 
@@ -309,6 +315,8 @@ impl Control {
         self.kpts_scheme = "kmesh".to_string(); // "kmesh", "kpath", "klist"
 
         self.verbosity = "high".to_string();
+
+        self.occ_inversion = 0.0;
 
         let mut b_has_invalid_parameter = false;
 
@@ -484,6 +492,10 @@ impl Control {
 
                 "kpts_scheme" => {
                     self.kpts_scheme = s[1].parse().unwrap();
+                }
+
+                "occ_inversion" => {
+                    self.occ_inversion = s[1].parse::<f64>().unwrap();
                 }
 
                 "symmetry" => {

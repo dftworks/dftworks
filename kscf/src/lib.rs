@@ -127,6 +127,42 @@ impl<'a> KSCF<'a> {
         self.occ.iter().sum()
     }
 
+    pub fn get_total_valence_occ_below(&self, evals: &[f64], energy_level: f64) -> f64 {
+        let mut ntot = 0.0;
+
+        for (i, &ev) in evals.iter().enumerate() {
+            if ev <= energy_level {
+                ntot += self.occ[i];
+            }
+        }
+
+        ntot
+    }
+
+    pub fn get_total_conduction_occ_between(
+        &self,
+        evals: &[f64],
+        upper_level: f64,
+        lower_level: f64,
+    ) -> f64 {
+        let mut ntot = 0.0;
+
+        let mut occ = 1.0;
+        if self.control.is_spin() {
+            occ = 2.0;
+        } else {
+            occ = 1.0;
+        }
+
+        for (i, &ev) in evals.iter().enumerate() {
+            if ev >= lower_level && ev <= upper_level {
+                ntot += occ;
+            }
+        }
+
+        ntot
+    }
+
     pub fn get_unk(
         &self,
         rgtrans: &RGTransform,
@@ -189,15 +225,15 @@ impl<'a> KSCF<'a> {
         let mut unk_3d = Array3::<c64>::new(fft_shape);
         let mut fft_workspace = Array3::<c64>::new(fft_shape);
 
-        // 
+        //
 
         let mut hamiltonian_on_psi = |vin: &[c64], vout: &mut [c64]| {
             for v in vout.iter_mut() {
                 *v = c64::zero();
             }
 
-	    // compute vloc on |psi>
-	    
+            // compute vloc on |psi>
+
             hpsi::vloc_on_psi(
                 self.gvec,
                 self.pwwfc,
@@ -335,6 +371,14 @@ impl<'a> KSCF<'a> {
                         self.control.get_temperature(),
                         ev,
                     );
+            }
+        }
+    }
+
+    pub fn set_occ_inversion(&mut self, evals: &[f64], vb_level: f64, fermi_level: f64) {
+        for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
+            if ev > vb_level {
+                *occ = 0.0;
             }
         }
     }

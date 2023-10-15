@@ -82,6 +82,14 @@ impl Array3<c64> {
             *d = (*d) * factor + (*s) * (1.0 - factor);
         }
     }
+
+    pub fn add(&mut self, addition: f64) {
+        let pdst = self.as_mut_slice();
+
+        for d in pdst.iter_mut() {
+            *d = *d + addition;
+        }
+    }
 }
 
 #[test]
