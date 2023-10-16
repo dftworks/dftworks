@@ -161,13 +161,13 @@ impl SCF for SCFNonspin {
 
             // recalculate the occ
 
-            // let nelec_below = fermi_driver.set_occ(
-            //     vkscf,
-            //     ntot_elec,
-            //     &vkevals,
-            //     fermi_level,
-            //     control.get_occ_inversion(),
-            // );
+            let nelec_below = fermi_driver.set_occ(
+                vkscf,
+                ntot_elec,
+                &vkevals,
+                fermi_level,
+                control.get_occ_inversion(),
+            );
 
             // calculate Harris energy
 
@@ -196,14 +196,14 @@ impl SCF for SCFNonspin {
 
             // add the removed electrons back in term of jellium
 
-            // if let Some(nelec_occupied) = nelec_below {
-            //     let nelec_jellium = ntot_elec - nelec_occupied;
+            if let Some(nelec_occupied) = nelec_below {
+                let nelec_jellium = ntot_elec - nelec_occupied;
 
-            //     rho_3d
-            //         .as_non_spin_mut()
-            //         .unwrap()
-            //         .add(nelec_jellium / crystal.get_latt().volume());
-            // }
+                rho_3d
+                    .as_non_spin_mut()
+                    .unwrap()
+                    .add(nelec_jellium / crystal.get_latt().volume());
+            }
 
             // calculate the total charge
 

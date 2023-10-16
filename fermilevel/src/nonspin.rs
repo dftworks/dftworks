@@ -107,10 +107,11 @@ impl FermiLevel for FermiLevelNonspin {
                 lower = vb_level;
             }
 
-            println!(
-                "iter: {} vb_level: {} nelec_below: {} nelec_ref: {}",
-                ivb_iter, vb_level, nelec_below, nelec_ref
-            );
+            // println!(
+            //     "iter: {} vb_level: {} nelec_below: {} nelec_ref: {}",
+            //     ivb_iter, vb_level, nelec_below, nelec_ref
+            // );
+	    
             ivb_iter += 1;
         }
 
@@ -122,7 +123,7 @@ impl FermiLevel for FermiLevelNonspin {
             kscf.set_occ_inversion(evals, vb_level, fermi_level);
         }
 
-        println!("vb_level, fermi_level: {}, {}", vb_level, fermi_level);
+        // println!("vb_level, fermi_level: {}, {}", vb_level, fermi_level);
 
         Some(nelec_below)
     }
@@ -158,7 +159,7 @@ fn get_initial_fermi_level(nelec: f64, vevals: &Vec<Vec<f64>>) -> f64 {
     let fermi = (homo + lumo) / 2.0;
 
     dwmpi::bcast_scalar(&fermi, MPI_COMM_WORLD);
-    
+
     fermi
 }
 
@@ -191,7 +192,11 @@ fn total_electrons_below(vkscf: &[KSCF], vevals: &Vec<Vec<f64>>, energy_level: f
         ntot_local += kscf.get_total_valence_occ_below(evals, energy_level) * kscf.get_k_weight();
     }
 
-    let ntot = ntot_local;
+    let mut ntot = 0.0;
+
+    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, MPI_COMM_WORLD);
+
+    dwmpi::bcast_scalar(&ntot, MPI_COMM_WORLD);
 
     ntot
 }

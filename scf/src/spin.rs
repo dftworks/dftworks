@@ -23,6 +23,7 @@ use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
 use types::c64;
 use vector3::Vector3f64;
+use vnl::VNL;
 
 //use rayon::prelude::*;
 

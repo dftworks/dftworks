@@ -265,6 +265,7 @@ fn main() {
 
         if !control.is_spin() {
             vkscf = VKSCF::NonSpin(Vec::<KSCF>::new());
+
             if let VKSCF::NonSpin(ref mut vkscf) = vkscf {
                 for ik in ik_first..=ik_last {
                     let k_frac = kpts.get_k_frac(ik);
@@ -287,6 +288,7 @@ fn main() {
             }
         } else {
             vkscf = VKSCF::Spin(Vec::<KSCF>::new(), Vec::<KSCF>::new());
+
             if let VKSCF::Spin(ref mut vkscf_up, ref mut vkscf_dn) = vkscf {
                 for ik in ik_first..=ik_last {
                     let k_frac = kpts.get_k_frac(ik);
