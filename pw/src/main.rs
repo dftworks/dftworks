@@ -1,4 +1,4 @@
-#![allow(warnings)]
+//#![allow(warnings)]
 use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
@@ -37,7 +37,6 @@ fn main() {
     let mut crystal = Crystal::new();
     crystal.read_file("in.crystal");
 
-    let latt0 = crystal.get_latt().clone();
     let geom_optim_mask_cell = crystal.get_cell_mask().clone();
 
     // read in pots
@@ -121,8 +120,6 @@ fn main() {
         // Ewald
 
         let ewald = ewald::Ewald::new(&crystal, &zions, &gvec, &pwden);
-
-        let nspin = if control.is_spin() { 2 } else { 1 };
 
         let mut rhog = if control.is_spin() {
             RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho])
@@ -335,7 +332,7 @@ fn main() {
             vkevecs = VKEigenVector::NonSpin(vec![Matrix::new(0, 0); 0]);
 
             if let VKEigenVector::NonSpin(ref mut vkevecs) = vkevecs {
-                for (ik, pwwfc) in vpwwfc.iter().enumerate() {
+                for (_ik, pwwfc) in vpwwfc.iter().enumerate() {
                     let npw = pwwfc.get_n_plane_waves();
                     vkevecs.push(Matrix::new(npw, nband));
                 }
@@ -348,12 +345,12 @@ fn main() {
             vkevecs = VKEigenVector::Spin(vec![Matrix::new(0, 0); 0], vec![Matrix::new(0, 0); 0]);
 
             if let VKEigenVector::Spin(ref mut vkevc_up, ref mut vkevc_dn) = vkevecs {
-                for (ik, pwwfc) in vpwwfc.iter().enumerate() {
+                for (_ik, pwwfc) in vpwwfc.iter().enumerate() {
                     let npw = pwwfc.get_n_plane_waves();
                     vkevc_up.push(Matrix::new(npw, nband));
                 }
 
-                for (ik, pwwfc) in vpwwfc.iter().enumerate() {
+                for (_ik, pwwfc) in vpwwfc.iter().enumerate() {
                     let npw = pwwfc.get_n_plane_waves();
                     vkevc_dn.push(Matrix::new(npw, nband));
                 }
@@ -447,7 +444,7 @@ fn main() {
             crystal.get_n_atoms()
         ];
 
-        let mut bcell_move = control.get_geom_optim_cell();
+        let bcell_move = control.get_geom_optim_cell();
 
         geom_driver.compute_next_configuration(
             &mut crystal,
@@ -455,7 +452,6 @@ fn main() {
             &stress_total,
             &geom_optim_mask_ions,
             &geom_optim_mask_cell,
-            &latt0,
             bcell_move,
         );
 
@@ -491,26 +487,14 @@ fn main() {
 }
 
 fn post_processing(
-    control: &Control,
-    vkevals: &VKEigenValue,
-    vkevecs: &VKEigenVector,
-    vkscf: &VKSCF,
+    _control: &Control,
+    _vkevals: &VKEigenValue,
+    _vkevecs: &VKEigenVector,
+    _vkscf: &VKSCF,
 ) {
     // total density of states
 
     // println!("   compute total density of states");
 
     //dos::compute_total_density_of_states(control, vkevals, vkevecs, vkscf);
-}
-
-fn matrix3x3_to_vector3(mat: &Matrix<f64>) -> Vec<Vector3f64> {
-    let mut v = vec![Vector3f64::zeros(); 3];
-
-    for i in 0..3 {
-        v[i].x = mat[[0, i]];
-        v[i].y = mat[[1, i]];
-        v[i].z = mat[[2, i]];
-    }
-
-    v
 }

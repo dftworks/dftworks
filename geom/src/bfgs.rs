@@ -36,7 +36,6 @@ impl GeomOptimizationDriver for BFGS {
         stress: &Matrix<f64>,
         force_mask: &[Vector3f64],
         stress_mask: &Matrix<f64>,
-        latt0: &Lattice,
         bcell_move: bool,
     ) {
         if self.iter == self.nstep {
@@ -46,7 +45,7 @@ impl GeomOptimizationDriver for BFGS {
         }
 
         if bcell_move {
-            move_cell_and_ions(self, crystal, force, stress, force_mask, stress_mask, latt0);
+            move_cell_and_ions(self, crystal, force, stress, force_mask, stress_mask);
         } else {
             move_ions(self, crystal, force, force_mask);
         }
@@ -62,14 +61,13 @@ fn move_cell_and_ions(
     stress: &Matrix<f64>,
     force_mask: &[Vector3f64],
     stress_mask: &Matrix<f64>,
-    latt0: &Lattice,
 ) {
     let volume = crystal.get_latt().volume();
     let precon = volume.powf(1.0 / 3.0);
 
-    let mut gcoord = compute_generalized_coordinates(crystal, latt0);
+    let mut gcoord = compute_generalized_coordinates(crystal);
 
-    let gforce = compute_generalized_forces(crystal, latt0, force, stress);
+    let gforce = compute_generalized_forces(crystal, force, stress);
 
     // mask
 
@@ -128,7 +126,7 @@ fn move_cell_and_ions(
 
     println!("epsilon after symmetrization = \n {}", epsilon);
 
-    set_lattice_vectors_with_strain(crystal, latt0, &epsilon);
+    set_lattice_vectors_with_strain(crystal,&epsilon);
 
     // set new atom coordinates
 
@@ -168,13 +166,15 @@ fn move_ions(
     crystal.set_atom_positions_from_frac(&atoms_frac);
 }
 
-fn set_lattice_vectors_with_strain(crystal: &mut Crystal, latt0: &Lattice, strain: &Matrix<f64>) {
+fn set_lattice_vectors_with_strain(crystal: &mut Crystal, strain: &Matrix<f64>) {
     let mut factor = strain.clone();
 
     for i in 0..3 {
         factor[[i, i]] += 1.0;
     }
 
+    let latt0 = crystal.get_latt();
+    
     let mlatt = factor.dot(latt0.as_matrix());
 
     let new_latt = Lattice::new(mlatt.get_col(0), mlatt.get_col(1), mlatt.get_col(2));
@@ -182,12 +182,14 @@ fn set_lattice_vectors_with_strain(crystal: &mut Crystal, latt0: &Lattice, strai
     crystal.set_lattice_vectors(&new_latt);
 }
 
-fn compute_generalized_coordinates(crystal: &Crystal, latt0: &Lattice) -> Vec<Vector3f64> {
+fn compute_generalized_coordinates(crystal: &Crystal) -> Vec<Vector3f64> {
     let natoms = crystal.get_n_atoms();
 
     let mut gcoord = vec![Vector3f64::zeros(); 3 + natoms];
 
     // cell : strain tensor
+
+    let latt0 = crystal.get_latt();
 
     let mut latt0_inv = latt0.as_matrix().clone();
 
@@ -218,7 +220,6 @@ fn compute_generalized_coordinates(crystal: &Crystal, latt0: &Lattice) -> Vec<Ve
 
 fn compute_generalized_forces(
     crystal: &Crystal,
-    latt0: &Lattice,
     force: &[Vector3f64],
     stress: &Matrix<f64>,
 ) -> Vec<Vector3f64> {
@@ -229,6 +230,8 @@ fn compute_generalized_forces(
     let volume = crystal.get_latt().volume();
 
     // cell : stress
+
+    let latt0 = crystal.get_latt();
 
     let mut latt0_inv = latt0.as_matrix().clone();
 

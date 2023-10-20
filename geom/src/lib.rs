@@ -5,7 +5,6 @@ mod diis;
 use diis::*;
 
 use crystal::Crystal;
-use lattice::Lattice;
 use matrix::*;
 use vector3::*;
 
@@ -17,7 +16,6 @@ pub trait GeomOptimizationDriver {
         stress: &Matrix<f64>,
         force_mask: &[Vector3f64],
         stress_mask: &Matrix<f64>,
-        latt0: &Lattice,
         bcell_move: bool,
     );
 }
