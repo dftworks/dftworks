@@ -150,15 +150,27 @@ fn main() {
         // set rhog and rho_3d to be the atomic super position
 
         if dwmpi::is_root() {
-            if geom_iter == 1 && std::path::Path::new("out.scf.rho").exists() {
-                if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
-                    if let RHOR::NonSpin(ref mut rho_3d) = &mut rho_3d {
-                        rho_3d.load("out.scf.rho");
-                        rgtrans.r3d_to_g1d(&gvec, &pwden, rho_3d.as_slice(), rhog);
+            if geom_iter == 1 {
+                if std::path::Path::new("out.scf.rho.hdf5").exists() {
+                    if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
+                        if let RHOR::NonSpin(ref mut rho_3d) = &mut rho_3d {
+                            rho_3d.load_hdf5("out.scf.rho.hdf5");
+                            rgtrans.r3d_to_g1d(&gvec, &pwden, rho_3d.as_slice(), rhog);
+                        }
                     }
-                }
 
-                println!("   load charge density from out.scf.rho");
+                    println!("   load charge density from out.scf.rho.hdf5");
+                }
+                else if std::path::Path::new("out.scf.rho").exists() {
+                    if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
+                        if let RHOR::NonSpin(ref mut rho_3d) = &mut rho_3d {
+                            rho_3d.load("out.scf.rho");
+                            rgtrans.r3d_to_g1d(&gvec, &pwden, rho_3d.as_slice(), rhog);
+                        }
+                    }
+
+                    println!("   load charge density from out.scf.rho");
+                }
             } else {
                 density_driver.from_atomic_super_position(
                     &pots,
@@ -413,9 +425,12 @@ fn main() {
             if control.get_save_rho() {
                 if let RHOR::NonSpin(ref rho_3d) = &rho_3d {
                     rho_3d.save("out.scf.rho");
+                    rho_3d.save_hdf5("out.scf.rho.hdf5");
                 } else if let RHOR::Spin(ref rho_3d_up, ref rho_3d_dn) = &rho_3d {
                     rho_3d_up.save("out.scf.rho.up");
+                    rho_3d_up.save_hdf5("out.scf.rho.up.hdf5");
                     rho_3d_dn.save("out.scf.rho.dn");
+                    rho_3d_dn.save_hdf5("out.scf.rho.dn.hdf5");
                 }
             }
 

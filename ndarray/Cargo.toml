@@ -11,3 +11,4 @@ types = { path = "../types" }
 dwconsts = { path = "../dwconsts" }
 itertools = "*"
 num = "*"
+hdf5 = "0.8.1"
