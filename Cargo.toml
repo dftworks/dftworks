@@ -7,6 +7,7 @@ opt-level = 3
 codegen-units = 6
 
 [workspace]
+resolver = "2"
 
 members = [
 	"dwmpi",
