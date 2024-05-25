@@ -40,6 +40,10 @@ The [Intel MKL library](https://www.intel.com/content/www/us/en/develop/document
 [Spglib](http://spglib.github.io/spglib/
 ) is used for finding and handling crystal symmetries. It should be installed into the directory <code>/opt/spglib/lib</code>. If the library is installed in other directories, the library location specified in symmetry/build.rs should be updated.
 
+## HDF5
+
+The Rust crate [hdf5 0.8.1](https://docs.rs/hdf5/latest/hdf5/) requires HDF5 version 1.10.
+
 ## Build the code
 
 In the directory dftworks, run the following command.
