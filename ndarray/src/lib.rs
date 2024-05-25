@@ -1,12 +1,7 @@
-use hdf5::File as File_hdf5;
-use hdf5::types::H5Type;
-use num::complex::Complex;
-
-pub mod array2;
-pub use array2::*;
+//pub mod array2;
+//pub use array2::*;
 
 mod array3_c64;
-pub use array3_c64::*;
 
 use num::traits::Zero;
 use std::convert::TryInto;
@@ -170,46 +165,6 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
         for (s, d) in multizip((data.iter(), self.data.iter_mut())) {
             *d = *s;
         }
-    }
-}
-
-
-impl<T: Default + Copy + Clone + H5Type + Into<f64>> Array3<Complex<T>> {
-    /// Save the array to a HDF5 file. The shape, and the real and the imaginary parts of the data are saved in their respective datasets.
-    pub fn save_hdf5(&self, filename: &str) {
-        let file = File_hdf5::create(filename).unwrap();
-
-        // Write shape
-        let _dataset_shape = file.new_dataset_builder()
-            .with_data(&self.shape)
-            .create("shape").unwrap();
-
-        let real_data: Vec<f64> = self.data.iter().map(|&c| c.re.into()).collect();
-        let imag_data: Vec<f64> = self.data.iter().map(|&c| c.im.into()).collect();
-        
-        // Write real part
-        let _dataset_real = file.new_dataset_builder()
-            .with_data(&real_data)
-            .create("real").unwrap();
-        
-        // Write imaginary part
-        let _dataset_imag = file.new_dataset_builder()
-            .with_data(&imag_data)
-            .create("imag").unwrap();
-    }
-
-    /// Load the array from a HDF5 file as saved by the save_hdf5 function.
-    pub fn load_hdf5(&mut self, filename: &str) {
-        let file = File_hdf5::open(filename).unwrap();
-        
-        // Read shape
-        let shape: Vec<usize> = file.dataset("shape").unwrap().read().unwrap().to_vec();
-        self.shape = shape.try_into().unwrap();
-
-        // Read data
-        let real_data: Vec<T> = file.dataset("real").unwrap().read().unwrap().to_vec();
-        let imag_data: Vec<T> = file.dataset("imag").unwrap().read().unwrap().to_vec();
-        self.data = real_data.iter().zip(imag_data).map(|(&r, i)| Complex::new(r, i)).collect();
     }
 }
 
