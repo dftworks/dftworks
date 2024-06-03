@@ -422,6 +422,29 @@ fn main() {
             crystal.output();
         }
 
+        // save wavefunction
+        if control.get_save_wfc() {
+            if let VKEigenVector::NonSpin(ref vkevecs) = &vkevecs {
+                for (im, m) in vkevecs.iter().enumerate() {
+                    let ik = ik_first + im;
+                    let filename = format!("out.wfc.k.{}.hdf5", ik);
+                    m.save_hdf5(&filename);
+                }
+            } else if let VKEigenVector::Spin(ref vkevecs_up, ref vkevecs_dn) = &vkevecs {
+                for (im, m) in vkevecs_up.iter().enumerate() {
+                    let ik = ik_first + im;
+                    let filename = format!("out.wfc.up.k.{}.hdf5", ik);
+                    m.save_hdf5(&filename);
+                }
+                for (im, m) in vkevecs_dn.iter().enumerate() {
+                    let ik = ik_first + im;
+                    let filename = format!("out.wfc.dn.k.{}.hdf5", ik);
+                    m.save_hdf5(&filename);
+                }
+            }
+        }
+        
+
         // if converged, then exit
 
         let force_max = force::get_max_force(&force_total);
