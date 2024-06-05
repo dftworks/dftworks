@@ -1,6 +1,7 @@
 symmetry = false
 
 save_rho = true
+save_wfc = true
 
 kpts_scheme = kmesh
 
