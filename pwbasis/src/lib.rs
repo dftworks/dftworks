@@ -64,6 +64,43 @@ impl PWBasis {
             kg,
         }
     }
+
+    /// Save the PWBasis to a HDF5 file.
+    pub fn save_hdf5(&self, group: &mut hdf5::Group) {
+        let dataset_pwbasis = group
+            .new_dataset_builder()
+            .with_data(&self.get_kg())
+            .create("kg")
+            .unwrap();
+
+        dataset_pwbasis
+            .new_attr_builder()
+            .with_data(&self.get_k_cart().to_vec())
+            .create("k_cart")
+            .unwrap();
+
+        let int_size = match usize::BITS {
+            32 => hdf5::types::IntSize::U4,
+            64 => hdf5::types::IntSize::U8,
+            _ => panic!("Unknown usize size"),
+        };
+
+        dataset_pwbasis
+            .new_attr_builder()
+            .empty_as(&hdf5::types::TypeDescriptor::Unsigned(int_size))
+            .create("k_index")
+            .unwrap()
+            .write_scalar(&self.get_k_index())
+            .unwrap();
+
+        dataset_pwbasis
+            .new_attr_builder()
+            .empty_as(&hdf5::types::TypeDescriptor::Unsigned(int_size))
+            .create("n_pw")
+            .unwrap()
+            .write_scalar(&self.get_n_plane_waves())
+            .unwrap();
+    }
 }
 
 fn compute_kg(gvec: &GVector, xk: Vector3f64, gindex: &[usize], kg: &mut [f64]) {

@@ -10,3 +10,4 @@ edition = "2018"
 matrix = { path = "../matrix" }
 vector3 = { path = "../vector3" }
 itertools = "*"
+hdf5 = "0.8.1"

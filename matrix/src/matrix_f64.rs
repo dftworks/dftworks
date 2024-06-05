@@ -137,4 +137,32 @@ impl Matrix<f64> {
     pub fn sum(&self) -> f64 {
         return self.data.iter().sum();
     }
+
+    /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.
+    pub fn save_hdf5(&self, group: &mut hdf5::Group) {
+        // Write nrow, ncol
+        let _dataset_nrow = group
+            .new_dataset_builder()
+            .with_data(&[self.nrow, self.ncol])
+            .create("shape")
+            .unwrap();
+
+        // Write data
+        let _dataset_real = group
+            .new_dataset_builder()
+            .with_data(&self.data)
+            .create("data")
+            .unwrap();
+    }
+
+    /// Load the array from a HDF5 group as saved by the save_hdf5 function.
+    pub fn load_hdf5(&mut self, group: &mut hdf5::Group) {
+        // Read nrow and ncol
+        let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
+        self.nrow = *shape.get(0).unwrap();
+        self.ncol = *shape.get(1).unwrap();
+
+        // Read data
+        self.data = group.dataset("data").unwrap().read().unwrap().to_vec();
+    }
 }

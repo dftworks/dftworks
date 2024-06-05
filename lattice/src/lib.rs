@@ -160,6 +160,11 @@ impl Lattice {
             }
         }
     }
+
+    /// Save the PWBasis to a HDF5 file.
+    pub fn save_hdf5(&self, group: &mut hdf5::Group) {
+        self.data.save_hdf5(group)
+    }
 }
 
 impl fmt::Display for Lattice {

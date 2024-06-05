@@ -286,6 +286,9 @@ impl<T: Debug + Display> fmt::Display for Matrix<T> {
     }
 }
 
+// TODO: Implement save_hdf5 and load_hdf5 here if the support of complex types in the hdf5 crate is released.
+//       See: https://github.com/aldanor/hdf5-rust/pull/210 and https://github.com/aldanor/hdf5-rust/issues/262
+
 #[test]
 fn test_matrix() {
     let mut m: Matrix<f64> = Matrix::<f64>::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);

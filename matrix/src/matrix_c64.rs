@@ -1,9 +1,9 @@
 use crate::Matrix;
 use dwconsts::*;
+
 use itertools::multizip;
 use lapack_sys::*;
 use num_traits::Zero;
-use hdf5::File as File_hdf5;
 use std::ops::AddAssign;
 use std::ops::Mul;
 use types::c64;
@@ -141,11 +141,9 @@ impl Matrix<c64> {
     }
 
     /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.
-    pub fn save_hdf5(&self, filename: &str) {
-        let file = File_hdf5::create(filename).unwrap();
-
-        // Write nrow
-        let _dataset_nrow = file
+    pub fn save_hdf5(&self, group: &mut hdf5::Group) {
+        // Write nrow, ncol
+        let _dataset_nrow = group
             .new_dataset_builder()
             .with_data(&[self.nrow, self.ncol])
             .create("shape")
@@ -155,32 +153,30 @@ impl Matrix<c64> {
         let imag_data: Vec<f64> = self.data.iter().map(|&c| c.im.into()).collect();
 
         // Write real part
-        let _dataset_real = file
+        let _dataset_real = group
             .new_dataset_builder()
             .with_data(&real_data)
             .create("real")
             .unwrap();
 
         // Write imaginary part
-        let _dataset_imag = file
+        let _dataset_imag = group
             .new_dataset_builder()
             .with_data(&imag_data)
             .create("imag")
             .unwrap();
     }
 
-    /// Load the array from a HDF5 file as saved by the save_hdf5 function.
-    pub fn load_hdf5(&mut self, filename: &str) {
-        let file = File_hdf5::open(filename).unwrap();
-
+    /// Load the array from a HDF5 group as saved by the save_hdf5 function.
+    pub fn load_hdf5(&mut self, group: &mut hdf5::Group) {
         // Read nrow and ncol
-        let shape: Vec<usize> = file.dataset("shape").unwrap().read().unwrap().to_vec();
+        let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
         self.nrow = *shape.get(0).unwrap();
         self.ncol = *shape.get(1).unwrap();
 
         // Read data
-        let real_data: Vec<f64> = file.dataset("real").unwrap().read().unwrap().to_vec();
-        let imag_data: Vec<f64> = file.dataset("imag").unwrap().read().unwrap().to_vec();
+        let real_data: Vec<f64> = group.dataset("real").unwrap().read().unwrap().to_vec();
+        let imag_data: Vec<f64> = group.dataset("imag").unwrap().read().unwrap().to_vec();
         self.data = real_data
             .iter()
             .zip(imag_data)

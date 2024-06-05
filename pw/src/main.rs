@@ -152,9 +152,9 @@ fn main() {
         if dwmpi::is_root() {
             if geom_iter == 1 && std::path::Path::new("out.scf.rho.hdf5").exists() {
                 if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
-                    if let RHOR::NonSpin(ref mut rho_3d) = &mut rho_3d {
-                        rho_3d.load_hdf5("out.scf.rho.hdf5");
-                        rgtrans.r3d_to_g1d(&gvec, &pwden, rho_3d.as_slice(), rhog);
+                    rho_3d.load_hdf5("out.scf.rho.hdf5");
+                    if let RHOR::NonSpin(data) = &mut rho_3d {
+                        rgtrans.r3d_to_g1d(&gvec, &pwden, data.as_slice(), rhog);
                     }
                 }
 
@@ -411,12 +411,7 @@ fn main() {
 
         if dwmpi::is_root() {
             if control.get_save_rho() {
-                if let RHOR::NonSpin(ref rho_3d) = &rho_3d {
-                    rho_3d.save_hdf5("out.scf.rho.hdf5");
-                } else if let RHOR::Spin(ref rho_3d_up, ref rho_3d_dn) = &rho_3d {
-                    rho_3d_up.save_hdf5("out.scf.rho.up.hdf5");
-                    rho_3d_dn.save_hdf5("out.scf.rho.dn.hdf5");
-                }
+                rho_3d.save_hdf5(&blatt);
             }
 
             crystal.output();
@@ -424,26 +419,8 @@ fn main() {
 
         // save wavefunction
         if control.get_save_wfc() {
-            if let VKEigenVector::NonSpin(ref vkevecs) = &vkevecs {
-                for (im, m) in vkevecs.iter().enumerate() {
-                    let ik = ik_first + im;
-                    let filename = format!("out.wfc.k.{}.hdf5", ik);
-                    m.save_hdf5(&filename);
-                }
-            } else if let VKEigenVector::Spin(ref vkevecs_up, ref vkevecs_dn) = &vkevecs {
-                for (im, m) in vkevecs_up.iter().enumerate() {
-                    let ik = ik_first + im;
-                    let filename = format!("out.wfc.up.k.{}.hdf5", ik);
-                    m.save_hdf5(&filename);
-                }
-                for (im, m) in vkevecs_dn.iter().enumerate() {
-                    let ik = ik_first + im;
-                    let filename = format!("out.wfc.dn.k.{}.hdf5", ik);
-                    m.save_hdf5(&filename);
-                }
-            }
+            vkevecs.save_hdf5(&ik_first, &vpwwfc, &blatt);
         }
-        
 
         // if converged, then exit
 
