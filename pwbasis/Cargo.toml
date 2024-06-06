@@ -11,3 +11,4 @@ lattice = { path = "../lattice" }
 gvector = { path = "../gvector" }
 utility = { path = "../utility" }
 vector3 = { path = "../vector3" }
+hdf5 = "0.8.1"

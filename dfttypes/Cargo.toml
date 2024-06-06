@@ -11,4 +11,7 @@ types = { path = "../types" }
 matrix = { path = "../matrix" }
 ndarray = { path = "../ndarray" }
 kscf = { path = "../kscf" }
+pwbasis = { path = "../pwbasis" }
+lattice = { path = "../lattice" }
 enum-as-inner = "*"
+hdf5 = "0.8.1"

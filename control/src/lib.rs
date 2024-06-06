@@ -43,6 +43,7 @@ pub struct Control {
     task: String,        // scf, band
     restart: bool,
     save_rho: bool,
+    save_wfc: bool,
     eigen_solver: String, // sd, psd, cg, pcg, arpack, davidson
 
     davidson_ndim: usize,
@@ -245,6 +246,7 @@ impl Control {
             "band" => {
                 self.restart = true;
                 self.save_rho = false;
+                self.save_wfc = false;
                 //self.scf_max_iter = 1;
             }
 
@@ -262,6 +264,10 @@ impl Control {
 
     pub fn get_save_rho(&self) -> bool {
         self.save_rho
+    }
+
+    pub fn get_save_wfc(&self) -> bool {
+        self.save_wfc
     }
 
     pub fn get_occ_inversion(&self) -> f64 {
@@ -282,6 +288,7 @@ impl Control {
         self.geom_optim_stress_tolerance = 0.05; // kbar
 
         self.save_rho = true;
+        self.save_wfc = true;
 
         self.ecut_wfc = 400.0 * EV_TO_HA; // ev in in.ctrl, need to convert to HA
         self.ecut_rho = 4.0 * self.ecut_wfc;
@@ -468,6 +475,10 @@ impl Control {
 
                 "save_rho" => {
                     self.save_rho = s[1].parse().unwrap();
+                }
+
+                "save_wfc" => {
+                    self.save_wfc = s[1].parse().unwrap();
                 }
 
                 "eigen_solver" => {
