@@ -3,12 +3,13 @@ use gvector::GVector;
 use utility;
 use vector3::Vector3f64;
 
+#[derive(Default)]
 pub struct PWBasis {
     k_cart: Vector3f64, // in cartesian coordinates
     k_index: usize,     // index of this xk in all xks
     npw: usize,         // number of plane waves
-    gindex: Vec<usize>,
-    kg: Vec<f64>, // norms of the vectors xk+gvec
+    gindex: Vec<usize>, // indices of G vectors used in this set of plane wave basis
+    kg: Vec<f64>,       // norms of the vectors xk+gvec
 }
 
 impl PWBasis {
@@ -100,6 +101,31 @@ impl PWBasis {
             .unwrap()
             .write_scalar(&self.get_n_plane_waves())
             .unwrap();
+
+        group
+            .new_dataset_builder()
+            .with_data(&self.get_gindex())
+            .create("gindex")
+            .unwrap();
+    }
+
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        let mut pwbasis = PWBasis {
+            kg: group.dataset("kg").unwrap().read().unwrap().to_vec(),
+            gindex: group.dataset("gindex").unwrap().read().unwrap().to_vec(),
+            k_index: group.attr("k_index").unwrap().read_scalar().unwrap(),
+            npw: group.attr("n_pw").unwrap().read_scalar().unwrap(),
+            ..Default::default()
+        };
+
+        let k_cart: Vec<f64> = group.attr("k_cart").unwrap().read().unwrap().to_vec();
+        pwbasis.k_cart = Vector3f64::new(
+            *k_cart.first().unwrap(),
+            *k_cart.get(1).unwrap(),
+            *k_cart.get(2).unwrap(),
+        );
+
+        pwbasis
     }
 }
 

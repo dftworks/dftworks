@@ -76,6 +76,10 @@ impl VKEigenVector {
             }
         }
     }
+
+    pub fn load_hdf5(&mut self) {
+        todo!("Wavefunction cannot be loaded yet!");
+    }
 }
 
 #[derive(EnumAsInner)]
@@ -133,16 +137,29 @@ impl RHOR {
         }
     }
 
-    pub fn load_hdf5(&mut self, filename: &str) {
+    pub fn load_hdf5(&mut self) -> Lattice {
         match self {
             RHOR::NonSpin(rho_3d) => {
-                let hdf5_file = hdf5::File::open(filename).unwrap();
+                let hdf5_file = hdf5::File::open("out.scf.rho.hdf5").unwrap();
 
-                let mut group_tmp = hdf5_file.group("RhoR").unwrap();
-                rho_3d.load_hdf5(&mut group_tmp);
+                let group_tmp = hdf5_file.group("RhoR").unwrap();
+                *rho_3d = Array3::<c64>::load_hdf5(&group_tmp);
+
+                let group_tmp = hdf5_file.group("BLattice").unwrap();
+                Lattice::load_hdf5(&group_tmp)
             }
-            RHOR::Spin(_rho_3d_up, _rho_3d_dn) => {
-                todo!("Spin-polarized densities cannot be loaded yet!")
+            RHOR::Spin(rho_3d_up, rho_3d_dn) => {
+                let hdf5_file_up = hdf5::File::open("out.scf.rho.up.hdf5").unwrap();
+                let hdf5_file_dn = hdf5::File::open("out.scf.rho.dn.hdf5").unwrap();
+
+                let group_tmp = hdf5_file_up.group("RhoR").unwrap();
+                *rho_3d_up = Array3::<c64>::load_hdf5(&group_tmp);
+
+                let group_tmp = hdf5_file_dn.group("RhoR").unwrap();
+                *rho_3d_dn = Array3::<c64>::load_hdf5(&group_tmp);
+
+                let group_tmp = hdf5_file_up.group("BLattice").unwrap();
+                Lattice::load_hdf5(&group_tmp)
             }
         }
     }

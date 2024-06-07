@@ -121,19 +121,23 @@ impl Array3<c64> {
     }
 
     /// Load the array from a HDF5 group as saved by the save_hdf5 function.
-    pub fn load_hdf5(&mut self, group: &mut hdf5::Group) {
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        let mut arr = Self::default();
+
         // Read shape
         let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
-        self.shape = shape.try_into().unwrap();
+        arr.shape = shape.try_into().unwrap();
 
         // Read data
         let real_data: Vec<f64> = group.dataset("real").unwrap().read().unwrap().to_vec();
         let imag_data: Vec<f64> = group.dataset("imag").unwrap().read().unwrap().to_vec();
-        self.data = real_data
+        arr.data = real_data
             .iter()
             .zip(imag_data)
             .map(|(&r, i)| c64::new(r, i))
             .collect();
+
+        arr
     }
 }
 
