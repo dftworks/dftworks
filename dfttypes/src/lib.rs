@@ -84,7 +84,7 @@ impl VKEigenVector {
                 let mut pwbasis_vec = Vec::<PWBasis>::new();
                 let mut blatt = Lattice::default();
 
-                for i in ik_first..ik_last {
+                for i in ik_first..=ik_last {
                     let filename = format!("out.wfc.up.k.{}.hdf5", i);
                     let hdf5_file = hdf5::File::open(filename).unwrap();
 
@@ -109,7 +109,7 @@ impl VKEigenVector {
                 let mut pwbasis_vec = Vec::<PWBasis>::new();
                 let mut blatt = Lattice::default();
 
-                for i in ik_first..ik_last {
+                for i in ik_first..=ik_last {
                     let filename = format!("out.wfc.up.k.{}.hdf5", i);
                     let hdf5_file = hdf5::File::open(filename).unwrap();
 
@@ -124,7 +124,7 @@ impl VKEigenVector {
                     let group_tmp = hdf5_file.group("BLattice").unwrap();
                     blatt = Lattice::load_hdf5(&group_tmp);
                 }
-                for i in ik_first..ik_last {
+                for i in ik_first..=ik_last {
                     let filename = format!("out.wfc.dn.k.{}.hdf5", i);
                     let hdf5_file = hdf5::File::open(filename).unwrap();
 
