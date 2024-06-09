@@ -77,8 +77,63 @@ impl VKEigenVector {
         }
     }
 
-    pub fn load_hdf5(&mut self) {
-        todo!("Wavefunction cannot be loaded yet!");
+    pub fn load_hdf5(is_spin: bool, ik_first: usize, ik_last: usize) -> (Vec<PWBasis>, Lattice, VKEigenVector) {
+        match is_spin {
+            false => {
+                let mut eigen_vecs = Vec::<Matrix<c64>>::new();
+                let mut pwbasis_vec = Vec::<PWBasis>::new();
+                let mut blatt = Lattice::default();
+
+                for i in ik_first..ik_last {
+                    let filename = format!("out.wfc.up.k.{}.hdf5", i);
+                    let hdf5_file = hdf5::File::open(filename).unwrap();
+
+                    let group_tmp = hdf5_file.group("EigenVector").unwrap();
+                    let eigen_vec_tmp = Matrix::<c64>::load_hdf5(&group_tmp);
+                    eigen_vecs.push(eigen_vec_tmp);
+
+                    // Load PWBasis information
+                    let group_tmp = hdf5_file.create_group("PWBasis").unwrap();
+                    let pwbasis_tmp = PWBasis::load_hdf5(&group_tmp);
+                    pwbasis_vec.push(pwbasis_tmp);
+
+                    // Load reciprocal lattice
+                    let group_tmp = hdf5_file.group("BLattice").unwrap();
+                    blatt = Lattice::load_hdf5(&group_tmp);
+                }
+                (pwbasis_vec, blatt, VKEigenVector::NonSpin(eigen_vecs))
+            },
+            true => {
+                let mut eigen_vecs_up = Vec::<Matrix<c64>>::new();
+                let mut eigen_vecs_dn = Vec::<Matrix<c64>>::new();
+                let mut pwbasis_vec = Vec::<PWBasis>::new();
+                let mut blatt = Lattice::default();
+
+                for i in ik_first..ik_last {
+                    let filename = format!("out.wfc.up.k.{}.hdf5", i);
+                    let hdf5_file = hdf5::File::open(filename).unwrap();
+
+                    let group_tmp = hdf5_file.group("EigenVector").unwrap();
+                    eigen_vecs_up.push(Matrix::<c64>::load_hdf5(&group_tmp));
+
+                    // Load PWBasis information
+                    let group_tmp = hdf5_file.group("PWBasis").unwrap();
+                    pwbasis_vec.push(PWBasis::load_hdf5(&group_tmp));
+
+                    // Load reciprocal lattice
+                    let group_tmp = hdf5_file.group("BLattice").unwrap();
+                    blatt = Lattice::load_hdf5(&group_tmp);
+                }
+                for i in ik_first..ik_last {
+                    let filename = format!("out.wfc.dn.k.{}.hdf5", i);
+                    let hdf5_file = hdf5::File::open(filename).unwrap();
+
+                    let group_tmp = hdf5_file.group("EigenVector").unwrap();
+                    eigen_vecs_dn.push(Matrix::<c64>::load_hdf5(&group_tmp));
+                }
+                (pwbasis_vec, blatt, VKEigenVector::Spin(eigen_vecs_up, eigen_vecs_dn))
+            },
+        }
     }
 }
 
@@ -137,29 +192,33 @@ impl RHOR {
         }
     }
 
-    pub fn load_hdf5(&mut self) -> Lattice {
-        match self {
-            RHOR::NonSpin(rho_3d) => {
+    pub fn load_hdf5(is_spin: bool) -> (Lattice, RHOR) {
+        match is_spin {
+            false => {
                 let hdf5_file = hdf5::File::open("out.scf.rho.hdf5").unwrap();
 
                 let group_tmp = hdf5_file.group("RhoR").unwrap();
-                *rho_3d = Array3::<c64>::load_hdf5(&group_tmp);
+                let rho_3d = Array3::<c64>::load_hdf5(&group_tmp);
 
                 let group_tmp = hdf5_file.group("BLattice").unwrap();
-                Lattice::load_hdf5(&group_tmp)
+                (Lattice::load_hdf5(&group_tmp), RHOR::NonSpin(rho_3d))
             }
-            RHOR::Spin(rho_3d_up, rho_3d_dn) => {
+            true => {
+                // ---------------------- UP ----------------------
                 let hdf5_file_up = hdf5::File::open("out.scf.rho.up.hdf5").unwrap();
-                let hdf5_file_dn = hdf5::File::open("out.scf.rho.dn.hdf5").unwrap();
 
                 let group_tmp = hdf5_file_up.group("RhoR").unwrap();
-                *rho_3d_up = Array3::<c64>::load_hdf5(&group_tmp);
+                let rho_3d_up = Array3::<c64>::load_hdf5(&group_tmp);
+
+                // ---------------------- DOWN ----------------------
+                let hdf5_file_dn = hdf5::File::open("out.scf.rho.dn.hdf5").unwrap();
 
                 let group_tmp = hdf5_file_dn.group("RhoR").unwrap();
-                *rho_3d_dn = Array3::<c64>::load_hdf5(&group_tmp);
+                let rho_3d_dn = Array3::<c64>::load_hdf5(&group_tmp);
 
+                // Load reciprocal lattice only from down-spin file, since it is the same for up-spin
                 let group_tmp = hdf5_file_up.group("BLattice").unwrap();
-                Lattice::load_hdf5(&group_tmp)
+                (Lattice::load_hdf5(&group_tmp), RHOR::Spin(rho_3d_up, rho_3d_dn))
             }
         }
     }
