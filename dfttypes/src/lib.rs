@@ -20,7 +20,7 @@ pub enum VKEigenVector {
 }
 
 impl VKEigenVector {
-    pub fn save_hdf5(&self, ik_first: &usize, pwbasis: &[PWBasis], blatt: &Lattice) {
+    pub fn save_hdf5(&self, ik_first: usize, pwbasis: &[PWBasis], blatt: &Lattice) {
         match self {
             VKEigenVector::NonSpin(v) => {
                 for (i, eigen_vec) in v.iter().enumerate() {

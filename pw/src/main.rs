@@ -419,7 +419,7 @@ fn main() {
 
         // save wavefunction
         if control.get_save_wfc() {
-            vkevecs.save_hdf5(&ik_first, &vpwwfc, &blatt);
+            vkevecs.save_hdf5(ik_first, &vpwwfc, &blatt);
         }
 
         // if converged, then exit
