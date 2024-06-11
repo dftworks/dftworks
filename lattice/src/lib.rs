@@ -161,9 +161,16 @@ impl Lattice {
         }
     }
 
-    /// Save the PWBasis to a HDF5 file.
+    /// Save the lattice to a HDF5 file.
     pub fn save_hdf5(&self, group: &mut hdf5::Group) {
-        self.data.save_hdf5(group)
+        self.data.save_hdf5(group);
+    }
+
+    /// Load the lattice from a HDF5 file.
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        Lattice {
+            data: Matrix::<f64>::load_hdf5(group),
+        }
     }
 }
 

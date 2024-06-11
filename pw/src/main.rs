@@ -152,7 +152,7 @@ fn main() {
         if dwmpi::is_root() {
             if geom_iter == 1 && std::path::Path::new("out.scf.rho.hdf5").exists() {
                 if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
-                    rho_3d.load_hdf5("out.scf.rho.hdf5");
+                    rho_3d = RHOR::load_hdf5(control.is_spin()).1;
                     if let RHOR::NonSpin(data) = &mut rho_3d {
                         rgtrans.r3d_to_g1d(&gvec, &pwden, data.as_slice(), rhog);
                     }

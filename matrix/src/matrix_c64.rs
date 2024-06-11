@@ -168,20 +168,24 @@ impl Matrix<c64> {
     }
 
     /// Load the array from a HDF5 group as saved by the save_hdf5 function.
-    pub fn load_hdf5(&mut self, group: &mut hdf5::Group) {
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        let mut mat = Self::default();
+
         // Read nrow and ncol
         let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
-        self.nrow = *shape.get(0).unwrap();
-        self.ncol = *shape.get(1).unwrap();
+        mat.nrow = *shape.get(0).unwrap();
+        mat.ncol = *shape.get(1).unwrap();
 
         // Read data
         let real_data: Vec<f64> = group.dataset("real").unwrap().read().unwrap().to_vec();
         let imag_data: Vec<f64> = group.dataset("imag").unwrap().read().unwrap().to_vec();
-        self.data = real_data
+        mat.data = real_data
             .iter()
             .zip(imag_data)
             .map(|(&r, i)| c64::new(r, i))
             .collect();
+
+        mat
     }
 }
 

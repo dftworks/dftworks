@@ -156,13 +156,17 @@ impl Matrix<f64> {
     }
 
     /// Load the array from a HDF5 group as saved by the save_hdf5 function.
-    pub fn load_hdf5(&mut self, group: &mut hdf5::Group) {
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        let mut mat = Self::default();
+
         // Read nrow and ncol
         let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
-        self.nrow = *shape.get(0).unwrap();
-        self.ncol = *shape.get(1).unwrap();
+        mat.nrow = *shape.get(0).unwrap();
+        mat.ncol = *shape.get(1).unwrap();
 
         // Read data
-        self.data = group.dataset("data").unwrap().read().unwrap().to_vec();
+        mat.data = group.dataset("data").unwrap().read().unwrap().to_vec();
+
+        mat
     }
 }
