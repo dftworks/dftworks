@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  rust-dev:
+    image: rust:latest
+    container_name: rust_dev_container
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/usr/src/app
+    environment:
+      - MKLROOT=/opt/intel/mkl
+      - LD_LIBRARY_PATH=/opt/intel/mkl/lib/intel64
+      - LIBRARY_PATH=/opt/intel/mkl/lib/intel64
+      - CPATH=/opt/intel/mkl/include
+      - PATH=$PATH:/opt/intel/mkl/bin
+    command: ["bash"]
+    ports:
+      - "8080:8080"
+
+volumes:
+  rust-src:
+
