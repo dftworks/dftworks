@@ -31,9 +31,11 @@ Running <code>source ~/.bash_profile</code> will update PATH.
     git clone https://github.com/dftworks/dftworks.git
 </code>
 
-## Intel MKL library
+## Numerical libraries
 
-The [Intel MKL library](https://www.intel.com/content/www/us/en/develop/documentation/get-started-with-mkl-for-dpcpp/top.html) is used for diagalization and FFT. It should be installed into the directory <code>/opt/intel/oneapi/mkl/2021.1.1/lib</code>. If the library is installed in other directories, the library location specified in matrix/build.rs and dwfft/build.rs should be updated.
+* lapack
+* blas
+* fftw
 
 ## Symmetry analysis library
 
