@@ -155,9 +155,9 @@ fn get_initial_fermi_level(nelec: f64, vevals: &Vec<Vec<f64>>) -> f64 {
     dwmpi::reduce_scalar_max(&homo_local, &mut homo, MPI_COMM_WORLD);
     dwmpi::reduce_scalar_min(&lumo_local, &mut lumo, MPI_COMM_WORLD);
 
-    let fermi = (homo + lumo) / 2.0;
+    let mut fermi = (homo + lumo) / 2.0;
 
-    dwmpi::bcast_scalar(&fermi, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut fermi, MPI_COMM_WORLD);
     
     fermi
 }
@@ -177,7 +177,7 @@ pub fn get_total_electrons(vkscf: &mut [KSCF], vevals: &Vec<Vec<f64>>, fermi: f6
 
     dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, MPI_COMM_WORLD);
 
-    dwmpi::bcast_scalar(&ntot, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut ntot, MPI_COMM_WORLD);
 
     ntot
 }

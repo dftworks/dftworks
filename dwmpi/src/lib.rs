@@ -134,10 +134,10 @@ pub fn barrier(comm: MpiComm) -> i32 {
     unsafe { MPI_Barrier(comm) }
 }
 
-pub fn bcast_scalar<T: MPIDataType>(buf: &T, comm: MpiComm) -> i32 {
+pub fn bcast_scalar<T: MPIDataType>(buf: &mut T, comm: MpiComm) -> i32 {
     unsafe {
         MPI_Bcast(
-            buf as *const T as *const c_void,
+            buf as *mut T as *mut c_void,
             1,
             buf.get_mpi_data_type(),
             MPI_ROOT,
@@ -146,12 +146,12 @@ pub fn bcast_scalar<T: MPIDataType>(buf: &T, comm: MpiComm) -> i32 {
     }
 }
 
-pub fn bcast_slice<T: MPIDataType + Default>(buf: &[T], comm: MpiComm) -> i32 {
+pub fn bcast_slice<T: MPIDataType + Default>(buf: &mut [T], comm: MpiComm) -> i32 {
     unsafe {
         let t: T = Default::default();
 
         MPI_Bcast(
-            buf.as_ptr() as *const c_void,
+            buf.as_mut_ptr() as *mut c_void,
             buf.len() as i32,
             t.get_mpi_data_type(),
             MPI_ROOT,
