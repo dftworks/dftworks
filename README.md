@@ -1,10 +1,23 @@
 **The goal of this project [dftworks](https://github.com/dftworks/dftworks) is to employ Rust as the programming language to implement a plane-wave pseudopotential density functional theory simulation package.**
 
-## Code structure
+# Code structure
 
 * Main program: pw
 * Testing: test_example
 * Library: all others
+
+
+# Docker build & run
+
+<code>
+	just docker-build
+</code>
+
+<code>
+	just docker-run
+</code>
+
+# Local development environment
 
 ## Install Rust
 If you are running macOS, Linux, or another Unix-like Operating Systems, to set up the Rust working environment, please run the following command in your terminal and then follow the on-screen instructions.
@@ -46,7 +59,7 @@ Running <code>source ~/.bash_profile</code> will update PATH.
 
 The Rust crate [hdf5 0.8.1](https://docs.rs/hdf5/latest/hdf5/) requires HDF5 version 1.10.
 
-## Build the code
+# Build the code
 
 In the directory dftworks, run the following command.
 
@@ -54,7 +67,7 @@ In the directory dftworks, run the following command.
 
 This will download the dependency modules and compile the code to generate the executable **pw** in the directory **target/release**.
 
-## Test the code
+# Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.
 
