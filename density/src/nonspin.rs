@@ -105,7 +105,7 @@ impl Density for DensityNonspin {
             rho_3d.as_mut_slice(),
             MPI_COMM_WORLD,
         );
-        dwmpi::bcast_slice(rho_3d.as_slice(), MPI_COMM_WORLD);
+        dwmpi::bcast_slice(rho_3d.as_mut_slice(), MPI_COMM_WORLD);
     }
 }
 

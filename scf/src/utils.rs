@@ -230,7 +230,7 @@ pub fn compute_force(
         MPI_COMM_WORLD,
     );
 
-    dwmpi::bcast_slice(vector3::as_slice_of_element(&force_vnl), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(vector3::as_mut_slice_of_element(&mut force_vnl), MPI_COMM_WORLD);
 
     let force_ewald = ewald.get_force();
 
@@ -293,7 +293,7 @@ pub fn compute_stress(
         MPI_COMM_WORLD,
     );
 
-    dwmpi::bcast_slice(stress_kin.as_slice(), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(stress_kin.as_mut_slice(), MPI_COMM_WORLD);
 
     let mut stress_vnl_local = stress::vnl(
         crystal,
@@ -309,7 +309,7 @@ pub fn compute_stress(
         MPI_COMM_WORLD,
     );
 
-    dwmpi::bcast_slice(stress_vnl.as_slice(), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
 
     let stress_hartree = stress::hartree(gvec, pwden, rhog.as_non_spin().unwrap());
     let stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, rhog.as_non_spin().unwrap());
@@ -436,7 +436,7 @@ pub fn get_eigvalue_epsilon(
 
                 _ => {
                     eig_epsilon =
-                        (EPS2 * EV_TO_HA).min(0.001 * energy_diff / (1.0_f64).max(ntot_elec));
+                        (EPS3 * EV_TO_HA).min(0.0001 * energy_diff / (1.0_f64).max(ntot_elec));
 
                     eig_epsilon = eig_epsilon
                         .max(EPS13 * EV_TO_HA)
@@ -493,7 +493,7 @@ pub fn compute_total_energy(
     let mut etot_bands = 0.0;
 
     dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&etot_bands, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut etot_bands, MPI_COMM_WORLD);
 
     //
 
