@@ -41,7 +41,7 @@ impl SCF for SCFNonspin {
         pwden: &PWDensity,
         pots: &PSPot,
         rgtrans: &RGTransform,
-        kpts: &Box<dyn KPTS>,
+        kpts: &dyn KPTS,
         ewald: &Ewald,
         vpwwfc: &[PWBasis],
         vkscf: &mut VKSCF,
@@ -50,7 +50,7 @@ impl SCF for SCFNonspin {
         rhocore_3d: &Array3<c64>,
         vkevals: &mut VKEigenValue,
         vkevecs: &mut VKEigenVector,
-        symdrv: &Box<dyn SymmetryDriver>,
+        symdrv: &dyn SymmetryDriver,
         stress_total: &mut Matrix<f64>,
         force_total: &mut Vec<Vector3f64>,
     ) {
@@ -89,7 +89,7 @@ impl SCF for SCFNonspin {
 
         utils::compute_v_hartree(pwden, rhog, &mut vhg);
 
-        utils::compute_v_e_xc_of_r(&xc, rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
+        utils::compute_v_e_xc_of_r(xc.as_ref(), rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
 
         utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &vxc_3d, &mut vxcg);
 
@@ -157,7 +157,7 @@ impl SCF for SCFNonspin {
 
             // calculate Fermi level; vkscf has to be &mut since occ will be modified
 
-            let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
+            let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, vkevals);
 
             // recalculate the occ
 
@@ -175,8 +175,8 @@ impl SCF for SCFNonspin {
                 pwden,
                 crystal,
                 rhog.as_non_spin().unwrap(),
-                &vkscf.as_non_spin().unwrap(),
-                &vkevals.as_non_spin().unwrap(),
+                vkscf.as_non_spin().unwrap(),
+                vkevals.as_non_spin().unwrap(),
                 rho_3d.as_non_spin_mut().unwrap(),
                 rhocore_3d,
                 &exc_3d,
@@ -186,10 +186,10 @@ impl SCF for SCFNonspin {
 
             // compute rho r by building the density based on the new wavefunctions
 
-            density_driver.compute_charge_density(
-                &vkscf,
+            density_driver.as_ref().compute_charge_density(
+                vkscf,
                 rgtrans,
-                &vkevecs,
+                vkevecs,
                 crystal.get_latt().volume(),
                 rho_3d,
             );
@@ -218,7 +218,7 @@ impl SCF for SCFNonspin {
                 pwden,
                 rgtrans,
                 kpts,
-                &density_driver,
+                density_driver.as_ref(),
                 symdrv,
                 rho_3d,
                 &mut rhog_out,
@@ -229,7 +229,7 @@ impl SCF for SCFNonspin {
             // rhog_out: out rho in G
             // rho_3d:   out rho in r
 
-            utils::compute_v_e_xc_of_r(&xc, rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
+            utils::compute_v_e_xc_of_r(xc.as_ref(), rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
 
             // calculate scf energy
 
@@ -237,8 +237,8 @@ impl SCF for SCFNonspin {
                 pwden,
                 crystal,
                 &rhog_out,
-                &vkscf.as_non_spin().unwrap(),
-                &vkevals.as_non_spin().unwrap(),
+                vkscf.as_non_spin().unwrap(),
+                vkevals.as_non_spin().unwrap(),
                 rho_3d.as_non_spin_mut().unwrap(),
                 rhocore_3d,
                 &exc_3d,
@@ -298,7 +298,7 @@ impl SCF for SCFNonspin {
 
             // rho in G space
 
-            utils::compute_next_density(pwden, &mut mixing, &rhog_out, rhog);
+            utils::compute_next_density(pwden, mixing.as_mut(), &rhog_out, rhog);
 
             // rho  in r space
 
@@ -320,7 +320,7 @@ impl SCF for SCFNonspin {
 
             // v_xc in r space
 
-            utils::compute_v_e_xc_of_r(&xc, rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
+            utils::compute_v_e_xc_of_r(xc.as_ref(), rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
 
             // v_xc in G space
 

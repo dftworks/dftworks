@@ -33,7 +33,7 @@ pub trait SCF {
         pwden: &PWDensity,
         pots: &PSPot,
         rgtrans: &RGTransform,
-        kpts: &Box<dyn KPTS>,
+        kpts: &dyn KPTS,
         ewald: &Ewald,
         vpwwfc: &[PWBasis],
         vkscf: &mut VKSCF,
@@ -42,28 +42,26 @@ pub trait SCF {
         rhocore_3d: &Array3<c64>,
         vkevals: &mut VKEigenValue,
         vkevecs: &mut VKEigenVector,
-        symdrv: &Box<dyn SymmetryDriver>,
+        symdrv: &dyn SymmetryDriver,
         stress_total: &mut Matrix<f64>,
         force_total: &mut Vec<Vector3f64>,
     );
 }
 
 pub fn new(spin_scheme: &str) -> Box<dyn SCF> {
-    let scf: Box<dyn SCF>;
-
-    match spin_scheme {
+    let scf: Box<dyn SCF> = match spin_scheme {
         "nonspin" => {
-            scf = Box::new(SCFNonspin::new());
+            Box::new(SCFNonspin::new())
         }
 
         "spin" => {
-            scf = Box::new(SCFSpin::new());
+            Box::new(SCFSpin::new())
         }
 
         &_ => {
-            scf = Box::new(SCFNonspin::new());
+            Box::new(SCFNonspin::new())
         }
-    }
+    };
 
     scf
 }

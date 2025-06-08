@@ -393,7 +393,7 @@ fn main() {
             &pwden,
             &pots,
             &rgtrans,
-            &kpts,
+            kpts.as_ref(),
             &ewald,
             &vpwwfc,
             &mut vkscf,
@@ -402,7 +402,7 @@ fn main() {
             &rhocore_3d,
             &mut vkevals,
             &mut vkevecs,
-            &symdrv,
+            symdrv.as_ref(),
             &mut stress_total,
             &mut force_total,
         );

@@ -44,7 +44,7 @@ impl SCF for SCFSpin {
         pwden: &PWDensity,
         pots: &PSPot,
         rgtrans: &RGTransform,
-        kpts: &Box<dyn KPTS>,
+        kpts: &dyn KPTS,
         ewald: &Ewald,
         vpwwfc: &[PWBasis],
         vkscf: &mut VKSCF,
@@ -53,7 +53,7 @@ impl SCF for SCFSpin {
         rhocore_3d: &Array3<c64>,
         vkevals: &mut VKEigenValue,
         vkevecs: &mut VKEigenVector,
-        symdrv: &Box<dyn SymmetryDriver>,
+        symdrv: &dyn SymmetryDriver,
         stress_total: &mut Matrix<f64>,
         force_total: &mut Vec<Vector3f64>,
     ) {

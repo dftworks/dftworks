@@ -67,7 +67,7 @@ fn test_vector3() {
         3
     ];
 
-    let v_f64 = v3slice_to_mut_vslice(&mut v);
+    let v_f64 = as_mut_slice_of_element(&mut v);
 
     let mut v2 = vec![0.0; 9];
     for i in 0..9 {

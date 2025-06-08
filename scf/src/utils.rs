@@ -36,7 +36,7 @@ pub fn compute_v_hartree(pwden: &PWDensity, rhog: &RHOG, vhg: &mut [c64]) {
 // v_xc in r space first and then transform to G space; this will change with the density
 
 pub fn compute_v_e_xc_of_r(
-    xc: &Box<dyn XC>,
+    xc: &dyn XC,
     rho_3d: &mut RHOR,
     rhocore_3d: &Array3<c64>,
     vxc_3d: &mut VXCR,
@@ -88,9 +88,9 @@ pub fn compute_and_symmetrize_rho_of_g(
     gvec: &GVector,
     pwden: &PWDensity,
     rgtrans: &RGTransform,
-    kpts: &Box<dyn KPTS>,
-    density_driver: &Box<dyn Density>,
-    symdrv: &Box<dyn SymmetryDriver>,
+    kpts: &dyn KPTS,
+    density_driver: &dyn Density,
+    symdrv: &dyn SymmetryDriver,
     rho_3d: &mut RHOR,
     rhog_out: &mut [c64],
     fftgrid: &FFTGrid,
@@ -102,7 +102,7 @@ pub fn compute_and_symmetrize_rho_of_g(
 
 pub fn compute_next_density(
     pwden: &PWDensity,
-    mixing: &mut Box<dyn Mixing>,
+    mixing: &mut dyn Mixing,
     rhog_out: &[c64],
     rhog: &mut RHOG,
 ) {
@@ -121,7 +121,7 @@ pub fn compute_next_density(
 
 pub fn display_eigen_values(
     crystal: &Crystal,
-    kpts: &Box<dyn KPTS>,
+    kpts: &dyn KPTS,
     vpwwfc: &[PWBasis],
     vkscf: &VKSCF,
     vkevals: &VKEigenValue,
@@ -199,7 +199,7 @@ pub fn compute_force(
     vkevecs: &VKEigenVector,
     rhog: &RHOG,
     vxcg: &VXCG,
-    symdrv: &Box<dyn SymmetryDriver>,
+    symdrv: &dyn SymmetryDriver,
     force_total: &mut Vec<Vector3f64>,
 ) {
     let natoms = crystal.get_n_atoms();
@@ -276,7 +276,7 @@ pub fn compute_stress(
     vxcg: &VXCG,
     vxc_3d: &VXCR,
     exc_3d: &Array3<c64>,
-    symdrv: &Box<dyn SymmetryDriver>,
+    symdrv: &dyn SymmetryDriver,
     stress_total: &mut Matrix<f64>,
 ) {
     let mut stress_kin_local = stress::kinetic(

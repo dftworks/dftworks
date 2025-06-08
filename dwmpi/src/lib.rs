@@ -302,7 +302,7 @@ fn test_mpi() {
         bb = 15.0;
     }
 
-    bcast_scalar(&bb, MPI_COMM_WORLD);
+    bcast_scalar(&mut bb, MPI_COMM_WORLD);
 
     println!(" bb = {}", bb);
 
@@ -315,7 +315,7 @@ fn test_mpi() {
         }
     }
 
-    bcast_slice(&xx, MPI_COMM_WORLD);
+    bcast_slice(&mut xx, MPI_COMM_WORLD);
 
     barrier(MPI_COMM_WORLD);
 
