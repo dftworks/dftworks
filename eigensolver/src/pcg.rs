@@ -27,15 +27,25 @@ pub struct EigenSolverPCG {
 
 impl EigenSolverPCG {
     pub fn new(npw: usize, nband: usize) -> EigenSolverPCG {
-        let x0 = vec![c64::zero(); npw];
-        let h_x0 = vec![c64::zero(); npw];
-        let d0 = vec![c64::zero(); npw];
-        let h_d0 = vec![c64::zero(); npw];
-        let g0 = vec![c64::zero(); npw];
-        let g1 = vec![c64::zero(); npw];
-        let pg0 = vec![c64::zero(); npw];
-        let pg1 = vec![c64::zero(); npw];
-        let precond = vec![c64::zero(); npw];
+        let mut x0 = Vec::with_capacity(npw);
+        let mut h_x0 = Vec::with_capacity(npw);
+        let mut d0 = Vec::with_capacity(npw);
+        let mut h_d0 = Vec::with_capacity(npw);
+        let mut g0 = Vec::with_capacity(npw);
+        let mut g1 = Vec::with_capacity(npw);
+        let mut pg0 = Vec::with_capacity(npw);
+        let mut pg1 = Vec::with_capacity(npw);
+        let mut precond = Vec::with_capacity(npw);
+
+        x0.resize(npw, c64::zero());
+        h_x0.resize(npw, c64::zero());
+        d0.resize(npw, c64::zero());
+        h_d0.resize(npw, c64::zero());
+        g0.resize(npw, c64::zero());
+        g1.resize(npw, c64::zero());
+        pg0.resize(npw, c64::zero());
+        pg1.resize(npw, c64::zero());
+        precond.resize(npw, c64::zero());
 
         EigenSolverPCG { npw, nband, x0, h_x0, d0, h_d0, g0, g1, pg0, pg1, precond }
     }
@@ -238,45 +248,52 @@ fn compute_preconditioner(psi: &[c64], kin: &[f64], kgg: &mut [c64]) {
 
 fn gram_schmidt(evecs: &mut Matrix<c64>, iband: usize) {
     let npw = evecs.nrow();
-
     let mut v = vec![c64::zero(); npw];
     v.copy_from_slice(evecs.get_col(iband));
 
-    let mut proj = vec![c64::zero(); iband];
-    for j in 0..iband {
-        proj[j] = utility::zdot_product(evecs.get_col(j), evecs.get_col(iband));
-    }
-
+    // Pre-allocate projection coefficients
+    let mut proj = Vec::with_capacity(iband);
+    
+    // Compute all projections first (Classical Gram-Schmidt)
     for j in 0..iband {
         let psi = evecs.get_col(j);
+        proj.push(utility::zdot_product(psi, evecs.get_col(iband)));
+    }
 
-        scaled_subtract(&mut v, psi, proj[j]);
+    // Apply all projections using SIMD-friendly operations
+    for (j, &proj_coeff) in proj.iter().enumerate() {
+        let psi = evecs.get_col(j);
+        // Use iterator for better vectorization
+        v.iter_mut()
+            .zip(psi.iter())
+            .for_each(|(vi, &psi_i)| {
+                *vi -= proj_coeff * psi_i;
+            });
     }
 
     utility::normalize_vector_c64(&mut v);
-
     evecs.set_col(iband, &v);
 }
 
-/// u = u - fact * v
-fn scaled_subtract(u: &mut [c64], v: &[c64], fact: c64) {
-    for (x, y) in v.iter().zip(u.iter_mut()) {
-        *y -= x * fact;
-    }
-}
-
 fn orthogonalize_to_lower_bands(evecs: &Matrix<c64>, ibnd: usize, y: &mut [c64]) {
-    let mut proj = vec![c64::zero(); ibnd];
+    // Pre-allocate projection coefficients with capacity
+    let mut proj = Vec::with_capacity(ibnd);
+    
+    // Compute all projections first using iterator for better vectorization
     for i in 0..ibnd {
         let psi = evecs.get_col(i);
-
-        proj[i] = utility::zdot_product(psi, y);
+        proj.push(utility::zdot_product(psi, y));
     }
 
-    for i in 0..ibnd {
+    // Apply all projections using SIMD-friendly operations
+    for (i, &proj_coeff) in proj.iter().enumerate() {
         let psi = evecs.get_col(i);
-
-        scaled_subtract(y, psi, proj[i]);
+        // Use iterator for better vectorization
+        y.iter_mut()
+            .zip(psi.iter())
+            .for_each(|(yi, &psi_i)| {
+                *yi -= proj_coeff * psi_i;
+            });
     }
 }
 

@@ -11,7 +11,7 @@ resolver = "2"
 
 members = [
 	"dwmpi",
-        "mpi_sys",
+    "mpi_sys",
 	"types",
 	"dwconsts",
 	"integral",
