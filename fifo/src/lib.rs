@@ -1,25 +1,26 @@
 /// The last element is the one added last
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub struct FIFO<T> {
-    data: Vec<T>,
+    data: VecDeque<T>,
     capacity: usize,
 }
 
 impl<T> FIFO<T> {
     pub fn new(nelem: usize) -> Self {
         FIFO {
-            data: Vec::with_capacity(nelem),
+            data: VecDeque::with_capacity(nelem),
             capacity: nelem,
         }
     }
 
     pub fn push(&mut self, elem: T) {
         if self.data.len() < self.capacity {
-            self.data.push(elem);
+            self.data.push_back(elem);
         } else {
-            self.data.remove(0usize);
-            self.data.push(elem);
+            self.data.pop_front();
+            self.data.push_back(elem);
         }
     }
 
@@ -28,11 +29,11 @@ impl<T> FIFO<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data.len() == 0
+        self.data.is_empty()
     }
 
     pub fn last(&self) -> &T {
-        self.data.last().unwrap()
+        &self.data.back().unwrap()
     }
 }
 
