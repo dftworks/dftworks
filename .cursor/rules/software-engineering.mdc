@@ -1,0 +1,75 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Software Engineering Best Practices
+
+## Documentation Standards
+- Document all public APIs with clear mathematical descriptions
+- Include `# Panics` sections for functions that can panic
+- Document numerical stability considerations and algorithm choices
+- Reference relevant papers or textbooks for complex algorithms
+
+## Error Handling Philosophy
+- Use `Result<T, E>` for operations that can fail gracefully
+- Panic only for programming errors or unrecoverable states
+- Provide meaningful error messages with context
+- Handle numerical edge cases (division by zero, singular matrices)
+
+## Code Organization
+
+### Module Structure
+- Keep related functionality together (e.g., [eigensolver/src/](mdc:eigensolver/src))
+- Separate interface from implementation
+- Use clear, descriptive names for mathematical concepts
+
+### Function Design
+- Keep functions focused on single mathematical operations
+- Limit function length - complex algorithms should be broken into logical steps
+- Use descriptive parameter names that match mathematical notation when possible
+
+## Testing Strategy
+- Unit tests for individual mathematical functions
+- Integration tests for algorithm convergence
+- Property-based testing for mathematical invariants (orthogonality, energy conservation)
+- Regression tests for known good configurations
+
+## Constants and Configuration
+- Define mathematical and physical constants in [dwconsts/src/lib.rs](mdc:dwconsts/src/lib.rs)
+- Use [control/src/lib.rs](mdc:control/src/lib.rs) for runtime configuration
+- Avoid magic numbers in algorithmic code
+- Make algorithmic parameters configurable when reasonable
+
+## Avoid Over-Engineering
+- Don't abstract until you have multiple concrete use cases
+- Prefer composition over complex inheritance hierarchies
+- Keep trait definitions focused and cohesive
+- Don't optimize prematurely - profile first
+- Simple, clear code is better than clever code
+
+## Code Review Checklist
+- [ ] Algorithm correctness verified against references
+- [ ] Numerical stability considered
+- [ ] Performance impact measured if in hot path
+- [ ] Error cases handled appropriately
+- [ ] Documentation updated
+- [ ] Tests added for new functionality
+
+## Naming Conventions
+- Use physics/mathematics terminology for domain concepts
+- Be consistent with variable names across modules
+- Use descriptive names for complex mathematical operations
+- Follow Rust naming conventions (snake_case for functions, CamelCase for types)
+
+## Dependency Management
+- Minimize external dependencies unless they provide significant value
+- Prefer well-established crates for mathematical operations
+- Document why specific dependencies are chosen
+- Keep [Cargo.toml](mdc:Cargo.toml) organized and commented
+
+## Version Control Practices
+- Make atomic commits with clear, descriptive messages
+- Separate algorithmic changes from refactoring
+- Tag stable versions for reproducible research
+- Document breaking changes in commit messages

@@ -1,0 +1,51 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Numerical Stability and Algorithm Correctness
+
+## Core Principles
+- **Algorithm Fidelity**: Never change the mathematical behavior of established numerical algorithms without explicit justification
+- **Numerical Stability**: Prioritize numerical stability over micro-optimizations
+- **Precision Awareness**: Be mindful of floating-point precision and accumulated errors
+
+## Critical Guidelines
+
+### Linear Algebra Operations
+- Use established BLAS/LAPACK routines from [lapack_sys/src/lib.rs](mdc:lapack_sys/src/lib.rs) and [linalg/src/lib.rs](mdc:linalg/src/lib.rs)
+- Avoid reimplementing matrix operations unless absolutely necessary
+- When working with [matrix/src/lib.rs](mdc:matrix/src/lib.rs), prefer existing methods over custom implementations
+
+### Eigensolvers and Iterative Methods
+- In [eigensolver/src/pcg.rs](mdc:eigensolver/src/pcg.rs), maintain Classical Gram-Schmidt behavior - do NOT change to Modified Gram-Schmidt without understanding convergence implications
+- Preserve original algorithm structure in PCG, Davidson, and other iterative solvers
+- Document any algorithmic changes with mathematical justification
+
+### Tolerance and Convergence
+- Use constants from [dwconsts/src/lib.rs](mdc:dwconsts/src/lib.rs) for numerical tolerances
+- Implement adaptive tolerance schemes carefully, especially in SCF iterations
+- Always test convergence behavior after algorithmic changes
+
+### Complex Number Arithmetic
+- Be careful with complex conjugation and phase relationships in [types/src/lib.rs](mdc:types/src/lib.rs)
+- Ensure Hermitian property preservation in quantum mechanical operators
+- Validate orthogonality relationships after complex vector operations
+
+## Red Flags - Stop and Think
+- Changing Gram-Schmidt from classical to modified (affects convergence)
+- Modifying preconditioner formulas without physical justification
+- Altering FFT indexing or phase conventions in [dwfft3d/src/lib.rs](mdc:dwfft3d/src/lib.rs)
+- Changing integration schemes in [integral/src/lib.rs](mdc:integral/src/lib.rs)
+
+## Testing Requirements
+- Always test eigenvalue accuracy against reference implementations
+- Verify orthogonality of eigenvectors after orthogonalization procedures
+- Check energy conservation in SCF cycles
+- Validate symmetry preservation when applicable
+
+## Common Numerical Issues
+- Division by zero or very small numbers - use appropriate epsilon values from [dwconsts/src/lib.rs](mdc:dwconsts/src/lib.rs)
+- Matrix conditioning - check condition numbers for ill-conditioned systems
+- Iterative convergence - monitor residuals and implement proper stopping criteria
+- Floating-point overflow/underflow - especially in exponential functions

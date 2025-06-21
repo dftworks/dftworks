@@ -1,0 +1,77 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# DFT and Quantum Chemistry Specific Guidelines
+
+## Physical Consistency
+- Ensure energy units are consistent (Hartree/Rydberg) using [dwconsts/src/lib.rs](mdc:dwconsts/src/lib.rs)
+- Preserve symmetry properties in [symmetry/src/lib.rs](mdc:symmetry/src/lib.rs)
+- Maintain charge conservation in density operations [density/src/lib.rs](mdc:density/src/lib.rs)
+- Validate total electron count matches expected values
+
+## SCF Convergence
+- Implement robust mixing schemes in [mixing/src/](mdc:mixing/src)
+- Use appropriate convergence criteria in [scf/src/lib.rs](mdc:scf/src/lib.rs)
+- Monitor energy and density convergence simultaneously
+- Implement DIIS and other acceleration methods carefully
+- Handle SCF oscillations and divergence gracefully
+
+## Basis Set Operations
+- Maintain orthogonality in plane wave basis [pwbasis/src/lib.rs](mdc:pwbasis/src/lib.rs)
+- Handle G-vector indexing correctly in [gvector/src/lib.rs](mdc:gvector/src/lib.rs)
+- Ensure proper k-point sampling in [kpts/src/lib.rs](mdc:kpts/src/lib.rs)
+- Validate completeness relations for basis sets
+
+## Exchange-Correlation Functionals
+- Implement XC functionals according to established references in [xc/src/lib.rs](mdc:xc/src/lib.rs)
+- Ensure proper spin handling for magnetic systems
+- Validate against known benchmark systems
+- Handle meta-GGA derivatives correctly
+
+## Pseudopotentials
+- Handle pseudopotential projections correctly in [vnl/src/lib.rs](mdc:vnl/src/lib.rs) and [vloc/src/lib.rs](mdc:vloc/src/lib.rs)
+- Maintain norm-conservation properties
+- Implement proper real-space integration
+- Validate transferability across different chemical environments
+
+## Geometry Optimization
+- Implement force calculations consistently in [force/src/lib.rs](mdc:force/src/lib.rs)
+- Handle stress tensor for cell optimization in [stress/src/lib.rs](mdc:stress/src/lib.rs)
+- Use appropriate optimization algorithms in [geom/src/](mdc:geom/src)
+- Validate energy-force consistency
+
+## Common DFT Pitfalls to Avoid
+- Don't change orthogonalization schemes without understanding SCF impact
+- Avoid modifying FFT conventions without updating all dependent code
+- Don't alter integration grids without validating total charge
+- Be careful with units conversion between different energy scales
+- Maintain proper treatment of periodic boundary conditions
+- Don't mix different pseudopotential conventions
+
+## Validation Requirements
+- Compare total energies with established codes (QE, VASP, etc.)
+- Verify forces and stresses for geometry optimization
+- Test band structure calculations against references
+- Validate convergence with respect to basis set size and k-point sampling
+- Check conservation laws (charge, energy) throughout calculations
+
+## Physical Interpretations
+- Ensure eigenvalues have correct physical meaning (band energies)
+- Validate density distributions are physically reasonable
+- Check that forces point in expected directions
+- Verify that stress tensors have correct symmetry
+- Validate magnetic moments for spin-polarized systems
+
+## Smearing and Finite Temperature
+- Implement appropriate smearing functions in [smearing/src/](mdc:smearing/src)
+- Handle Fermi level determination correctly in [fermilevel/src/](mdc:fermilevel/src)
+- Ensure proper extrapolation to T=0 limit
+- Validate entropy contributions to free energy
+
+## Crystal Structure and Symmetry
+- Handle crystal structure correctly in [crystal/src/lib.rs](mdc:crystal/src/lib.rs)
+- Use lattice operations properly in [lattice/src/lib.rs](mdc:lattice/src/lib.rs)
+- Implement symmetry operations correctly
+- Validate Brillouin zone sampling

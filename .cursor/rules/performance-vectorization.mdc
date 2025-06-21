@@ -1,0 +1,87 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Performance and Vectorization Guidelines
+
+## Vectorization Strategy
+- Use iterator chains for SIMD-friendly operations
+- Prefer `iter().zip().for_each()` over explicit indexing loops
+- Leverage Rust's auto-vectorization capabilities
+
+## Memory Management
+
+### Pre-allocation and Reuse
+- Pre-allocate workspace vectors in struct constructors (see [eigensolver/src/pcg.rs](mdc:eigensolver/src/pcg.rs))
+- Use `Vec::with_capacity()` when final size is known
+- Reuse temporary vectors across iterations to avoid allocations
+
+### Cache-Friendly Patterns
+- Access matrix data in column-major order to match [matrix/src/lib.rs](mdc:matrix/src/lib.rs) layout
+- Batch similar operations to improve cache locality
+- Consider data layout impact on performance in hot loops
+
+## BLAS/LAPACK Integration
+- Use optimized BLAS routines from [lapack_sys/src/lib.rs](mdc:lapack_sys/src/lib.rs) for large matrix operations
+- Avoid scalar loops for operations that can use Level-2 or Level-3 BLAS
+- Profile to ensure BLAS calls are actually faster than simple loops for your problem sizes
+
+## Optimization Patterns
+
+### Good Patterns
+```rust
+// GOOD: Iterator-based, vectorizable
+v.iter_mut()
+    .zip(u.iter())
+    .for_each(|(vi, &ui)| *vi += alpha * ui);
+
+// GOOD: Pre-allocated workspace
+struct Solver {
+    workspace: Vec<c64>,  // Reused across calls
+}
+
+// GOOD: Batch operations
+let projections: Vec<_> = basis_vectors
+    .iter()
+    .map(|v| utility::zdot_product(v, target))
+    .collect();
+```
+
+### Avoid These Patterns
+```rust
+// AVOID: Scalar loop with indexing
+for i in 0..n {
+    v[i] += alpha * u[i];  // Harder to vectorize
+}
+
+// AVOID: Repeated allocations in hot loops
+let temp = vec![0.0; n];  // In SCF iteration
+
+// AVOID: Unnecessary memory copies
+let result = expensive_computation(&data.clone());
+```
+
+## Performance Monitoring
+- Profile critical paths in SCF iterations and eigensolvers
+- Monitor memory allocation patterns in hot loops
+- Measure actual performance impact of optimizations
+- Don't optimize based on assumptions - measure first
+
+## FFT and Grid Operations
+- Leverage optimized FFT implementations in [dwfft3d/src/lib.rs](mdc:dwfft3d/src/lib.rs)
+- Consider memory layout for 3D grid operations in [fftgrid/src/lib.rs](mdc:fftgrid/src/lib.rs)
+- Batch FFT operations when possible
+- Use in-place transformations to reduce memory usage
+
+## Parallel Processing Guidelines
+- Use [dwmpi/src/lib.rs](mdc:dwmpi/src/lib.rs) for MPI parallelization
+- Consider workload distribution in k-point parallelization [kpts_distribution/src/lib.rs](mdc:kpts_distribution/src/lib.rs)
+- Minimize communication overhead in parallel sections
+- Balance load across processors
+
+## Hot Path Optimization
+- Focus optimization efforts on SCF iterations, eigensolvers, and FFTs
+- Profile before optimizing - don't guess where bottlenecks are
+- Consider algorithmic improvements before micro-optimizations
+- Measure memory bandwidth utilization, not just FLOPS

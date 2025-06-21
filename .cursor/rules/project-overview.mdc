@@ -1,0 +1,63 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# DFTWorks Project Overview and Priorities
+
+## Project Mission
+DFTWorks is a high-performance density functional theory (DFT) code written in Rust, focusing on numerical accuracy, computational efficiency, and maintainable scientific software.
+
+## Core Priorities (in order)
+1. **Numerical Stability and Algorithm Correctness** - See [numerical-stability.mdc](mdc:.cursor/rules/numerical-stability.mdc)
+2. **Performance and Vectorization** - See [performance-vectorization.mdc](mdc:.cursor/rules/performance-vectorization.mdc)
+3. **DFT Domain Expertise** - See [dft-domain-specific.mdc](mdc:.cursor/rules/dft-domain-specific.mdc)
+4. **Clean Software Engineering** - See [software-engineering.mdc](mdc:.cursor/rules/software-engineering.mdc)
+
+## Key Architecture Components
+
+### Core Mathematical Libraries
+- [matrix/src/lib.rs](mdc:matrix/src/lib.rs) - Matrix operations with BLAS/LAPACK integration
+- [linalg/src/lib.rs](mdc:linalg/src/lib.rs) - Linear algebra routines
+- [eigensolver/src/](mdc:eigensolver/src) - Iterative eigensolvers (PCG, Davidson)
+- [dwfft3d/src/lib.rs](mdc:dwfft3d/src/lib.rs) - 3D FFT operations
+
+### DFT-Specific Modules
+- [scf/src/lib.rs](mdc:scf/src/lib.rs) - Self-consistent field iterations
+- [pwbasis/src/lib.rs](mdc:pwbasis/src/lib.rs) - Plane wave basis sets
+- [density/src/lib.rs](mdc:density/src/lib.rs) - Electron density operations
+- [xc/src/lib.rs](mdc:xc/src/lib.rs) - Exchange-correlation functionals
+
+### Infrastructure
+- [control/src/lib.rs](mdc:control/src/lib.rs) - Runtime configuration
+- [dwconsts/src/lib.rs](mdc:dwconsts/src/lib.rs) - Physical and numerical constants
+- [dwmpi/src/lib.rs](mdc:dwmpi/src/lib.rs) - MPI parallelization
+
+## Development Philosophy
+- **Measure, don't guess** - Profile before optimizing
+- **Numerical first** - Correctness over cleverness
+- **Simple is better** - Avoid over-engineering
+- **Document decisions** - Especially algorithmic choices
+
+## When Making Changes
+1. **Algorithm changes**: Understand mathematical implications first
+2. **Performance changes**: Profile before and after
+3. **API changes**: Consider impact on numerical stability
+4. **Refactoring**: Separate from algorithmic changes
+
+## Testing Strategy
+- Unit tests for mathematical functions
+- Integration tests for convergence behavior
+- Benchmark against established DFT codes
+- Regression tests for known configurations
+
+## Common Workflows
+- SCF calculations: [control](mdc:control/src/lib.rs) → [scf](mdc:scf/src/lib.rs) → [eigensolver](mdc:eigensolver/src) → [mixing](mdc:mixing/src)
+- Band structure: Similar to SCF but with different k-point sampling
+- Geometry optimization: SCF + [force](mdc:force/src/lib.rs) + [geom](mdc:geom/src)
+
+## Performance Hotspots
+1. Eigensolver iterations (70-80% of compute time)
+2. FFT operations for density/potential transforms
+3. Matrix-vector operations in Hamiltonian application
+4. MPI communication in parallel runs
