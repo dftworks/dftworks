@@ -176,7 +176,7 @@ fn main() {
         }
 
         if control.is_spin() {
-	    let (rhog_up, rhog_dn) = rhog.as_spin_mut().unwrap();
+            let (rhog_up, rhog_dn) = rhog.as_spin_mut().unwrap();
 
             dwmpi::bcast_slice(rhog_up.as_mut_slice(), MPI_COMM_WORLD);
             dwmpi::bcast_slice(rhog_dn.as_mut_slice(), MPI_COMM_WORLD);
@@ -186,9 +186,15 @@ fn main() {
             dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
             dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
         } else {
-            dwmpi::bcast_slice(rhog.as_non_spin_mut().unwrap().as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(
+                rhog.as_non_spin_mut().unwrap().as_mut_slice(),
+                MPI_COMM_WORLD,
+            );
 
-            dwmpi::bcast_slice(rho_3d.as_non_spin_mut().unwrap().as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(
+                rho_3d.as_non_spin_mut().unwrap().as_mut_slice(),
+                MPI_COMM_WORLD,
+            );
         }
 
         let mut total_rho = 0.0;

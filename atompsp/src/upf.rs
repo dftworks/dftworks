@@ -387,7 +387,7 @@ fn test_upf_xml() {
 
     let pspfile = d.to_str().unwrap();
     println!("{}", pspfile);
-    
+
     let mut atompsp = AtomPSPUPF::new();
     atompsp.read_file(&pspfile);
     println!("{}", atompsp);

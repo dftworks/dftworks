@@ -6,6 +6,7 @@ use dwconsts::*;
 use fhkl;
 use gvector::GVector;
 use itertools::multizip;
+use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -13,7 +14,6 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 use vector3::*;
-use mpi_sys::MPI_COMM_WORLD;
 
 pub struct DensityNonspin {}
 

@@ -10,18 +10,18 @@ use types::c64;
 use utility;
 
 pub struct EigenSolverPCG {
-    npw: usize,
+    npw:   usize,
     nband: usize,
 
     // work space
-    x0: Vec<c64>,
-    h_x0: Vec<c64>,
-    d0: Vec<c64>,
-    h_d0: Vec<c64>,
-    g0: Vec<c64>,
-    g1: Vec<c64>,
-    pg0: Vec<c64>,
-    pg1: Vec<c64>,
+    x0:      Vec<c64>,
+    h_x0:    Vec<c64>,
+    d0:      Vec<c64>,
+    h_d0:    Vec<c64>,
+    g0:      Vec<c64>,
+    g1:      Vec<c64>,
+    pg0:     Vec<c64>,
+    pg1:     Vec<c64>,
     precond: Vec<c64>,
 }
 
@@ -54,10 +54,9 @@ impl EigenSolverPCG {
 impl EigenSolver for EigenSolverPCG {
     ///evecs: initial guess as input; store new eigenvectors
 
-    fn compute(
-        &mut self, ham_on_psi: &mut dyn FnMut(&[c64], &mut [c64]), ham_diag: &[f64], evecs: &mut Matrix<c64>, evals: &mut [f64], occ: &[f64], tol_eigval: f64, max_cg_loop: usize,
-        max_scf_iter: usize,
-    ) -> (usize, usize) {
+    fn compute(&mut self, ham_on_psi: &mut dyn FnMut(&[c64], &mut [c64]), ham_diag: &[f64], evecs: &mut Matrix<c64>, evals: &mut [f64], occ: &[f64], tol_eigval: f64,
+               max_cg_loop: usize, max_scf_iter: usize)
+               -> (usize, usize) {
         let mut n_hpsi = 0;
         let mut n_band_converged = 0;
 
@@ -71,7 +70,7 @@ impl EigenSolver for EigenSolverPCG {
                 gram_schmidt(evecs, iband);
             }
 
-	    // nscf or scf
+            // nscf or scf
             let tol2_eigval = if max_scf_iter <= 1 {
                 tol_eigval
             } else {
@@ -253,7 +252,7 @@ fn gram_schmidt(evecs: &mut Matrix<c64>, iband: usize) {
 
     // Pre-allocate projection coefficients
     let mut proj = Vec::with_capacity(iband);
-    
+
     // Compute all projections first (Classical Gram-Schmidt)
     for j in 0..iband {
         let psi = evecs.get_col(j);
@@ -264,11 +263,9 @@ fn gram_schmidt(evecs: &mut Matrix<c64>, iband: usize) {
     for (j, &proj_coeff) in proj.iter().enumerate() {
         let psi = evecs.get_col(j);
         // Use iterator for better vectorization
-        v.iter_mut()
-            .zip(psi.iter())
-            .for_each(|(vi, &psi_i)| {
-                *vi -= proj_coeff * psi_i;
-            });
+        v.iter_mut().zip(psi.iter()).for_each(|(vi, &psi_i)| {
+                                        *vi -= proj_coeff * psi_i;
+                                    });
     }
 
     utility::normalize_vector_c64(&mut v);
@@ -278,7 +275,7 @@ fn gram_schmidt(evecs: &mut Matrix<c64>, iband: usize) {
 fn orthogonalize_to_lower_bands(evecs: &Matrix<c64>, ibnd: usize, y: &mut [c64]) {
     // Pre-allocate projection coefficients with capacity
     let mut proj = Vec::with_capacity(ibnd);
-    
+
     // Compute all projections first using iterator for better vectorization
     for i in 0..ibnd {
         let psi = evecs.get_col(i);
@@ -289,11 +286,9 @@ fn orthogonalize_to_lower_bands(evecs: &Matrix<c64>, ibnd: usize, y: &mut [c64])
     for (i, &proj_coeff) in proj.iter().enumerate() {
         let psi = evecs.get_col(i);
         // Use iterator for better vectorization
-        y.iter_mut()
-            .zip(psi.iter())
-            .for_each(|(yi, &psi_i)| {
-                *yi -= proj_coeff * psi_i;
-            });
+        y.iter_mut().zip(psi.iter()).for_each(|(yi, &psi_i)| {
+                                        *yi -= proj_coeff * psi_i;
+                                    });
     }
 }
 
@@ -318,19 +313,18 @@ fn test_sparse_solver_pcg() {
         h_diag[i] = m[[i, i]].re;
     }
 
-    let mut occ = vec![0.0;n];
+    let mut occ = vec![0.0; n];
 
     for i in 0..nev {
-	occ[i] = 1.0;
+        occ[i] = 1.0;
     }
-    
+
     for i in 0..nev {
         utility::make_normalized_rand_vector(evecs.get_mut_col(i));
     }
 
     let max_cg_loop = 100;
     let max_scf_iter = 1;
-    
 
     let mut sparse = EigenSolverPCG::new(n, nev);
     let (nconv, niter) = sparse.compute(&mut m_dot_v, &h_diag, &mut evecs, &mut evals, &occ, EPS5, max_cg_loop, max_scf_iter);

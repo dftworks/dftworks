@@ -156,7 +156,7 @@ fn set_miller(miller: &mut [Vector3i32], n1: usize, n2: usize, n3: usize) {
 #[test]
 fn test_gvector() {
     use dwconsts::*;
-    
+
     // length in angstrom
     let mut latt = Lattice::new(&[3.0, 0.0, 0.0], &[0.0, 3.0, 0.0], &[0.0, 0.0, 3.0]);
 

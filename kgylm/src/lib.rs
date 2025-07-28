@@ -6,7 +6,7 @@ use pwbasis::PWBasis;
 use special;
 use std::collections::HashMap;
 use vector3::Vector3f64;
-// 
+//
 // Y_lm(k+G)
 // dY_lm(k+G) / dx, dY_lm(k+G) / dy, dY_lm(k+G) / dz
 //

@@ -230,7 +230,10 @@ pub fn compute_force(
         MPI_COMM_WORLD,
     );
 
-    dwmpi::bcast_slice(vector3::as_mut_slice_of_element(&mut force_vnl), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(
+        vector3::as_mut_slice_of_element(&mut force_vnl),
+        MPI_COMM_WORLD,
+    );
 
     let force_ewald = ewald.get_force();
 

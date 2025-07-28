@@ -4,7 +4,7 @@ use utility;
 use vector3::Vector3f64;
 
 /// A plane wave basis set for a specific k-point
-/// 
+///
 /// PWBasis represents a set of plane wave basis functions for a given k-point,
 /// containing the G-vector indices and kinetic energies |k+G|² for each plane wave.
 #[derive(Default)]
@@ -43,13 +43,13 @@ impl PWBasis {
     }
 
     /// Creates a new PWBasis for the given k-point and energy cutoff
-    /// 
+    ///
     /// # Arguments
     /// * `k_cart` - k-point in Cartesian coordinates
     /// * `k_index` - index of this k-point in the full k-point list
     /// * `ecut` - energy cutoff in Hartree
     /// * `gvec` - G-vector grid
-    /// 
+    ///
     /// # Returns
     /// A new PWBasis with plane waves sorted by |k+G|²
     pub fn new(k_cart: Vector3f64, k_index: usize, ecut: f64, gvec: &GVector) -> PWBasis {
@@ -64,7 +64,7 @@ impl PWBasis {
         // Compute kinetic energies directly without temporary allocation
         let mut kg = Vec::with_capacity(npw);
         kg.resize(npw, 0.0);
-        
+
         compute_kg_optimized(gvec, k_cart, &gindex, &mut kg);
 
         // Sort by kinetic energy using argsort
@@ -84,9 +84,9 @@ impl PWBasis {
     }
 
     /// Save the PWBasis to a HDF5 file.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function will panic if:
     /// - HDF5 dataset creation fails
     /// - HDF5 attribute creation fails
@@ -135,9 +135,9 @@ impl PWBasis {
     }
 
     /// Load a PWBasis from a HDF5 file.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function will panic if:
     /// - HDF5 dataset reading fails
     /// - HDF5 attribute reading fails
@@ -151,46 +151,57 @@ impl PWBasis {
             .read()
             .expect("Failed to read kg dataset")
             .to_vec();
-            
+
         let gindex: Vec<usize> = group
             .dataset("gindex")
             .expect("Failed to find gindex dataset")
             .read()
             .expect("Failed to read gindex dataset")
             .to_vec();
-            
+
         let k_index: usize = group
             .attr("k_index")
             .expect("Failed to find k_index attribute")
             .read_scalar()
             .expect("Failed to read k_index attribute");
-            
+
         let npw: usize = group
             .attr("n_pw")
             .expect("Failed to find n_pw attribute")
             .read_scalar()
             .expect("Failed to read n_pw attribute");
-        
+
         let k_cart_vec: Vec<f64> = group
             .attr("k_cart")
             .expect("Failed to find k_cart attribute")
             .read()
             .expect("Failed to read k_cart attribute")
             .to_vec();
-        
+
         // Validate k_cart vector has exactly 3 elements
         if k_cart_vec.len() != 3 {
-            panic!("k_cart attribute must have exactly 3 elements, found {}", k_cart_vec.len());
+            panic!(
+                "k_cart attribute must have exactly 3 elements, found {}",
+                k_cart_vec.len()
+            );
         }
-        
+
         let k_cart = Vector3f64::new(k_cart_vec[0], k_cart_vec[1], k_cart_vec[2]);
 
         // Validate data consistency
         if kg.len() != npw {
-            panic!("Inconsistent kg data: expected {} elements, found {}", npw, kg.len());
+            panic!(
+                "Inconsistent kg data: expected {} elements, found {}",
+                npw,
+                kg.len()
+            );
         }
         if gindex.len() != npw {
-            panic!("Inconsistent gindex data: expected {} elements, found {}", npw, gindex.len());
+            panic!(
+                "Inconsistent gindex data: expected {} elements, found {}",
+                npw,
+                gindex.len()
+            );
         }
 
         PWBasis {

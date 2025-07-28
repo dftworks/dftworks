@@ -1,9 +1,9 @@
 //#![allow(warnings)]
 
 use dwconsts;
+use std::f64::consts;
 use types::*;
 use vector3::*;
-use std::f64::consts;
 
 pub fn erf(x: f64) -> f64 {
     libm::erf(x)
@@ -13,11 +13,9 @@ pub fn erfc(x: f64) -> f64 {
     libm::erfc(x)
 }
 
-
 // https://en.wikipedia.org/wiki/Bessel_function#Spherical_Bessel_functions:_jn,_yn
 
 pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
-
     if x < dwconsts::EPS6 {
         match n {
             0 => {
@@ -115,7 +113,6 @@ pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
         }
     }
 }
-
 
 // from https://en.wikipedia.org/wiki/Spherical_harmonics
 // Ylm is called a spherical harmonic function of degree l and order m.

@@ -157,7 +157,6 @@ fn compute_rhocore_of_g(
     rhog
 }
 
-
 // d(rhocore) / d(G^2)
 pub fn drhocore_of_g_on_shells(atompsp: &dyn AtomPSP, pwden: &PWDensity, volume: f64) -> Vec<f64> {
     let gshell = pwden.get_gshell_norms();

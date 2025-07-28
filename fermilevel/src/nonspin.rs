@@ -158,7 +158,7 @@ fn get_initial_fermi_level(nelec: f64, vevals: &Vec<Vec<f64>>) -> f64 {
     let mut fermi = (homo + lumo) / 2.0;
 
     dwmpi::bcast_scalar(&mut fermi, MPI_COMM_WORLD);
-    
+
     fermi
 }
 

@@ -71,7 +71,7 @@ fn compute_coef(vout: &FIFO<Vec<f64>>) -> Vec<f64> {
     let mut b = a.clone();
 
     a.pinv();
-    
+
     let s = a.sum();
 
     for i in 0..n {
