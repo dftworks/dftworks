@@ -18,9 +18,9 @@ RUN apt-get update && apt-get install -y \
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
-RUN wget https://cmake.org/files/v3.20/cmake-3.20.6.tar.gz &&\
-    tar xf cmake-3.20.6.tar.gz &&\
-    cd cmake-3.20.6 &&\
+RUN wget https://cmake.org/files/v3.25/cmake-3.25.0.tar.gz &&\
+    tar xf cmake-3.25.0.tar.gz &&\
+    cd cmake-3.25.0 &&\
     ./bootstrap --prefix=/usr/local &&\
     make -j8 && make install && make clean
 
