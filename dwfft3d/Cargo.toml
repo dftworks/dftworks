@@ -9,3 +9,11 @@ edition = "2018"
 [dependencies]
 types = { path = "../types" }
 ndarray = { path = "../ndarray" }
+num-complex = "0.4"
+cfg-if = "1.0"
+##########
+[features]
+cpu = []
+gpu = []
+default = ["cpu"]  
+

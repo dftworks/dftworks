@@ -39,3 +39,5 @@ num-traits = "*"
 dwmpi = { path = "../dwmpi" }
 mpi_sys = { path = "../mpi_sys" }
 kpts_distribution = { path = "../kpts_distribution" }
+dwfft3d = { path = "../dwfft3d" }
+cust = "0.3" # CUDA bindings
