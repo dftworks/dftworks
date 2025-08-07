@@ -33,6 +33,15 @@ pub struct DWFFT3D {
     plan_bwd: *const c_void,
 }
 
+pub fn init_backend() {
+    #[cfg(feature = "gpu")]
+    println!("Using GPU");
+
+    #[cfg(feature = "cpu")]
+    println!("Using CPU");
+}
+
+
 impl DWFFT3D {
     pub fn new(n1: usize, n2: usize, n3: usize) -> DWFFT3D {
         unsafe {
