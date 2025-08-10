@@ -16,7 +16,8 @@ pub static FFTW_ESTIMATE: c_uint = 64;
 type CufftHandle = c_int;
 
 const CUFFT_SUCCESS: c_int = 0;
-const CUFFT_Z2Z: c_int = 0x6a; // double complex to double complex
+//const CUFFT_Z2Z: c_int = 0x6a; // double complex to double complex
+const CUFFT_Z2Z: c_int = 0x69; // double complex to double complex
 
 // ---------------------------
 // cuFFT FFI bindings
