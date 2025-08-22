@@ -33,12 +33,19 @@ pub struct DWFFT3D {
     plan_bwd: *const c_void,
 }
 
-pub fn init_backend() {
-    #[cfg(feature = "gpu")]
-    println!("Using GPU");
 
-    #[cfg(feature = "cpu")]
-    println!("Using CPU");
+use cfg_if::cfg_if;
+
+pub fn init_backend() {
+    cfg_if! {
+        if #[cfg(feature = "gpu")] {
+            println!("Using GPU");
+        } else if #[cfg(feature = "cpu")] {
+            println!("Using CPU");
+        } else {
+            compile_error!("No backend feature enabled. Enable either 'cpu' or 'gpu'.");
+        }
+    }
 }
 
 
