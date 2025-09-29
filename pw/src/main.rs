@@ -33,7 +33,8 @@ fn main() {
     if dwmpi::is_root() {
         control.display();
     }
-
+    // dwfft3d
+    dwfft3d::init_backend();
     // read in crystal
 
     let mut crystal = Crystal::new();
