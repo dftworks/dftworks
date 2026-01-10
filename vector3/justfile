@@ -1,0 +1,25 @@
+# Justfile for vector3 module - test commands
+
+# Default: show all available commands
+default:
+    @just --list
+
+# Run all tests
+test:
+    cargo test --package vector3
+
+# Run tests with output
+test-verbose:
+    cargo test --package vector3 -- --nocapture
+
+# Run a specific test
+test-specific TEST:
+    cargo test --package vector3 --lib {{TEST}}
+
+# Run tests sequentially (useful for debugging race conditions)
+test-serial:
+    cargo test --package vector3 -- --test-threads=1
+
+# Run tests with documentation
+test-doc:
+    cargo test --package vector3 --doc

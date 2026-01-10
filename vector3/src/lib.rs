@@ -9,6 +9,7 @@ pub type Vector3c64 = Vector3<c64>;
 
 ///////////////////////////////////////////////////
 
+#[repr(C)]
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Vector3<T> {
     pub x: T,
@@ -17,10 +18,12 @@ pub struct Vector3<T> {
 }
 
 impl<T: num_traits::identities::Zero + Copy + std::ops::Mul<Output = T>> Vector3<T> {
+    #[inline]
     pub fn new(x: T, y: T, z: T) -> Self {
         Vector3 { x, y, z }
     }
 
+    #[inline]
     pub fn zeros() -> Vector3<T> {
         Vector3 {
             x: T::zero(),
@@ -33,14 +36,25 @@ impl<T: num_traits::identities::Zero + Copy + std::ops::Mul<Output = T>> Vector3
         vec![self.x, self.y, self.z]
     }
 
+    /// Get a slice view of the vector components
+    /// 
+    /// # Safety
+    /// This relies on the struct layout. The struct should be #[repr(C)] for guaranteed layout.
+    #[inline]
     pub fn as_slice(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts(&self.x as *const T, 3) }
     }
 
+    /// Get a mutable slice view of the vector components
+    /// 
+    /// # Safety
+    /// This relies on the struct layout. The struct should be #[repr(C)] for guaranteed layout.
+    #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe { std::slice::from_raw_parts_mut(&mut self.x as *mut T, 3) }
     }
 
+    #[inline]
     pub fn set_zeros(&mut self) {
         self.x = T::zero();
         self.y = T::zero();
@@ -56,26 +70,5 @@ pub fn as_slice_of_element<T>(v: &[Vector3<T>]) -> &[T] {
     unsafe { std::slice::from_raw_parts(v.as_ptr() as *const T, v.len() * 3) }
 }
 
-#[test]
-fn test_vector3() {
-    let mut v = vec![
-        Vector3f64 {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0
-        };
-        3
-    ];
-
-    let v_f64 = as_mut_slice_of_element(&mut v);
-
-    let mut v2 = vec![0.0; 9];
-    for i in 0..9 {
-        v2[i] = v_f64[i];
-    }
-
-    println!("v1 = {:?}", v2);
-    println!("v2 = {:?}", v_f64);
-
-    assert_eq!(v2, v_f64);
-}
+#[cfg(test)]
+mod tests;

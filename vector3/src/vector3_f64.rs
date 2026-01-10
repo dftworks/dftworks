@@ -8,15 +8,18 @@ use crate::Vector3;
 pub type Vector3f64 = Vector3<f64>;
 
 impl Vector3f64 {
+    /// Compute dot product: a · b
+    #[inline]
     pub fn dot_product(&self, other: &Vector3f64) -> f64 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    //
-    // c.x = a.y * b.z - a.z * b.y
-    // c.y = a.z * b.x - a.x * b.z
-    // c.z = a.x * b.y - a.y * b.x
-    //
+    /// Compute cross product: a × b
+    ///
+    /// c.x = a.y * b.z - a.z * b.y
+    /// c.y = a.z * b.x - a.x * b.z
+    /// c.z = a.x * b.y - a.y * b.x
+    #[inline]
     pub fn cross_product(&self, other: &Vector3f64) -> Vector3f64 {
         let x = self.y * other.z - self.z * other.y;
         let y = self.z * other.x - self.x * other.z;
@@ -25,14 +28,23 @@ impl Vector3f64 {
         Vector3f64::new(x, y, z)
     }
 
+    /// Compute squared norm (|v|²) - faster than norm() when sqrt is not needed
+    #[inline]
+    pub fn norm_squared(&self) -> f64 {
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
+
+    /// Compute norm (|v|) = sqrt(x² + y² + z²)
+    #[inline]
     pub fn norm2(&self) -> f64 {
-        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+        self.norm_squared().sqrt()
     }
 }
 
 impl Add<Vector3f64> for Vector3f64 {
     type Output = Vector3f64;
 
+    #[inline]
     fn add(self, rhs: Vector3f64) -> Vector3f64 {
         Vector3f64 {
             x: self.x + rhs.x,
@@ -45,6 +57,7 @@ impl Add<Vector3f64> for Vector3f64 {
 impl Mul<Vector3f64> for Vector3f64 {
     type Output = f64;
 
+    #[inline]
     fn mul(self, rhs: Vector3f64) -> f64 {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
     }
@@ -53,6 +66,7 @@ impl Mul<Vector3f64> for Vector3f64 {
 impl Mul<f64> for Vector3f64 {
     type Output = Self;
 
+    #[inline]
     fn mul(self, rhs: f64) -> Self {
         Vector3f64::new(self.x * rhs, self.y * rhs, self.z * rhs)
     }
@@ -61,6 +75,7 @@ impl Mul<f64> for Vector3f64 {
 impl Mul<Vector3f64> for f64 {
     type Output = Vector3f64;
 
+    #[inline]
     fn mul(self, rhs: Vector3f64) -> Vector3f64 {
         Vector3f64::new(self * rhs.x, self * rhs.y, self * rhs.z)
     }
@@ -69,6 +84,7 @@ impl Mul<Vector3f64> for f64 {
 impl Div<f64> for Vector3f64 {
     type Output = Self;
 
+    #[inline]
     fn div(self, rhs: f64) -> Self {
         Vector3f64::new(self.x / rhs, self.y / rhs, self.z / rhs)
     }

@@ -8,6 +8,7 @@ use std::ops::Add;
 impl Add<Vector3i32> for Vector3i32 {
     type Output = Vector3i32;
 
+    #[inline]
     fn add(self, rhs: Vector3i32) -> Vector3i32 {
         Vector3i32 {
             x: self.x + rhs.x,
