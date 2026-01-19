@@ -4,8 +4,12 @@ Example DFT calculations demonstrating the educational plane-wave code.
 
 This script shows:
 1. Basic lattice and G-vector setup
-2. LDA exchange-correlation functional
-3. Full SCF calculation for electrons in a box
+2. K-point sampling with Monkhorst-Pack mesh
+3. LDA exchange-correlation functional
+4. Ewald summation for ion-ion energy
+5. Fermi-Dirac smearing
+6. Full SCF calculation for electrons in a box
+7. Jellium model calculation
 """
 
 import numpy as np
@@ -17,8 +21,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.constants import HA_TO_EV, BOHR_TO_ANG
 from src.lattice import Lattice
+from src.crystal import Crystal
 from src.gvector import GVector
+from src.kpoints import KPoints, monkhorst_pack, gamma_only
 from src.xc import lda_xc
+from src.ewald import Ewald
+from src.smearing import create_smearing, find_fermi_level
 from src.scf import SCFSolver, create_jellium_box
 
 
@@ -44,13 +52,32 @@ def example_lattice():
     print(f"  b2 = {lattice.reciprocal_vectors[1]}")
     print(f"  b3 = {lattice.reciprocal_vectors[2]}")
     
+    # FCC lattice
+    print("\n--- FCC Primitive Cell ---")
+    fcc = Lattice.fcc(a)
+    print(f"FCC with conventional a = {a} Bohr")
+    print(f"Primitive cell volume: {fcc.volume:.2f} Bohr^3 (1/4 of cubic)")
+    
     return lattice
+
+
+def example_crystal():
+    """Demonstrate crystal structure."""
+    print("\n" + "=" * 60)
+    print("Example 2: Crystal Structure")
+    print("=" * 60)
+    
+    # Diamond Silicon
+    crystal = Crystal.diamond_si()
+    crystal.display()
+    
+    return crystal
 
 
 def example_gvectors(lattice):
     """Demonstrate G-vector generation."""
     print("\n" + "=" * 60)
-    print("Example 2: G-Vector Generation")
+    print("Example 3: G-Vector Generation")
     print("=" * 60)
     
     # Energy cutoff
@@ -74,10 +101,28 @@ def example_gvectors(lattice):
     return gvec
 
 
+def example_kpoints(lattice):
+    """Demonstrate k-point sampling."""
+    print("\n" + "=" * 60)
+    print("Example 4: K-Point Sampling")
+    print("=" * 60)
+    
+    # Gamma point only
+    gamma = gamma_only(lattice)
+    gamma.display()
+    
+    # Monkhorst-Pack mesh
+    print("\n--- Monkhorst-Pack Mesh ---")
+    kpts = monkhorst_pack(lattice, 4, 4, 4, shift=False)
+    kpts.display()
+    
+    return kpts
+
+
 def example_xc():
     """Demonstrate LDA exchange-correlation."""
     print("\n" + "=" * 60)
-    print("Example 3: LDA Exchange-Correlation")
+    print("Example 5: LDA Exchange-Correlation")
     print("=" * 60)
     
     # Test densities (electrons per Bohr^3)
@@ -92,10 +137,70 @@ def example_xc():
         print(f"{rho[i]:15.4f} {vxc[i]:12.6f} {exc[i]:12.6f} {vxc[i]*HA_TO_EV:12.4f}")
 
 
+def example_ewald():
+    """Demonstrate Ewald summation."""
+    print("\n" + "=" * 60)
+    print("Example 6: Ewald Summation")
+    print("=" * 60)
+    
+    # NaCl-like structure (simplified)
+    a = 10.0
+    lattice = Lattice.cubic(a)
+    
+    # Two ions: one at origin, one at center
+    positions = np.array([
+        [0.0, 0.0, 0.0],
+        [0.5, 0.5, 0.5]
+    ])
+    charges = np.array([1.0, -1.0])  # +1 and -1 charges
+    
+    print(f"\nTwo-ion system in {a} Bohr cube")
+    print(f"Positions (fractional): {positions.tolist()}")
+    print(f"Charges: {charges.tolist()}")
+    
+    ewald = Ewald(lattice, positions, charges)
+    
+    print(f"\nEwald energy: {ewald.energy:.6f} Ha ({ewald.energy * HA_TO_EV:.4f} eV)")
+    print(f"\nForces (Ha/Bohr):")
+    for i, f in enumerate(ewald.forces):
+        print(f"  Ion {i+1}: [{f[0]:8.5f}, {f[1]:8.5f}, {f[2]:8.5f}]")
+    
+    print(f"\nStress tensor (Ha/Bohr^3):")
+    print(ewald.stress)
+
+
+def example_smearing():
+    """Demonstrate smearing functions."""
+    print("\n" + "=" * 60)
+    print("Example 7: Electronic Smearing")
+    print("=" * 60)
+    
+    # Test eigenvalues
+    eigenvalues = np.array([-0.5, -0.3, -0.1, 0.0, 0.1, 0.3, 0.5])
+    
+    # Fermi-Dirac
+    fd = create_smearing('fd', temperature=1000)  # High T for visible effect
+    fermi, occ = find_fermi_level(eigenvalues, 1.0, 4.0, fd)
+    
+    print(f"\nFermi-Dirac at T=1000 K")
+    print(f"Fermi level: {fermi:.4f} Ha")
+    print(f"{'Energy (Ha)':>12} {'Occupation':>12}")
+    print("-" * 26)
+    for e, o in zip(eigenvalues, occ):
+        print(f"{e:12.4f} {o:12.4f}")
+    
+    # Gaussian smearing
+    gs = create_smearing('gaussian', sigma=0.05)
+    fermi, occ = find_fermi_level(eigenvalues, 1.0, 4.0, gs)
+    
+    print(f"\nGaussian smearing with sigma=0.05 Ha")
+    print(f"Fermi level: {fermi:.4f} Ha")
+
+
 def example_scf_harmonic():
     """Run SCF calculation for electrons in a harmonic trap."""
     print("\n" + "=" * 60)
-    print("Example 4: SCF - Electrons in Harmonic Trap")
+    print("Example 8: SCF - Electrons in Harmonic Trap")
     print("=" * 60)
     
     # Create a simple cubic box
@@ -134,7 +239,7 @@ def example_scf_harmonic():
 def example_jellium():
     """Run SCF calculation for jellium (uniform electron gas)."""
     print("\n" + "=" * 60)
-    print("Example 5: SCF - Jellium Box")
+    print("Example 9: SCF - Jellium Box")
     print("=" * 60)
     
     # Jellium box parameters
@@ -169,12 +274,17 @@ def main():
     """Run all examples."""
     print("\n" + "#" * 60)
     print("# Educational Plane-Wave DFT Examples")
+    print("# Version 0.2.0")
     print("#" * 60)
     
     # Basic examples
     lattice = example_lattice()
+    example_crystal()
     gvec = example_gvectors(lattice)
+    example_kpoints(lattice)
     example_xc()
+    example_ewald()
+    example_smearing()
     
     # SCF examples
     example_scf_harmonic()

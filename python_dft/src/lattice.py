@@ -52,6 +52,71 @@ class Lattice:
         return cls(vectors)
     
     @classmethod
+    def fcc(cls, a):
+        """
+        Create FCC (face-centered cubic) primitive cell.
+        
+        The primitive vectors are:
+            a1 = a/2 * (0, 1, 1)
+            a2 = a/2 * (1, 0, 1)
+            a3 = a/2 * (1, 1, 0)
+        
+        Args:
+            a: Conventional cubic lattice constant
+        
+        Returns:
+            Lattice object for FCC primitive cell
+        """
+        vectors = 0.5 * a * np.array([
+            [0, 1, 1],
+            [1, 0, 1],
+            [1, 1, 0]
+        ], dtype=float)
+        return cls(vectors)
+    
+    @classmethod
+    def bcc(cls, a):
+        """
+        Create BCC (body-centered cubic) primitive cell.
+        
+        The primitive vectors are:
+            a1 = a/2 * (-1, 1, 1)
+            a2 = a/2 * (1, -1, 1)
+            a3 = a/2 * (1, 1, -1)
+        
+        Args:
+            a: Conventional cubic lattice constant
+        
+        Returns:
+            Lattice object for BCC primitive cell
+        """
+        vectors = 0.5 * a * np.array([
+            [-1, 1, 1],
+            [1, -1, 1],
+            [1, 1, -1]
+        ], dtype=float)
+        return cls(vectors)
+    
+    @classmethod
+    def hexagonal(cls, a, c):
+        """
+        Create hexagonal lattice.
+        
+        Args:
+            a: In-plane lattice constant
+            c: Out-of-plane lattice constant
+        
+        Returns:
+            Lattice object for hexagonal cell
+        """
+        vectors = np.array([
+            [a, 0, 0],
+            [-a/2, a * np.sqrt(3)/2, 0],
+            [0, 0, c]
+        ], dtype=float)
+        return cls(vectors)
+    
+    @classmethod
     def from_parameters(cls, a, b, c, alpha=90.0, beta=90.0, gamma=90.0):
         """
         Create lattice from lattice parameters.

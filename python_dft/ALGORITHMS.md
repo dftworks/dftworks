@@ -538,6 +538,104 @@ $$\eta \approx \left(\frac{N_{atoms}}{V}\right)^{2/3}$$
 
 ---
 
+## K-Point Sampling
+
+### Brillouin Zone Integration
+
+For periodic systems, physical quantities are integrals over the Brillouin zone:
+
+$$\langle A \rangle = \frac{1}{V_{BZ}}\int_{BZ} A(\mathbf{k}) d\mathbf{k} \approx \sum_{\mathbf{k}} w_\mathbf{k} A(\mathbf{k})$$
+
+### Monkhorst-Pack Mesh
+
+The standard method for generating k-points:
+
+$$\mathbf{k}_i = \frac{2n_i - N_i - 1}{2N_i}\mathbf{b}_i + s_i$$
+
+where $n_i = 1, ..., N_i$, $\mathbf{b}_i$ are reciprocal lattice vectors, and $s_i$ is an optional shift.
+
+```python
+def monkhorst_pack(n1, n2, n3, shift=False):
+    """Generate Monkhorst-Pack k-point mesh."""
+    k_points = []
+    for i in range(n1):
+        for j in range(n2):
+            for k in range(n3):
+                k1 = (2*i - n1 + 1) / (2*n1)
+                k2 = (2*j - n2 + 1) / (2*n2)
+                k3 = (2*k - n3 + 1) / (2*n3)
+                k_points.append([k1, k2, k3])
+    return k_points
+```
+
+---
+
+## Electronic Smearing
+
+### The Problem
+
+For metals, the Fermi surface requires fine k-point sampling. Smearing broadens the step function to accelerate convergence.
+
+### Fermi-Dirac Distribution
+
+The physical distribution at temperature $T$:
+
+$$f(\varepsilon) = \frac{1}{\exp((\varepsilon - \mu)/k_BT) + 1}$$
+
+### Gaussian Smearing
+
+$$f(\varepsilon) = \frac{1}{2}\text{erfc}\left(\frac{\varepsilon - \mu}{\sigma}\right)$$
+
+### Methfessel-Paxton
+
+First-order correction for better integration accuracy:
+
+$$f_{MP1}(\varepsilon) = \frac{1}{2}\text{erfc}(x) - \frac{x e^{-x^2}}{\sqrt{\pi}}$$
+
+where $x = (\varepsilon - \mu)/\sigma$.
+
+### Finding the Fermi Level
+
+Solve for $\mu$ such that:
+
+$$N_e = \sum_{n,\mathbf{k}} w_\mathbf{k} f(\varepsilon_{n\mathbf{k}}, \mu)$$
+
+Use bisection or Newton's method.
+
+---
+
+## Pseudopotentials
+
+### The Idea
+
+Replace the nuclear Coulomb potential and core electrons with a smooth effective potential. Only valence electrons are treated explicitly.
+
+### Local Potential
+
+The local part in G-space:
+
+$$V_{loc}(\mathbf{G}) = \frac{4\pi}{\Omega}\int_0^\infty \left[r V_{loc}(r) + Z_{ion}\text{erf}(r)\right]\frac{\sin(Gr)}{G}dr$$
+
+For G=0, subtract the divergent Coulomb term (cancels with Hartree G=0).
+
+### Non-Local (Kleinman-Bylander) Form
+
+$$V_{nl} = \sum_{\ell m} |\beta_{\ell m}\rangle D_\ell \langle\beta_{\ell m}|$$
+
+The projectors in G-space:
+
+$$\beta_\ell(G) = \frac{4\pi}{\sqrt{\Omega}}\int_0^\infty \beta_\ell(r) r j_\ell(Gr) dr$$
+
+where $j_\ell$ is the spherical Bessel function.
+
+### Structure Factor
+
+For multiple atoms:
+
+$$V_{ps}^{tot}(\mathbf{G}) = \sum_\alpha V_{ps}^\alpha(G) e^{i\mathbf{G}\cdot\mathbf{R}_\alpha}$$
+
+---
+
 ## Summary: Data Flow
 
 ```
