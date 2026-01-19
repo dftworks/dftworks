@@ -1,0 +1,1 @@
+{"rustc":18415816196306954164,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[15217869687027512061,"build_script_build",false,7621273736628865738]],"local":[{"RerunIfEnvChanged":{"var":"HDF5_DIR","val":null}},{"RerunIfEnvChanged":{"var":"HDF5_VERSION","val":null}}],"rustflags":[],"config":0,"compile_kind":0}

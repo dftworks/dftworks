@@ -1,0 +1,81 @@
+Attempting to find HDF5 via Homebrew (any version)...
+Found Homebrew HDF5 headers at:
+    "/opt/homebrew/opt/hdf5@1.10/include"
+Parsing HDF5 config from:
+    "/opt/homebrew/opt/hdf5@1.10/include/H5pubconf.h"
+Looking for HDF5 library binary...
+Attempting to load: "/opt/homebrew/opt/hdf5@1.10/lib/libhdf5.dylib"
+    => runtime version = 1.10.11
+HDF5 library runtime version matches headers.
+Config {
+    inc_dir: "/opt/homebrew/opt/hdf5@1.10/include",
+    link_paths: [
+        "/opt/homebrew/opt/hdf5@1.10/lib",
+    ],
+    header: Header {
+        have_stdbool_h: true,
+        have_direct: false,
+        have_parallel: false,
+        have_threadsafe: false,
+        version: 1.10.11,
+    },
+}
+cargo:rustc-link-lib=dylib=hdf5
+cargo:rustc-link-search=native=/opt/homebrew/opt/hdf5@1.10/lib
+cargo:rerun-if-env-changed=HDF5_DIR
+cargo:rerun-if-env-changed=HDF5_VERSION
+cargo:include=/opt/homebrew/opt/hdf5@1.10/include
+cargo:library=hdf5
+cargo:rustc-cfg=feature="1.8.5"
+cargo:version_1_8_5=1
+cargo:rustc-cfg=feature="1.8.6"
+cargo:version_1_8_6=1
+cargo:rustc-cfg=feature="1.8.7"
+cargo:version_1_8_7=1
+cargo:rustc-cfg=feature="1.8.8"
+cargo:version_1_8_8=1
+cargo:rustc-cfg=feature="1.8.9"
+cargo:version_1_8_9=1
+cargo:rustc-cfg=feature="1.8.10"
+cargo:version_1_8_10=1
+cargo:rustc-cfg=feature="1.8.11"
+cargo:version_1_8_11=1
+cargo:rustc-cfg=feature="1.8.12"
+cargo:version_1_8_12=1
+cargo:rustc-cfg=feature="1.8.13"
+cargo:version_1_8_13=1
+cargo:rustc-cfg=feature="1.8.14"
+cargo:version_1_8_14=1
+cargo:rustc-cfg=feature="1.8.15"
+cargo:version_1_8_15=1
+cargo:rustc-cfg=feature="1.8.16"
+cargo:version_1_8_16=1
+cargo:rustc-cfg=feature="1.8.17"
+cargo:version_1_8_17=1
+cargo:rustc-cfg=feature="1.8.18"
+cargo:version_1_8_18=1
+cargo:rustc-cfg=feature="1.8.19"
+cargo:version_1_8_19=1
+cargo:rustc-cfg=feature="1.8.20"
+cargo:version_1_8_20=1
+cargo:rustc-cfg=feature="1.8.21"
+cargo:version_1_8_21=1
+cargo:rustc-cfg=feature="1.10.0"
+cargo:version_1_10_0=1
+cargo:rustc-cfg=feature="1.10.1"
+cargo:version_1_10_1=1
+cargo:rustc-cfg=feature="1.10.2"
+cargo:version_1_10_2=1
+cargo:rustc-cfg=feature="1.10.3"
+cargo:version_1_10_3=1
+cargo:rustc-cfg=feature="1.10.4"
+cargo:version_1_10_4=1
+cargo:rustc-cfg=feature="1.10.5"
+cargo:version_1_10_5=1
+cargo:rustc-cfg=feature="1.10.6"
+cargo:version_1_10_6=1
+cargo:rustc-cfg=feature="1.10.7"
+cargo:version_1_10_7=1
+cargo:rustc-cfg=feature="1.10.8"
+cargo:version_1_10_8=1
+cargo:rustc-cfg=have_stdbool_h
