@@ -83,17 +83,12 @@ pub fn add_up_v(vpslocg: &[c64], vhg: &[c64], vxcg: &VXCG, vlocg: &mut [c64]) {
     }
 }
 
-pub fn compute_and_symmetrize_rho_of_g(
-    control: &Control,
+pub fn compute_rho_of_g(
     gvec: &GVector,
     pwden: &PWDensity,
     rgtrans: &RGTransform,
-    kpts: &dyn KPTS,
-    density_driver: &dyn Density,
-    symdrv: &dyn SymmetryDriver,
     rho_3d: &mut RHOR,
     rhog_out: &mut [c64],
-    fftgrid: &FFTGrid,
 ) {
     if let RHOR::NonSpin(rho_3d) = rho_3d {
         rgtrans.r3d_to_g1d(gvec, pwden, rho_3d.as_slice(), rhog_out);

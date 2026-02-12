@@ -211,18 +211,7 @@ impl SCF for SCFNonspin {
 
             // rho r -> G
 
-            utils::compute_and_symmetrize_rho_of_g(
-                control,
-                gvec,
-                pwden,
-                rgtrans,
-                kpts,
-                density_driver.as_ref(),
-                symdrv,
-                rho_3d,
-                &mut rhog_out,
-                &fftgrid,
-            );
+            utils::compute_rho_of_g(gvec, pwden, rgtrans, rho_3d, &mut rhog_out);
 
             // up to here
             // rhog_out: out rho in G
