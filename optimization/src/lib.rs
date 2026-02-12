@@ -14,9 +14,8 @@ pub fn new(scheme: &str, alpha: f64, nstep: usize) -> Box<dyn OptimizationDriver
             optim = Box::new(DIIS::new(alpha, nstep));
         }
 
-        &_ => {
-            println!("{} not implemented", scheme);
-            panic!();
+        other => {
+            panic!("unsupported optimization scheme '{}'", other);
         }
     }
 

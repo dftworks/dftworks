@@ -40,7 +40,7 @@ fn compute_k_last(nkpt: usize, nrank: usize, rank: usize) -> usize {
 
 // Keep original function for compatibility if needed elsewhere
 fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
-    assert!(nkpt >= nrank);
+    assert!(nrank > 0);
 
     // Use more efficient computation of chunk sizes
     let base_size = nkpt / nrank;

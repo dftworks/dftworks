@@ -17,8 +17,8 @@ pub fn new(control: &Control) -> Box<dyn Mixing> {
 
     let scheme = control.get_scf_rho_mix_scheme();
 
-    match scheme {
-        "pulay" => {
+    match scheme.to_lowercase().as_str() {
+        "simple" | "pulay" => {
             mixing = Box::new(MixingPulay::new(control));
         }
 
@@ -26,7 +26,8 @@ pub fn new(control: &Control) -> Box<dyn Mixing> {
             mixing = Box::new(MixingBroyden::new(control));
         }
 
-        &_ => {
+        other => {
+            eprintln!("unknown scf_rho_mix_scheme '{}', fallback to pulay", other);
             mixing = Box::new(MixingPulay::new(control));
         }
     }

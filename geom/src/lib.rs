@@ -34,9 +34,8 @@ pub fn new(scheme: &str, alpha: f64, nstep: usize) -> Box<dyn GeomOptimizationDr
             optim = Box::new(DIIS::new(alpha, nstep));
         }
 
-        &_ => {
-            println!("{} not implemented", scheme);
-            panic!();
+        other => {
+            panic!("unsupported geom_optim_scheme '{}'", other);
         }
     }
 

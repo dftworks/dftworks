@@ -30,9 +30,8 @@ pub fn new(spin_scheme: &str) -> Box<dyn FermiLevel> {
             fl = Box::new(FermiLevelSpin::new());
         }
 
-        &_ => {
-            println!("{} not implemented", spin_scheme);
-            panic!();
+        other => {
+            panic!("unsupported spin_scheme '{}'", other);
         }
     }
 

@@ -141,7 +141,7 @@ pub fn vpsloc(
     }
 }
 
-pub fn vnl(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>, force: &mut [Vector3f64]) {
+pub fn vnl(crystal: &Crystal, vkscf: &[KSCF], vevecs: &[Matrix<c64>], force: &mut [Vector3f64]) {
     let natoms = crystal.get_n_atoms();
     let atom_positions = crystal.get_atom_positions();
     let atom_species = crystal.get_atom_species();
