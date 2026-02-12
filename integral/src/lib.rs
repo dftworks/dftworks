@@ -1,7 +1,7 @@
 pub fn simpson_rab(y: &[f64], rab: &[f64]) -> f64 {
     let mut n = y.len();
 
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         n -= 3;
     }
 
@@ -25,7 +25,7 @@ pub fn simpson_rab(y: &[f64], rab: &[f64]) -> f64 {
         s += t1 + 4.0 * t2 + t3;
     }
 
-    if y.len() % 2 == 0 {
+    if y.len().is_multiple_of(2) {
         let n = y.len();
 
         let r12 = 3.0 / 8.0;
@@ -66,7 +66,7 @@ pub fn simpson(y: &[f64], dx: f64) -> f64 {
 pub fn simpson_log(y: &[f64], r: &[f64]) -> f64 {
     let n = y.len();
 
-    assert!(n % 2 == 1);
+    assert!(!n.is_multiple_of(2));
 
     let nf64 = n as f64;
 
