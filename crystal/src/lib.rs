@@ -305,7 +305,7 @@ impl Crystal {
     pub fn output(&self) {
         let mut f = File::create("out.crystal").unwrap();
 
-        writeln!(f, "{} {} {}", self.scale_c, self.scale_b, self.scale_c).unwrap();
+        writeln!(f, "{} {} {}", self.scale_a, self.scale_b, self.scale_c).unwrap();
 
         let a = self.latt.get_vector_a();
 

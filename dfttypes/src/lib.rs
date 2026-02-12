@@ -82,14 +82,15 @@ impl VKEigenVector {
         ik_first: usize,
         ik_last: usize,
     ) -> (Vec<PWBasis>, Lattice, VKEigenVector) {
+        let nk = ik_last.saturating_sub(ik_first) + 1;
         match is_spin {
             false => {
-                let mut eigen_vecs = Vec::<Matrix<c64>>::new();
-                let mut pwbasis_vec = Vec::<PWBasis>::new();
+                let mut eigen_vecs = Vec::<Matrix<c64>>::with_capacity(nk);
+                let mut pwbasis_vec = Vec::<PWBasis>::with_capacity(nk);
                 let mut blatt = Lattice::default();
 
                 for i in ik_first..=ik_last {
-                    let filename = format!("out.wfc.up.k.{}.hdf5", i);
+                    let filename = format!("out.wfc.k.{}.hdf5", i);
                     let hdf5_file = hdf5::File::open(filename).unwrap();
 
                     let group_tmp = hdf5_file.group("EigenVector").unwrap();
@@ -97,7 +98,7 @@ impl VKEigenVector {
                     eigen_vecs.push(eigen_vec_tmp);
 
                     // Load PWBasis information
-                    let group_tmp = hdf5_file.create_group("PWBasis").unwrap();
+                    let group_tmp = hdf5_file.group("PWBasis").unwrap();
                     let pwbasis_tmp = PWBasis::load_hdf5(&group_tmp);
                     pwbasis_vec.push(pwbasis_tmp);
 
@@ -108,9 +109,9 @@ impl VKEigenVector {
                 (pwbasis_vec, blatt, VKEigenVector::NonSpin(eigen_vecs))
             }
             true => {
-                let mut eigen_vecs_up = Vec::<Matrix<c64>>::new();
-                let mut eigen_vecs_dn = Vec::<Matrix<c64>>::new();
-                let mut pwbasis_vec = Vec::<PWBasis>::new();
+                let mut eigen_vecs_up = Vec::<Matrix<c64>>::with_capacity(nk);
+                let mut eigen_vecs_dn = Vec::<Matrix<c64>>::with_capacity(nk);
+                let mut pwbasis_vec = Vec::<PWBasis>::with_capacity(nk);
                 let mut blatt = Lattice::default();
 
                 for i in ik_first..=ik_last {

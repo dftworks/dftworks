@@ -79,7 +79,8 @@ impl Mixing for MixingPulay {
 }
 
 fn dump_profile(prefix: &str, niter: usize, gs: &[f64], v: &[c64]) {
-    if let Ok(mut output) = File::create(format!("{prefix}{niter}")) {
+    let pid = std::process::id();
+    if let Ok(mut output) = File::create(format!("{prefix}{niter}.pid{pid}")) {
         for (ig, (&g, val)) in gs.iter().zip(v.iter()).enumerate() {
             let _ = writeln!(&mut output, "{:5?}{:20.12?}{:20.12?}", ig, g, val.norm());
         }
