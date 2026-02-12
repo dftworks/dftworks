@@ -39,21 +39,9 @@ pub trait AtomPSP {
 }
 
 pub fn new(scheme: &str) -> Box<dyn AtomPSP> {
-    let atompsp: Box<dyn AtomPSP>;
-
     match scheme {
-        "upf" => {
-            atompsp = Box::new(AtomPSPUPF::new());
-        }
-
-        "upf-fr" => {
-            atompsp = Box::new(AtomPSPUPFFR::new());
-        }
-
-        &_ => {
-            atompsp = Box::new(AtomPSPUPF::new());
-        }
+        "upf" => Box::new(AtomPSPUPF::new()),
+        "upf-fr" => Box::new(AtomPSPUPFFR::new()),
+        other => panic!("unsupported pseudo potential scheme '{}'", other),
     }
-
-    atompsp
 }

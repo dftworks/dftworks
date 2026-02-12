@@ -19,21 +19,9 @@ pub trait FermiLevel {
 }
 
 pub fn new(spin_scheme: &str) -> Box<dyn FermiLevel> {
-    let fl: Box<dyn FermiLevel>;
-
     match spin_scheme {
-        "nonspin" => {
-            fl = Box::new(FermiLevelNonspin::new());
-        }
-
-        "spin" => {
-            fl = Box::new(FermiLevelSpin::new());
-        }
-
-        other => {
-            panic!("unsupported spin_scheme '{}'", other);
-        }
+        "nonspin" => Box::new(FermiLevelNonspin::new()),
+        "spin" => Box::new(FermiLevelSpin::new()),
+        other => panic!("unsupported spin_scheme '{}'", other),
     }
-
-    fl
 }

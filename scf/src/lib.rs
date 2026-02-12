@@ -49,13 +49,11 @@ pub trait SCF {
 }
 
 pub fn new(spin_scheme: &str) -> Box<dyn SCF> {
-    let scf: Box<dyn SCF> = match spin_scheme {
+    match spin_scheme {
         "nonspin" => Box::new(SCFNonspin::new()),
 
         "spin" => Box::new(SCFSpin::new()),
 
-        &_ => Box::new(SCFNonspin::new()),
-    };
-
-    scf
+        other => panic!("unsupported spin_scheme '{}'", other),
+    }
 }

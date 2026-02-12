@@ -37,22 +37,9 @@ pub trait Density {
 }
 
 pub fn new(spin_scheme: &str) -> Box<dyn Density> {
-    let density: Box<dyn Density>;
-
     match spin_scheme {
-        "nonspin" => {
-            density = Box::new(DensityNonspin::new());
-        }
-
-        "spin" => {
-            density = Box::new(DensitySpin::new());
-        }
-
-        &_ => {
-            println!("{} not supported", spin_scheme);
-            std::process::exit(-1);
-        }
+        "nonspin" => Box::new(DensityNonspin::new()),
+        "spin" => Box::new(DensitySpin::new()),
+        other => panic!("unsupported spin_scheme '{}'", other),
     }
-
-    density
 }

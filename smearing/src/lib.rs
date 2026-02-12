@@ -17,28 +17,11 @@ pub trait Smearing {
 }
 
 pub fn new(smearing_scheme: &str) -> Box<dyn Smearing> {
-    let smearing: Box<dyn Smearing>;
-
     match smearing_scheme {
-        "fd" => {
-            smearing = Box::new(SmearingFD {});
-        }
-
-        "gs" => {
-            smearing = Box::new(SmearingGS {});
-        }
-
-        "mp1" => {
-            smearing = Box::new(SmearingMP1 {});
-        }
-
-        "mp2" => {
-            smearing = Box::new(SmearingMP2 {});
-        }
-
-        &_ => {
-            smearing = Box::new(SmearingFD {});
-        }
+        "fd" => Box::new(SmearingFD {}),
+        "gs" => Box::new(SmearingGS {}),
+        "mp1" => Box::new(SmearingMP1 {}),
+        "mp2" => Box::new(SmearingMP2 {}),
+        other => panic!("unsupported smearing_scheme '{}'", other),
     }
-    smearing
 }

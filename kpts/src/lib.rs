@@ -19,22 +19,9 @@ pub trait KPTS {
 }
 
 pub fn new(scheme: &str, crystal: &Crystal, _symmetry: bool) -> Box<dyn KPTS> {
-    let kpts: Box<dyn KPTS>;
-
     match scheme {
-        "kmesh" => {
-            kpts = Box::new(KptsMesh::new(crystal));
-        }
-
-        "kline" => {
-            kpts = Box::new(KptsLine::new());
-        }
-
-        &_ => {
-            println!("{} not implemented", scheme);
-            std::process::exit(1);
-        }
+        "kmesh" => Box::new(KptsMesh::new(crystal)),
+        "kline" => Box::new(KptsLine::new()),
+        other => panic!("unsupported k-point scheme '{}'", other),
     }
-
-    kpts
 }
