@@ -14,7 +14,6 @@ use pwbasis::*;
 use pwdensity::*;
 use types::*;
 use vector3::*;
-use vloc;
 
 use itertools::multizip;
 
@@ -24,7 +23,7 @@ pub fn nlcc_xc(
     crystal: &Crystal,
     gvec: &GVector,
     pwden: &PWDensity,
-    vxcg: &Vec<c64>,
+    vxcg: &[c64],
     force: &mut [Vector3f64],
 ) {
     force.iter_mut().for_each(|x| x.set_zeros());
