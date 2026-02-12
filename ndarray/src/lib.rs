@@ -50,6 +50,10 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn sum(&self) -> T {
         let mut s = T::zero();
         for v in self.data.iter() {
@@ -122,10 +126,7 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
 
         let slice = self.as_slice();
         let data: &[u8] = unsafe {
-            std::slice::from_raw_parts(
-                slice.as_ptr() as *const u8,
-                std::mem::size_of::<T>() * slice.len(),
-            )
+            std::slice::from_raw_parts(slice.as_ptr() as *const u8, std::mem::size_of_val(slice))
         };
 
         f.write_all(n0).unwrap();
@@ -139,7 +140,7 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
 
     pub fn load(&mut self, filename: &str) {
         let mut f = match File::open(filename) {
-            Err(why) => panic!("couldn't open {}: {}", filename, why.to_string()),
+            Err(why) => panic!("couldn't open {}: {}", filename, why),
 
             Ok(f) => f,
         };
