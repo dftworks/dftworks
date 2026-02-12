@@ -243,6 +243,15 @@ impl<'a> KSCF<'a> {
                 hpsi::compute_structure_factors_for_atoms(self.gvec, self.pwwfc, atom_positions)
             })
             .collect();
+        let vnl_terms: Vec<_> = (0..species.len())
+            .map(|isp| {
+                (
+                    atompsp_by_specie[isp],
+                    kgbeta_by_specie[isp],
+                    &sfact_by_specie[isp],
+                )
+            })
+            .collect();
         let fft_linear_index = utility::compute_fft_linear_index_map(
             self.gvec.get_miller(),
             self.pwwfc.get_gindex(),
@@ -274,11 +283,7 @@ impl<'a> KSCF<'a> {
 
             // add v_nl |psi> to v_loc |psi>
 
-            for isp in 0..species.len() {
-                let atompsp = atompsp_by_specie[isp];
-                let kgbeta = kgbeta_by_specie[isp];
-                let sfact_by_atom = &sfact_by_specie[isp];
-
+            for &(atompsp, kgbeta, sfact_by_atom) in vnl_terms.iter() {
                 hpsi::vnl_on_psi_with_structure_factors(
                     atompsp,
                     sfact_by_atom,
