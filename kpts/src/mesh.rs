@@ -163,7 +163,7 @@ fn read_k_mesh() -> ([i32; 3], [i32; 3]) {
 fn read_file_data_to_vec(kfile: &str) -> Vec<String> {
     let file = File::open(kfile).unwrap();
     let lines = BufReader::new(file).lines();
-    let lines: Vec<String> = lines.filter_map(std::io::Result::ok).collect();
+    let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();
 
     lines
 }

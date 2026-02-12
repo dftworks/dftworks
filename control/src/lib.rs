@@ -542,7 +542,7 @@ impl Control {
 
         let lines = BufReader::new(file).lines();
 
-        let lines: Vec<String> = lines.filter_map(std::io::Result::ok).collect();
+        let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();
 
         lines
     }
