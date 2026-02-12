@@ -221,7 +221,7 @@ pub fn compute_force(
         crystal,
         &vkscf.as_non_spin().unwrap(),
         &vkevecs.as_non_spin().unwrap(),
-        &mut force_vnl,
+        &mut force_vnl_local,
     );
 
     dwmpi::reduce_slice_sum(

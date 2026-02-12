@@ -1,0 +1,2 @@
+cargo:rustc-link-lib=fftw3
+cargo:rustc-link-lib=fftw3_threads

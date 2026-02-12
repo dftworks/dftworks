@@ -1,0 +1,2 @@
+cargo:rustc-link-lib=lapack
+cargo:rustc-link-lib=blas

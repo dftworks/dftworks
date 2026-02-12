@@ -224,6 +224,11 @@ impl<'a> KSCF<'a> {
         let mut vunkg_3d = Array3::<c64>::new(fft_shape);
         let mut unk_3d = Array3::<c64>::new(fft_shape);
         let mut fft_workspace = Array3::<c64>::new(fft_shape);
+        let species = crystal.get_unique_species();
+        let atom_positions_by_specie: Vec<Vec<Vector3f64>> = (0..species.len())
+            .map(|isp| crystal.get_atom_positions_of_specie(isp))
+            .collect();
+        let kgbeta_all = self.vnl.get_kgbeta_all();
 
         //
 
@@ -249,17 +254,15 @@ impl<'a> KSCF<'a> {
 
             // add v_nl |psi> to v_loc |psi>
 
-            let kgbeta_all = self.vnl.get_kgbeta_all();
-
-            for (isp, specie) in crystal.get_unique_species().iter().enumerate() {
+            for (isp, specie) in species.iter().enumerate() {
                 let kgbeta = kgbeta_all.get(specie).unwrap();
 
                 let atompsp = self.pspot.get_psp(specie);
-                let atom_positions_for_this_specie = crystal.get_atom_positions_of_specie(isp);
+                let atom_positions_for_this_specie = &atom_positions_by_specie[isp];
 
                 hpsi::vnl_on_psi(
                     atompsp,
-                    &atom_positions_for_this_specie,
+                    atom_positions_for_this_specie,
                     self.gvec,
                     self.pwwfc,
                     kgbeta,

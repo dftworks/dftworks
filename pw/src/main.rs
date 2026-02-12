@@ -265,25 +265,29 @@ fn main() {
 
         let mut vpwwfc = Vec::<PWBasis>::with_capacity(my_nkpt);
 
-        let ik_first = kpts_distribution::get_my_k_first(nkpt, nrank);
-        let ik_last = kpts_distribution::get_my_k_last(nkpt, nrank);
+        let ik_range = kpts_distribution::get_my_k_range(nkpt, nrank);
+        let (ik_first, ik_last) = ik_range.unwrap_or((0, 0));
 
-        (ik_first..=ik_last).into_iter().for_each(|ik| {
-            let k_frac = kpts.get_k_frac(ik);
-            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+        if let Some((ik_first, ik_last)) = ik_range {
+            (ik_first..=ik_last).into_iter().for_each(|ik| {
+                let k_frac = kpts.get_k_frac(ik);
+                let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
 
-            let pwwfc: PWBasis = PWBasis::new(k_cart, ik, control.get_ecut(), &gvec);
+                let pwwfc: PWBasis = PWBasis::new(k_cart, ik, control.get_ecut(), &gvec);
 
-            vpwwfc.push(pwwfc);
-        });
+                vpwwfc.push(pwwfc);
+            });
+        }
 
         // vvnl
 
         let mut vvnl = Vec::<VNL>::with_capacity(my_nkpt);
 
-        for ik in ik_first..=ik_last {
-            let vnl: VNL = VNL::new(ik, &pots, &vpwwfc[ik - ik_first], &crystal);
-            vvnl.push(vnl);
+        if let Some((ik_first, ik_last)) = ik_range {
+            for ik in ik_first..=ik_last {
+                let vnl: VNL = VNL::new(ik, &pots, &vpwwfc[ik - ik_first], &crystal);
+                vvnl.push(vnl);
+            }
         }
 
         // vkscf
@@ -293,64 +297,68 @@ fn main() {
         if !control.is_spin() {
             vkscf = VKSCF::NonSpin(Vec::<KSCF>::new());
             if let VKSCF::NonSpin(ref mut vkscf) = vkscf {
-                for ik in ik_first..=ik_last {
-                    let k_frac = kpts.get_k_frac(ik);
-                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                    let k_weight = kpts.get_k_weight(ik);
+                if let Some((ik_first, ik_last)) = ik_range {
+                    for ik in ik_first..=ik_last {
+                        let k_frac = kpts.get_k_frac(ik);
+                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                        let k_weight = kpts.get_k_weight(ik);
 
-                    let kscf = KSCF::new(
-                        &control,
-                        &gvec,
-                        &pots,
-                        &vpwwfc[ik - ik_first],
-                        &vvnl[ik - ik_first],
-                        ik,
-                        k_cart,
-                        k_weight,
-                    );
+                        let kscf = KSCF::new(
+                            &control,
+                            &gvec,
+                            &pots,
+                            &vpwwfc[ik - ik_first],
+                            &vvnl[ik - ik_first],
+                            ik,
+                            k_cart,
+                            k_weight,
+                        );
 
-                    vkscf.push(kscf);
+                        vkscf.push(kscf);
+                    }
                 }
             }
         } else {
             vkscf = VKSCF::Spin(Vec::<KSCF>::new(), Vec::<KSCF>::new());
             if let VKSCF::Spin(ref mut vkscf_up, ref mut vkscf_dn) = vkscf {
-                for ik in ik_first..=ik_last {
-                    let k_frac = kpts.get_k_frac(ik);
-                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                    let k_weight = kpts.get_k_weight(ik);
+                if let Some((ik_first, ik_last)) = ik_range {
+                    for ik in ik_first..=ik_last {
+                        let k_frac = kpts.get_k_frac(ik);
+                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                        let k_weight = kpts.get_k_weight(ik);
 
-                    let kscf = KSCF::new(
-                        &control,
-                        &gvec,
-                        &pots,
-                        &vpwwfc[ik - ik_first],
-                        &vvnl[ik - ik_last],
-                        ik,
-                        k_cart,
-                        k_weight,
-                    );
+                        let kscf = KSCF::new(
+                            &control,
+                            &gvec,
+                            &pots,
+                            &vpwwfc[ik - ik_first],
+                            &vvnl[ik - ik_first],
+                            ik,
+                            k_cart,
+                            k_weight,
+                        );
 
-                    vkscf_up.push(kscf);
-                }
+                        vkscf_up.push(kscf);
+                    }
 
-                for ik in ik_first..=ik_last {
-                    let k_frac = kpts.get_k_frac(ik);
-                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                    let k_weight = kpts.get_k_weight(ik);
+                    for ik in ik_first..=ik_last {
+                        let k_frac = kpts.get_k_frac(ik);
+                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                        let k_weight = kpts.get_k_weight(ik);
 
-                    let kscf = KSCF::new(
-                        &control,
-                        &gvec,
-                        &pots,
-                        &vpwwfc[ik - ik_first],
-                        &vvnl[ik - ik_last],
-                        ik,
-                        k_cart,
-                        k_weight,
-                    );
+                        let kscf = KSCF::new(
+                            &control,
+                            &gvec,
+                            &pots,
+                            &vpwwfc[ik - ik_first],
+                            &vvnl[ik - ik_first],
+                            ik,
+                            k_cart,
+                            k_weight,
+                        );
 
-                    vkscf_dn.push(kscf);
+                        vkscf_dn.push(kscf);
+                    }
                 }
             }
         }

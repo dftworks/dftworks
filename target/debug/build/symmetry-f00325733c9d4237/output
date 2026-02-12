@@ -1,0 +1,2 @@
+cargo:rustc-link-search=/opt/spglib/lib
+cargo:rustc-link-lib=symspg

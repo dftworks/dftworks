@@ -7,6 +7,7 @@ use fhkl;
 use gvector::GVector;
 use itertools::multizip;
 use magmom::*;
+use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::Zero;
 use pspot::PSPot;
@@ -82,6 +83,11 @@ impl Density for DensitySpin {
         let (vkscf_up, vkscf_dn) = vkscf.as_spin().unwrap();
         let (vkevecs_up, vkevecs_dn) = vkevecs.as_spin().unwrap();
 
+        let mut rho_3d_up_local = Array3::<c64>::new([n1, n2, n3]);
+        let mut rho_3d_dn_local = Array3::<c64>::new([n1, n2, n3]);
+        rho_3d_up_local.set_value(c64::zero());
+        rho_3d_dn_local.set_value(c64::zero());
+
         let mut unk = Array3::<c64>::new([n1, n2, n3]);
 
         // work space
@@ -112,9 +118,10 @@ impl Density for DensitySpin {
 
                     let factor = occ[ib] * kscf.get_k_weight();
 
-                    for (y, x) in
-                        multizip((rho_3d_up.as_mut_slice().iter_mut(), unk.as_slice().iter()))
-                    {
+                    for (y, x) in multizip((
+                        rho_3d_up_local.as_mut_slice().iter_mut(),
+                        unk.as_slice().iter(),
+                    )) {
                         *y += x.norm_sqr() * factor;
                     }
                 } else {
@@ -147,9 +154,10 @@ impl Density for DensitySpin {
 
                     let factor = occ[ib] * kscf.get_k_weight();
 
-                    for (y, x) in
-                        multizip((rho_3d_dn.as_mut_slice().iter_mut(), unk.as_slice().iter()))
-                    {
+                    for (y, x) in multizip((
+                        rho_3d_dn_local.as_mut_slice().iter_mut(),
+                        unk.as_slice().iter(),
+                    )) {
                         *y += x.norm_sqr() * factor;
                     }
                 } else {
@@ -157,6 +165,20 @@ impl Density for DensitySpin {
                 }
             }
         }
+
+        dwmpi::reduce_slice_sum(
+            rho_3d_up_local.as_slice(),
+            rho_3d_up.as_mut_slice(),
+            MPI_COMM_WORLD,
+        );
+        dwmpi::reduce_slice_sum(
+            rho_3d_dn_local.as_slice(),
+            rho_3d_dn.as_mut_slice(),
+            MPI_COMM_WORLD,
+        );
+
+        dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
+        dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
     }
 }
 
