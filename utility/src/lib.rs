@@ -274,6 +274,48 @@ pub fn fft_n2i(n: usize, ntot: usize) -> i32 {
     }
 }
 
+pub fn compute_fft_linear_index_map(
+    miller: &[Vector3i32],
+    gindex: &[usize],
+    n1: usize,
+    n2: usize,
+    n3: usize,
+) -> Vec<usize> {
+    let mut linear_index = Vec::with_capacity(gindex.len());
+
+    for ig in gindex.iter() {
+        let mi = miller[*ig];
+
+        let idx0 = fft_i2n(mi.x, n1);
+        let idx1 = fft_i2n(mi.y, n2);
+        let idx2 = fft_i2n(mi.z, n3);
+
+        debug_assert!(idx2 < n3);
+        linear_index.push(idx0 + idx1 * n1 + idx2 * n1 * n2);
+    }
+
+    linear_index
+}
+
+pub fn map_3d_to_1d_with_linear_index(linear_index: &[usize], v3d: &Array3<c64>, v1d: &mut [c64]) {
+    assert_eq!(linear_index.len(), v1d.len());
+
+    let v3d_slice = v3d.as_slice();
+    for (i, &idx) in linear_index.iter().enumerate() {
+        v1d[i] = v3d_slice[idx];
+    }
+}
+
+pub fn map_1d_to_3d_with_linear_index(linear_index: &[usize], v1d: &[c64], v3d: &mut Array3<c64>) {
+    assert_eq!(linear_index.len(), v1d.len());
+    v3d.set_value(ZERO_C64);
+
+    let v3d_slice = v3d.as_mut_slice();
+    for (i, &idx) in linear_index.iter().enumerate() {
+        v3d_slice[idx] = v1d[i];
+    }
+}
+
 pub fn map_3d_to_1d(
     miller: &[Vector3i32],
     gindex: &[usize],

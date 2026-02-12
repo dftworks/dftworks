@@ -229,6 +229,27 @@ impl<'a> KSCF<'a> {
             .map(|isp| crystal.get_atom_positions_of_specie(isp))
             .collect();
         let kgbeta_all = self.vnl.get_kgbeta_all();
+        let kgbeta_by_specie: Vec<&Vec<Vec<f64>>> = species
+            .iter()
+            .map(|specie| kgbeta_all.get(specie).unwrap())
+            .collect();
+        let atompsp_by_specie: Vec<_> = species
+            .iter()
+            .map(|specie| self.pspot.get_psp(specie))
+            .collect();
+        let sfact_by_specie: Vec<Vec<Vec<c64>>> = atom_positions_by_specie
+            .iter()
+            .map(|atom_positions| {
+                hpsi::compute_structure_factors_for_atoms(self.gvec, self.pwwfc, atom_positions)
+            })
+            .collect();
+        let fft_linear_index = utility::compute_fft_linear_index_map(
+            self.gvec.get_miller(),
+            self.pwwfc.get_gindex(),
+            fft_shape[0],
+            fft_shape[1],
+            fft_shape[2],
+        );
 
         //
 
@@ -239,11 +260,10 @@ impl<'a> KSCF<'a> {
 
             // compute vloc on |psi>
 
-            hpsi::vloc_on_psi(
-                self.gvec,
-                self.pwwfc,
+            hpsi::vloc_on_psi_with_cached_fft_index(
                 rgtrans,
                 volume,
+                &fft_linear_index,
                 vloc_3d,
                 &mut vunkg_3d,
                 &mut unk_3d,
@@ -254,17 +274,14 @@ impl<'a> KSCF<'a> {
 
             // add v_nl |psi> to v_loc |psi>
 
-            for (isp, specie) in species.iter().enumerate() {
-                let kgbeta = kgbeta_all.get(specie).unwrap();
+            for isp in 0..species.len() {
+                let atompsp = atompsp_by_specie[isp];
+                let kgbeta = kgbeta_by_specie[isp];
+                let sfact_by_atom = &sfact_by_specie[isp];
 
-                let atompsp = self.pspot.get_psp(specie);
-                let atom_positions_for_this_specie = &atom_positions_by_specie[isp];
-
-                hpsi::vnl_on_psi(
+                hpsi::vnl_on_psi_with_structure_factors(
                     atompsp,
-                    atom_positions_for_this_specie,
-                    self.gvec,
-                    self.pwwfc,
+                    sfact_by_atom,
                     kgbeta,
                     &self.kgylm,
                     vin,
