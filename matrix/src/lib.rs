@@ -14,6 +14,7 @@ pub use matrix_f64::*;
 
 use dwconsts::*;
 use itertools::multizip;
+use nalgebra::DMatrix;
 use std::ops::*;
 use std::{
     fmt,
@@ -34,36 +35,34 @@ pub struct Matrix<T> {
     data: Vec<T>,
 }
 
-impl<
-        T: num_traits::identities::Zero
-            + Default
-            + Copy
-            + Clone
-            + Mul
-            + std::ops::AddAssign
-            + std::ops::Mul<Output = T>,
-    > Dot<Matrix<T>> for Matrix<T>
-{
+impl Dot<Matrix<f64>> for Matrix<f64> {
     type Output = Self;
 
-    fn dot(&self, rhs: &Matrix<T>) -> Self::Output {
+    fn dot(&self, rhs: &Matrix<f64>) -> Self::Output {
         assert!(self.ncol() == rhs.nrow());
 
-        let nr_lhs = self.nrow();
-        let nc_lhs = self.ncol();
+        let lhs = DMatrix::<f64>::from_column_slice(self.nrow(), self.ncol(), self.as_slice());
+        let rhs = DMatrix::<f64>::from_column_slice(rhs.nrow(), rhs.ncol(), rhs.as_slice());
+        let prod = lhs * rhs;
 
-        let nc_rhs = rhs.ncol();
+        let mut mdot = Matrix::<f64>::new(prod.nrows(), prod.ncols());
+        mdot.as_mut_slice().copy_from_slice(prod.as_slice());
+        mdot
+    }
+}
 
-        let mut mdot = Matrix::<T>::new(nr_lhs, nc_rhs);
+impl Dot<Matrix<c64>> for Matrix<c64> {
+    type Output = Self;
 
-        for i in 0..nr_lhs {
-            for j in 0..nc_rhs {
-                for k in 0..nc_lhs {
-                    mdot[[i, j]] += self[[i, k]] * rhs[[k, j]];
-                }
-            }
-        }
+    fn dot(&self, rhs: &Matrix<c64>) -> Self::Output {
+        assert!(self.ncol() == rhs.nrow());
 
+        let lhs = DMatrix::<c64>::from_column_slice(self.nrow(), self.ncol(), self.as_slice());
+        let rhs = DMatrix::<c64>::from_column_slice(rhs.nrow(), rhs.ncol(), rhs.as_slice());
+        let prod = lhs * rhs;
+
+        let mut mdot = Matrix::<c64>::new(prod.nrows(), prod.ncols());
+        mdot.as_mut_slice().copy_from_slice(prod.as_slice());
         mdot
     }
 }

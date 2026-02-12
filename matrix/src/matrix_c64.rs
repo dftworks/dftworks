@@ -91,18 +91,7 @@ impl Matrix<c64> {
     }
 
     pub fn mat_mul(&self, rhs: &Matrix<c64>) -> Matrix<c64> {
-        let n = self.nrow;
-        let mut mat = Matrix::<c64>::new(n, n);
-
-        for i in 0..n {
-            for j in 0..n {
-                for k in 0..n {
-                    mat[[i, j]] += self[[i, k]] * rhs[[k, j]];
-                }
-            }
-        }
-
-        mat
+        self.dot(rhs)
     }
 
     /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.
