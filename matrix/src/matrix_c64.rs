@@ -2,7 +2,7 @@ use crate::Matrix;
 use dwconsts::*;
 
 use itertools::multizip;
-use lapack_sys::*;
+use nalgebra::DMatrix;
 use num_traits::Zero;
 use std::ops::AddAssign;
 use std::ops::Mul;
@@ -64,65 +64,30 @@ impl Matrix<c64> {
     // }
 
     pub fn inv(&mut self) {
-        //        self.pinv();
+        assert_eq!(self.nrow, self.ncol, "Matrix::inv requires a square matrix");
 
-        //return;
+        let mat = DMatrix::<c64>::from_column_slice(self.nrow, self.ncol, self.as_slice());
 
-        let nn = self.nrow;
-        let n = nn as i32;
-
-        let mut ipiv = vec![0i32; nn];
-        let lwork = n * n;
-        let mut work = vec![c64::zero(); lwork as usize];
-        let mut info = 0i32;
-
-        unsafe {
-            zgetrf_(&n, &n, self.as_ptr(), &n, ipiv.as_mut_ptr(), &mut info);
-            zgetri_(
-                &n,
-                self.as_mut_ptr(),
-                &n,
-                ipiv.as_ptr(),
-                work.as_mut_ptr(),
-                &lwork,
-                &mut info,
-            );
+        if let Some(inv) = mat.try_inverse() {
+            self.data.copy_from_slice(inv.as_slice());
+        } else {
+            self.pinv();
         }
     }
 
     pub fn pinv(&mut self) {
-        let n = self.nrow as i32;
-        let nrhs = n;
+        assert_eq!(
+            self.nrow, self.ncol,
+            "Matrix::pinv requires a square matrix"
+        );
 
-        let mut s = vec![0.0; n as usize];
-        let rcond: f64 = EPS30;
-        let lwork = n + 2 * n; //2*min(M,N) + max(M,N,NRHS)
-        let mut work = vec![c64::zero(); lwork as usize];
-        let mut rwork = vec![0.0f64; (5 * n) as usize];
-        let mut info = 0i32;
+        let mat = DMatrix::<c64>::from_column_slice(self.nrow, self.ncol, self.as_slice());
+        let pinv = mat
+            .svd(true, true)
+            .pseudo_inverse(EPS30)
+            .expect("nalgebra SVD pseudo-inverse failed");
 
-        let mut b = Matrix::<c64>::identity(n as usize);
-
-        unsafe {
-            zgelss_(
-                &n,
-                &n,
-                &nrhs,
-                self.as_mut_ptr(),
-                &n,
-                b.as_mut_ptr(),
-                &n,
-                s.as_mut_ptr(),
-                &rcond,
-                &n,
-                work.as_mut_ptr(),
-                &lwork,
-                rwork.as_mut_ptr(),
-                &mut info,
-            );
-        }
-
-        self.data.copy_from_slice(b.as_slice());
+        self.data.copy_from_slice(pinv.as_slice());
     }
 
     pub fn mat_mul(&self, rhs: &Matrix<c64>) -> Matrix<c64> {

@@ -14,7 +14,6 @@ pub use matrix_f64::*;
 
 use dwconsts::*;
 use itertools::multizip;
-use lapack_sys::*;
 use std::ops::*;
 use std::{
     fmt,

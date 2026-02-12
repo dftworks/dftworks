@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 dwconsts = { path = "../dwconsts" }
 types = { path = "../types" }
-lapack_sys = { path = "../lapack_sys" }
 itertools = "*"
 num-traits = "*"
 hdf5 = "0.8.1"
+nalgebra = "0.32.6"
