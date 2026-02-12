@@ -1,4 +1,4 @@
-use crate::Matrix;
+use crate::{Dot, Matrix};
 use dwconsts::*;
 
 use itertools::multizip;

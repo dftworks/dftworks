@@ -11,4 +11,4 @@ lattice = { path = "../lattice" }
 gvector = { path = "../gvector" }
 utility = { path = "../utility" }
 vector3 = { path = "../vector3" }
-hdf5 = "0.8.1"
+hdf5 = { package = "hdf5-metno", version = "0.9" }

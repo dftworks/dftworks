@@ -11,5 +11,5 @@ dwconsts = { path = "../dwconsts" }
 types = { path = "../types" }
 itertools = "*"
 num-traits = "*"
-hdf5 = "0.8.1"
+hdf5 = { package = "hdf5-metno", version = "0.9" }
 nalgebra = "0.32.6"
