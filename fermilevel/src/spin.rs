@@ -24,36 +24,26 @@ impl FermiLevel for FermiLevelSpin {
 
         let mut fermi_level = (fermi_level_up + fermi_level_dn) / 2.0;
 
-        let mut total_electrons_up = |fermi| get_total_electrons(vkscf_up, vevals_up, fermi);
-        let mut total_electrons_dn = |fermi| get_total_electrons(vkscf_dn, vevals_dn, fermi);
-
-        let mut ntot_up = total_electrons_up(fermi_level);
-        let mut ntot_dn = total_electrons_dn(fermi_level);
-
-        let mut ntot = ntot_up + ntot_dn;
+        let mut total_electrons =
+            |fermi| get_total_electrons_spin(vkscf_up, vevals_up, vkscf_dn, vevals_dn, fermi);
+        let mut ntot = total_electrons(fermi_level);
 
         let mut upper = fermi_level;
         let mut lower = fermi_level;
 
         while ntot < nelec {
             upper += EPS2 * EV_TO_HA; // convert ev to ha
-            ntot_up = total_electrons_up(upper);
-            ntot_dn = total_electrons_dn(upper);
-            ntot = ntot_up + ntot_dn;
+            ntot = total_electrons(upper);
         }
 
         while ntot > nelec {
             lower -= EPS2 * EV_TO_HA; // convert ev to ha
-            ntot_up = total_electrons_up(lower);
-            ntot_dn = total_electrons_dn(lower);
-            ntot = ntot_up + ntot_dn;
+            ntot = total_electrons(lower);
         }
 
         while (ntot - nelec).abs() > EPS12 {
             fermi_level = (upper + lower) / 2.0;
-            ntot_up = total_electrons_up(fermi_level);
-            ntot_dn = total_electrons_dn(fermi_level);
-            ntot = ntot_up + ntot_dn;
+            ntot = total_electrons(fermi_level);
 
             if ntot > nelec {
                 upper = fermi_level;
@@ -133,5 +123,32 @@ pub fn get_total_electrons(vkscf: &mut [KSCF], vevals: &Vec<Vec<f64>>, fermi: f6
     dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, MPI_COMM_WORLD);
     dwmpi::bcast_scalar(&mut ntot, MPI_COMM_WORLD);
 
+    ntot
+}
+
+fn get_total_electrons_spin(
+    vkscf_up: &mut [KSCF],
+    vevals_up: &Vec<Vec<f64>>,
+    vkscf_dn: &mut [KSCF],
+    vevals_dn: &Vec<Vec<f64>>,
+    fermi: f64,
+) -> f64 {
+    let mut ntot_local = 0.0;
+
+    for (ik, kscf) in vkscf_up.iter_mut().enumerate() {
+        let evals = &vevals_up[ik];
+        kscf.compute_occ(fermi, evals);
+        ntot_local += kscf.get_total_occ() * kscf.get_k_weight();
+    }
+
+    for (ik, kscf) in vkscf_dn.iter_mut().enumerate() {
+        let evals = &vevals_dn[ik];
+        kscf.compute_occ(fermi, evals);
+        ntot_local += kscf.get_total_occ() * kscf.get_k_weight();
+    }
+
+    let mut ntot = 0.0;
+    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut ntot, MPI_COMM_WORLD);
     ntot
 }
