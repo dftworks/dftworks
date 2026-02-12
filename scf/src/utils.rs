@@ -144,8 +144,6 @@ pub fn display_eigen_values(
             }
 
             std::io::stdout().flush();
-
-            std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
 
