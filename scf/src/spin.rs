@@ -194,6 +194,10 @@ impl SCF for SCFSpin {
         let mut rhog_out = RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]);
 
         let mut rhog_diff = vec![c64::zero(); npw_rho];
+        let mut rhog_total = vec![c64::zero(); npw_rho];
+        let mut rhog_spin = vec![c64::zero(); npw_rho];
+        let mut vk_n_band_converged = vec![0; nkpt];
+        let mut vk_n_hpsi = vec![0; nkpt];
 
         let mut energy_diff = 0.0;
 
@@ -233,8 +237,8 @@ impl SCF for SCFSpin {
 
             //
 
-            let mut vk_n_band_converged = vec![0; nkpt];
-            let mut vk_n_hpsi = vec![0; nkpt];
+            vk_n_band_converged.fill(0);
+            vk_n_hpsi.fill(0);
             {
                 //            let (vkscf_up, vkscf_dn) = utility::get_slice_up_dn(vkscf);
                 //                let (vkevals_up, vkevals_dn) = utility::get_mut_slice_up_dn(vkevals);
@@ -481,9 +485,6 @@ impl SCF for SCFSpin {
 
                 if let RHOG::Spin(ref rhog_out_up, ref rhog_out_dn) = &rhog_out {
                     if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
-                        let mut rhog_total = vec![c64::zero(); npw_rho];
-                        let mut rhog_spin = vec![c64::zero(); npw_rho];
-
                         for ipw in 0..npw_rho {
                             rhog_total[ipw] = rhog_up[ipw] + rhog_dn[ipw];
                             rhog_spin[ipw] = rhog_up[ipw] - rhog_dn[ipw];
