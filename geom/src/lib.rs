@@ -23,21 +23,9 @@ pub trait GeomOptimizationDriver {
 }
 
 pub fn new(scheme: &str, alpha: f64, nstep: usize) -> Box<dyn GeomOptimizationDriver> {
-    let optim: Box<dyn GeomOptimizationDriver>;
-
     match scheme.to_lowercase().as_str() {
-        "bfgs" => {
-            optim = Box::new(BFGS::new(alpha, nstep));
-        }
-
-        "diis" => {
-            optim = Box::new(DIIS::new(alpha, nstep));
-        }
-
-        other => {
-            panic!("unsupported geom_optim_scheme '{}'", other);
-        }
+        "bfgs" => Box::new(BFGS::new(alpha, nstep)),
+        "diis" => Box::new(DIIS::new(alpha, nstep)),
+        other => panic!("unsupported geom_optim_scheme '{}'", other),
     }
-
-    optim
 }
