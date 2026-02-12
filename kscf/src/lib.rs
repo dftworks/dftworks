@@ -1,5 +1,6 @@
 #![allow(warnings)]
 
+use atompsp::AtomPSP;
 use control::Control;
 use crystal::Crystal;
 use dwconsts::*;
@@ -24,6 +25,12 @@ use itertools::multizip;
 
 mod subspace;
 
+struct NonLocalTerm<'a> {
+    atompsp: &'a dyn AtomPSP,
+    kgbeta: &'a [Vec<f64>],
+    sfact_by_atom: Vec<Vec<c64>>,
+}
+
 pub struct KSCF<'a> {
     control: &'a Control,
     gvec: &'a GVector,
@@ -36,6 +43,10 @@ pub struct KSCF<'a> {
     kin: Vec<f64>,
     occ: Vec<f64>,
     smearing: Box<dyn Smearing>,
+    volume: f64,
+    fft_shape: [usize; 3],
+    fft_linear_index: Vec<usize>,
+    vnl_terms: Vec<NonLocalTerm<'a>>,
 
     k_weight: f64,
 }
@@ -64,9 +75,11 @@ impl<'a> KSCF<'a> {
     pub fn new(
         control: &'a Control,
         gvec: &'a GVector,
+        crystal: &'a Crystal,
         pspot: &'a PSPot,
         pwwfc: &'a PWBasis,
         vnl: &'a VNL,
+        fft_shape: [usize; 3],
 
         ik: usize,
         k_cart: Vector3f64,
@@ -80,6 +93,16 @@ impl<'a> KSCF<'a> {
 
         let smearing = smearing::new(control.get_smearing_scheme());
 
+        let volume = crystal.get_latt().volume();
+        let fft_linear_index = utility::compute_fft_linear_index_map(
+            gvec.get_miller(),
+            pwwfc.get_gindex(),
+            fft_shape[0],
+            fft_shape[1],
+            fft_shape[2],
+        );
+        let vnl_terms = build_nonlocal_terms(crystal, gvec, pspot, pwwfc, vnl);
+
         KSCF {
             control,
             gvec,
@@ -91,6 +114,10 @@ impl<'a> KSCF<'a> {
             kin,
             occ,
             smearing,
+            volume,
+            fft_shape,
+            fft_linear_index,
+            vnl_terms,
             k_weight,
         }
     }
@@ -187,8 +214,6 @@ impl<'a> KSCF<'a> {
 
     pub fn run(
         &self,
-        crystal: &Crystal,
-        fftgrid: &FFTGrid,
         rgtrans: &RGTransform,
         vloc_3d: &Array3<c64>,
         eigval_epsilon: f64,
@@ -213,52 +238,13 @@ impl<'a> KSCF<'a> {
             }
         }
 
-        let volume = crystal.get_latt().volume();
-
         let npw_wfc = self.pwwfc.get_n_plane_waves();
-
-        let fft_shape = fftgrid.get_size();
 
         // workspace for hamiltonian_on_psi
 
-        let mut vunkg_3d = Array3::<c64>::new(fft_shape);
-        let mut unk_3d = Array3::<c64>::new(fft_shape);
-        let mut fft_workspace = Array3::<c64>::new(fft_shape);
-        let species = crystal.get_unique_species();
-        let atom_positions_by_specie: Vec<Vec<Vector3f64>> = (0..species.len())
-            .map(|isp| crystal.get_atom_positions_of_specie(isp))
-            .collect();
-        let kgbeta_all = self.vnl.get_kgbeta_all();
-        let kgbeta_by_specie: Vec<&Vec<Vec<f64>>> = species
-            .iter()
-            .map(|specie| kgbeta_all.get(specie).unwrap())
-            .collect();
-        let atompsp_by_specie: Vec<_> = species
-            .iter()
-            .map(|specie| self.pspot.get_psp(specie))
-            .collect();
-        let sfact_by_specie: Vec<Vec<Vec<c64>>> = atom_positions_by_specie
-            .iter()
-            .map(|atom_positions| {
-                hpsi::compute_structure_factors_for_atoms(self.gvec, self.pwwfc, atom_positions)
-            })
-            .collect();
-        let vnl_terms: Vec<_> = (0..species.len())
-            .map(|isp| {
-                (
-                    atompsp_by_specie[isp],
-                    kgbeta_by_specie[isp],
-                    &sfact_by_specie[isp],
-                )
-            })
-            .collect();
-        let fft_linear_index = utility::compute_fft_linear_index_map(
-            self.gvec.get_miller(),
-            self.pwwfc.get_gindex(),
-            fft_shape[0],
-            fft_shape[1],
-            fft_shape[2],
-        );
+        let mut vunkg_3d = Array3::<c64>::new(self.fft_shape);
+        let mut unk_3d = Array3::<c64>::new(self.fft_shape);
+        let mut fft_workspace = Array3::<c64>::new(self.fft_shape);
 
         //
 
@@ -271,8 +257,8 @@ impl<'a> KSCF<'a> {
 
             hpsi::vloc_on_psi_with_cached_fft_index(
                 rgtrans,
-                volume,
-                &fft_linear_index,
+                self.volume,
+                &self.fft_linear_index,
                 vloc_3d,
                 &mut vunkg_3d,
                 &mut unk_3d,
@@ -283,11 +269,11 @@ impl<'a> KSCF<'a> {
 
             // add v_nl |psi> to v_loc |psi>
 
-            for &(atompsp, kgbeta, sfact_by_atom) in vnl_terms.iter() {
+            for term in self.vnl_terms.iter() {
                 hpsi::vnl_on_psi_with_structure_factors(
-                    atompsp,
-                    sfact_by_atom,
-                    kgbeta,
+                    term.atompsp,
+                    &term.sfact_by_atom,
+                    term.kgbeta,
                     &self.kgylm,
                     vin,
                     vout,
@@ -300,8 +286,6 @@ impl<'a> KSCF<'a> {
         };
 
         // begin: preconditioner
-
-        let mut h_diag = self.kin.clone();
 
         //h_diag(ig,:) = 1.D0 + g2kin(ig) + SQRT( 1.D0 + ( g2kin(ig) - 1.D0 )**2 )
 
@@ -330,21 +314,9 @@ impl<'a> KSCF<'a> {
 
             // subspace rotation
 
-            if need_rayleigh_quotient(self.control, scf_iter, n_cg_loop) {
-                let mut t_evecs = Matrix::<c64>::new(npw_wfc, self.control.get_nband());
-
-                t_evecs.assign(evecs);
-
-                //subspace::rotate_wfc(&mut hamiltonian_on_psi, &mut t_evecs, evecs, evals);
-
-                // println!("subspace rotation before eigen-solver");
-            }
-
-            // sparse solver
-
             let (n_band_converged_this_loop, n_hpsi_this_loop) = sparse.compute(
                 &mut hamiltonian_on_psi,
-                &h_diag,
+                &self.kin,
                 evecs,
                 evals,
                 &self.occ,
@@ -379,24 +351,15 @@ impl<'a> KSCF<'a> {
     }
 
     pub fn compute_occ(&mut self, fermi_level: f64, evals: &[f64]) {
-        if self.control.is_spin() {
-            for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
-                *occ = 1.0
-                    * self.smearing.get_occupation_number(
-                        fermi_level,
-                        self.control.get_temperature(),
-                        ev,
-                    );
-            }
-        } else {
-            for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
-                *occ = 2.0
-                    * self.smearing.get_occupation_number(
-                        fermi_level,
-                        self.control.get_temperature(),
-                        ev,
-                    );
-            }
+        let occupation_scale = if self.control.is_spin() { 1.0 } else { 2.0 };
+
+        for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
+            *occ = occupation_scale
+                * self.smearing.get_occupation_number(
+                    fermi_level,
+                    self.control.get_temperature(),
+                    ev,
+                );
         }
     }
 
@@ -411,6 +374,10 @@ impl<'a> KSCF<'a> {
 
 fn sort_eigen_values_and_vectors(evals: &mut [f64], evecs: &mut Matrix<c64>) {
     let sort_idx = utility::argsort(evals);
+    if sort_idx.iter().enumerate().all(|(i, &j)| i == j) {
+        return;
+    }
+
     let tmp_evals = evals.to_vec();
     let tmp_evecs = evecs.clone();
 
@@ -423,6 +390,38 @@ fn sort_eigen_values_and_vectors(evals: &mut [f64], evecs: &mut Matrix<c64>) {
 
         evecs.set_col(i, pcol);
     }
+}
+
+fn build_nonlocal_terms<'a>(
+    crystal: &Crystal,
+    gvec: &GVector,
+    pspot: &'a PSPot,
+    pwwfc: &PWBasis,
+    vnl: &'a VNL,
+) -> Vec<NonLocalTerm<'a>> {
+    let species = crystal.get_unique_species();
+    let kgbeta_all = vnl.get_kgbeta_all();
+
+    species
+        .iter()
+        .enumerate()
+        .map(|(isp, specie)| {
+            let atom_positions = crystal.get_atom_positions_of_specie(isp);
+            let sfact_by_atom =
+                hpsi::compute_structure_factors_for_atoms(gvec, pwwfc, &atom_positions);
+
+            NonLocalTerm {
+                atompsp: pspot.get_psp(specie),
+                kgbeta: kgbeta_all
+                    .get(specie)
+                    .unwrap_or_else(|| {
+                        panic!("missing nonlocal projector data for specie {specie}")
+                    })
+                    .as_slice(),
+                sfact_by_atom,
+            }
+        })
+        .collect()
 }
 
 fn compute_kinetic_energy(kg: &[f64]) -> Vec<f64> {

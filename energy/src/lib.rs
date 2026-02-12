@@ -275,7 +275,7 @@ pub fn hartree(pwden: &PWDensity, latt: &Lattice, rhog: &[c64]) -> f64 {
     etot_hartree
 }
 
-pub fn band_structure(vkscf: &[KSCF], vevals: &Vec<Vec<f64>>) -> f64 {
+pub fn band_structure(vkscf: &[KSCF], vevals: &[Vec<f64>]) -> f64 {
     let mut etot_bands = 0.0;
 
     for (ik, kscf) in vkscf.iter().enumerate() {

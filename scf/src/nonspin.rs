@@ -109,6 +109,7 @@ impl SCF for SCFNonspin {
         let ntot_elec = crystal.get_n_total_electrons(pots);
 
         let mut rhog_out = vec![c64::zero(); npw_rho];
+        let mut rhog_diff = vec![c64::zero(); npw_rho];
 
         let mut energy_diff = 0.0;
 
@@ -143,8 +144,6 @@ impl SCF for SCFNonspin {
             );
 
             utils::solve_eigen_equations(
-                crystal,
-                &fftgrid,
                 rgtrans,
                 &vloc_3d,
                 eigvalue_epsilon,
@@ -298,7 +297,7 @@ impl SCF for SCFNonspin {
 
             // rho in G space
 
-            utils::compute_next_density(pwden, mixing.as_mut(), &rhog_out, rhog);
+            utils::compute_next_density(pwden, mixing.as_mut(), &rhog_out, &mut rhog_diff, rhog);
 
             // rho  in r space
 

@@ -251,8 +251,6 @@ impl SCF for SCFSpin {
 
                             for (ik, kscf) in vkscf_up.iter().enumerate() {
                                 let (n_band_converged, n_hpsi) = kscf.run(
-                                    crystal,
-                                    &fftgrid,
                                     rgtrans,
                                     &vloc_3d_up,
                                     eigvalue_epsilon,
@@ -284,8 +282,6 @@ impl SCF for SCFSpin {
 
                             for (ik, kscf) in vkscf_dn.iter().enumerate() {
                                 let (n_band_converged, n_hpsi) = kscf.run(
-                                    crystal,
-                                    &fftgrid,
                                     rgtrans,
                                     &vloc_3d_dn,
                                     eigvalue_epsilon,

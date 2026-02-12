@@ -506,6 +506,7 @@ dependencies = [
 name = "kscf"
 version = "0.1.0"
 dependencies = [
+ "atompsp",
  "control",
  "crystal",
  "dwconsts",

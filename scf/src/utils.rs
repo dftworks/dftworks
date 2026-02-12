@@ -104,18 +104,16 @@ pub fn compute_next_density(
     pwden: &PWDensity,
     mixing: &mut dyn Mixing,
     rhog_out: &[c64],
+    rhog_diff: &mut [c64],
     rhog: &mut RHOG,
 ) {
-    let npw_rho = rhog.as_non_spin().unwrap().len();
-    let mut rhog_diff = vec![c64::zero(); npw_rho];
-
     if let RHOG::NonSpin(rhog) = rhog {
         // mix old and new densities to get the density for the next iteration
-        for ipw in 0..npw_rho {
+        for ipw in 0..rhog_diff.len() {
             rhog_diff[ipw] = rhog_out[ipw] - rhog[ipw];
         }
 
-        mixing.compute_next_density(pwden.get_g(), rhog, &rhog_diff);
+        mixing.compute_next_density(pwden.get_g(), rhog, rhog_diff);
     }
 }
 
@@ -369,8 +367,6 @@ pub fn get_n_plane_waves_max(vpwwfc: &[PWBasis]) -> usize {
 }
 
 pub fn solve_eigen_equations(
-    crystal: &Crystal,
-    fftgrid: &FFTGrid,
     rgtrans: &RGTransform,
     vloc_3d: &Array3<c64>,
     eigvalue_epsilon: f64,
@@ -384,28 +380,16 @@ pub fn solve_eigen_equations(
     let t_vkevecs = vkevecs.as_non_spin_mut().unwrap();
     let t_vkevals = vkevals.as_non_spin_mut().unwrap();
 
-    let nkpt = t_vkscf.len();
-
-    let mut vk_n_band_converged = vec![0; nkpt];
-    let mut vk_n_hpsi = vec![0; nkpt];
-
     for (ik, kscf) in t_vkscf.iter().enumerate() {
-        // println!("rank: {} ik: {}", dwmpi::get_comm_world_rank(), ik);
-
-        let (n_band_converged, n_hpsi) = kscf.run(
-            crystal,
-            &fftgrid,
+        kscf.run(
             rgtrans,
-            &vloc_3d,
+            vloc_3d,
             eigvalue_epsilon,
             geom_iter,
             scf_iter,
             &mut t_vkevals[ik],
             &mut t_vkevecs[ik],
         );
-
-        vk_n_band_converged[ik] = n_band_converged;
-        vk_n_hpsi[ik] = n_hpsi;
     }
 }
 
@@ -478,7 +462,7 @@ pub fn compute_total_energy(
     crystal: &Crystal,
     rhog: &[c64],
     vkscf: &[KSCF],
-    vevals: &Vec<Vec<f64>>,
+    vevals: &[Vec<f64>],
     rho_3d: &mut Array3<c64>,
     rhocore_3d: &Array3<c64>,
     exc_3d: &Array3<c64>,
@@ -519,7 +503,7 @@ pub fn compute_total_energy(
 // hwf_energy = eband + ( etxc - etxcc ) + ewld + ehart + demet + deband_hwf
 // etot       = eband + ( etxc - etxcc ) + ewld + ehart + demet + deband + descf
 
-fn get_bands_energy(vkscf: &[KSCF], vevals: &Vec<Vec<f64>>) -> f64 {
+fn get_bands_energy(vkscf: &[KSCF], vevals: &[Vec<f64>]) -> f64 {
     let etot_bands = energy::band_structure(vkscf, vevals);
 
     etot_bands
