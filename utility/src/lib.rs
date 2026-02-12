@@ -52,26 +52,56 @@ pub fn dot_product_v3i32_v3f64(g: Vector3i32, r: Vector3f64) -> f64 {
 
 pub fn zdot_product(u: &[c64], v: &[c64]) -> c64 {
     assert_eq!(u.len(), v.len());
+    let n = u.len();
+    let mut i = 0;
+    let mut acc0 = ZERO_C64;
+    let mut acc1 = ZERO_C64;
+    let mut acc2 = ZERO_C64;
+    let mut acc3 = ZERO_C64;
 
-    // u.iter().zip(v.iter()).map(|(x, y)| x.conj() * (*y)).sum()
+    while i + 3 < n {
+        acc0 += u[i].conj() * v[i];
+        acc1 += u[i + 1].conj() * v[i + 1];
+        acc2 += u[i + 2].conj() * v[i + 2];
+        acc3 += u[i + 3].conj() * v[i + 3];
+        i += 4;
+    }
 
-    multizip((u.iter(), v.iter()))
-        .map(|(x, y)| x.conj() * (*y))
-        .sum()
+    let mut sum = (acc0 + acc1) + (acc2 + acc3);
+    while i < n {
+        sum += u[i].conj() * v[i];
+        i += 1;
+    }
+
+    sum
 }
 
 pub fn zdot_product_metric(u: &[c64], v: &[c64], metric: &[f64]) -> c64 {
     assert_eq!(u.len(), v.len());
+    assert_eq!(u.len(), metric.len());
 
-    // u.iter()
-    //     .zip(v.iter())
-    //     .zip(metric.iter())
-    //     .map(|((x, y), z)| x.conj() * (*z) * (*y))
-    //     .sum()
+    let n = u.len();
+    let mut i = 0;
+    let mut acc0 = ZERO_C64;
+    let mut acc1 = ZERO_C64;
+    let mut acc2 = ZERO_C64;
+    let mut acc3 = ZERO_C64;
 
-    multizip((u.iter(), v.iter(), metric.iter()))
-        .map(|(x, y, m)| x.conj() * (*m) * (*y))
-        .sum()
+    while i + 3 < n {
+        acc0 += u[i].conj() * metric[i] * v[i];
+        acc1 += u[i + 1].conj() * metric[i + 1] * v[i + 1];
+        acc2 += u[i + 2].conj() * metric[i + 2] * v[i + 2];
+        acc3 += u[i + 3].conj() * metric[i + 3] * v[i + 3];
+        i += 4;
+    }
+
+    let mut sum = (acc0 + acc1) + (acc2 + acc3);
+    while i < n {
+        sum += u[i].conj() * metric[i] * v[i];
+        i += 1;
+    }
+
+    sum
 }
 
 pub fn dot_product_2(u: &[c64], v: &[c64]) -> c64 {
@@ -108,12 +138,28 @@ pub fn dot_product_2(u: &[c64], v: &[c64]) -> c64 {
 
 pub fn ddot_product(u: &[f64], v: &[f64]) -> f64 {
     assert_eq!(u.len(), v.len());
+    let n = u.len();
+    let mut i = 0;
+    let mut acc0 = 0.0;
+    let mut acc1 = 0.0;
+    let mut acc2 = 0.0;
+    let mut acc3 = 0.0;
 
-    //return u.iter().zip(v.iter()).map(|(x, y)| (*x) * (*y)).sum();
+    while i + 3 < n {
+        acc0 += u[i] * v[i];
+        acc1 += u[i + 1] * v[i + 1];
+        acc2 += u[i + 2] * v[i + 2];
+        acc3 += u[i + 3] * v[i + 3];
+        i += 4;
+    }
 
-    multizip((u.iter(), v.iter()))
-        .map(|(x, y)| (*x) * (*y))
-        .sum()
+    let mut sum = (acc0 + acc1) + (acc2 + acc3);
+    while i < n {
+        sum += u[i] * v[i];
+        i += 1;
+    }
+
+    sum
 }
 
 pub fn make_matrix(n: usize) -> Matrix<c64> {
