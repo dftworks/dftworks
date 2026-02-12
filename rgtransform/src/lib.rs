@@ -33,11 +33,9 @@ impl RGTransform {
         rho_3d: &[c64],
         rhog_1d: &mut [c64],
     ) {
-        forward(
-            &self.pfft,
-            rho_3d,
-            &mut self.fft_work.borrow_mut().as_mut_slice(),
-        );
+        let mut fft_work = self.fft_work.borrow_mut();
+        forward(&self.pfft, rho_3d, fft_work.as_mut_slice());
+        drop(fft_work);
 
         utility::map_3d_to_1d(
             gvec.get_miller(),
@@ -67,7 +65,8 @@ impl RGTransform {
             &mut self.fft_work.borrow_mut(),
         );
 
-        backward(&self.pfft, &self.fft_work.borrow().as_slice(), rho_3d);
+        let fft_work = self.fft_work.borrow();
+        backward(&self.pfft, fft_work.as_slice(), rho_3d);
     }
 
     pub fn r3d_to_g3d(&self, r: &[c64], g: &mut [c64]) {

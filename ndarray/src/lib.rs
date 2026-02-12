@@ -3,31 +3,47 @@
 
 mod array3_c64;
 
+use ndarray_crate::{Array3 as NdArray3, ShapeBuilder, Zip};
 use num::traits::Zero;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::Read;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::ops::{Index, IndexMut};
 
-use itertools::multizip;
-
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Array3<T> {
     shape: [usize; 3],
-    data: Vec<T>,
+    data: NdArray3<T>,
+}
+
+impl<T: Default + Clone> Default for Array3<T> {
+    fn default() -> Self {
+        Self {
+            shape: [0, 0, 0],
+            data: NdArray3::from_elem((0, 0, 0).f(), T::default()),
+        }
+    }
 }
 
 impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Sub<Output = T>>
     Array3<T>
 {
     pub fn new(shape: [usize; 3]) -> Array3<T> {
-        let nlen = shape[0] * shape[1] * shape[2];
-
         Array3 {
             shape,
-            data: vec![T::default(); nlen],
+            // Keep first-index-fastest layout to preserve FFT/indexing behavior.
+            data: NdArray3::from_elem((shape[0], shape[1], shape[2]).f(), T::default()),
         }
+    }
+
+    pub fn from_vec(shape: [usize; 3], data: Vec<T>) -> Array3<T> {
+        let nlen = shape[0] * shape[1] * shape[2];
+        assert_eq!(data.len(), nlen);
+
+        let data = NdArray3::from_shape_vec((shape[0], shape[1], shape[2]).f(), data)
+            .expect("invalid Array3 shape/data length");
+
+        Array3 { shape, data }
     }
 
     pub fn len(&self) -> usize {
@@ -47,59 +63,52 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
     where
         T: Clone + Copy,
     {
-        self.data.iter_mut().for_each(|x| *x = value);
+        self.data.fill(value);
     }
 
     pub fn shape(&self) -> [usize; 3] {
         self.shape
     }
 
-    pub fn as_slice(&self) -> &Vec<T> {
-        &self.data
+    pub fn as_slice(&self) -> &[T] {
+        self.data
+            .as_slice_memory_order()
+            .expect("Array3 is not contiguous in memory order")
     }
 
-    pub fn as_mut_slice(&mut self) -> &mut Vec<T> {
-        &mut self.data
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        self.data
+            .as_slice_memory_order_mut()
+            .expect("Array3 is not contiguous in memory order")
     }
 
     pub fn hadamard_product(src1: &Array3<T>, src2: &Array3<T>, dst: &mut Array3<T>) {
-        let a = src1.as_slice();
-        let b = src2.as_slice();
-        let c = dst.as_mut_slice();
+        assert_eq!(src1.shape, src2.shape);
+        assert_eq!(src1.shape, dst.shape);
 
-        assert_eq!(a.len(), b.len());
-        assert_eq!(a.len(), c.len());
-
-        for (x, y, z) in multizip((a.iter(), b.iter(), c.iter_mut())) {
-            *z = (*x) * (*y);
-        }
+        Zip::from(dst.data.view_mut())
+            .and(src1.data.view())
+            .and(src2.data.view())
+            .for_each(|z, &x, &y| *z = x * y);
     }
 
     pub fn assign(&mut self, rhs: &Array3<T>) {
-        let psrc = rhs.as_slice();
-        let pdst = self.as_mut_slice();
-
-        pdst[..psrc.len()].copy_from_slice(psrc);
+        assert_eq!(self.shape, rhs.shape);
+        self.data.assign(&rhs.data);
     }
 
     pub fn add_from(&mut self, rhs: &Array3<T>) {
-        let psrc = rhs.as_slice();
-        let pdst = self.as_mut_slice();
-
-        assert_eq!(psrc.len(), pdst.len());
-        for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
-            *d = *d + *s;
-        }
+        assert_eq!(self.shape, rhs.shape);
+        Zip::from(self.data.view_mut())
+            .and(rhs.data.view())
+            .for_each(|d, &s| *d = *d + s);
     }
 
     pub fn substract(&mut self, rhs: &Array3<T>) {
-        let psrc = rhs.as_slice();
-        let pdst = self.as_mut_slice();
-
-        assert_eq!(psrc.len(), pdst.len());
-        for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
-            *d = *d - *s;
-        }
+        assert_eq!(self.shape, rhs.shape);
+        Zip::from(self.data.view_mut())
+            .and(rhs.data.view())
+            .for_each(|d, &s| *d = *d - s);
     }
 
     pub fn save(&self, filename: &str) {
@@ -111,10 +120,11 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
 
         let n2: &[u8] = &self.shape[2].to_be_bytes();
 
+        let slice = self.as_slice();
         let data: &[u8] = unsafe {
             std::slice::from_raw_parts(
-                self.data.as_ptr() as *const u8,
-                std::mem::size_of::<T>() * self.data.len(),
+                slice.as_ptr() as *const u8,
+                std::mem::size_of::<T>() * slice.len(),
             )
         };
 
@@ -158,13 +168,21 @@ impl<T: Default + Copy + Clone + Zero + std::ops::Mul<Output = T> + std::ops::Su
         p0 = p1;
         p1 = buf.len();
 
-        let data: Vec<T> = unsafe {
-            std::slice::from_raw_parts(buf[p0..p1].as_ptr() as *const T, n0 * n1 * n2).to_vec()
-        };
+        let shape = [n0, n1, n2];
+        let nlen = n0 * n1 * n2;
+        let nbytes = std::mem::size_of::<T>() * nlen;
+        assert_eq!(p1 - p0, nbytes, "corrupted Array3 binary payload");
 
-        for (s, d) in multizip((data.iter(), self.data.iter_mut())) {
-            *d = *s;
+        let mut data = vec![T::default(); nlen];
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                buf[p0..p1].as_ptr(),
+                data.as_mut_ptr() as *mut u8,
+                nbytes,
+            );
         }
+
+        *self = Array3::from_vec(shape, data);
     }
 }
 
@@ -172,22 +190,12 @@ impl<T> Index<[usize; 3]> for Array3<T> {
     type Output = T;
 
     fn index(&self, idx: [usize; 3]) -> &T {
-        let n0 = self.shape[0];
-        let n1 = self.shape[1];
-
-        let pos = idx[0] + idx[1] * n0 + idx[2] * n0 * n1;
-
-        &self.data[pos]
+        &self.data[[idx[0], idx[1], idx[2]]]
     }
 }
 
 impl<T> IndexMut<[usize; 3]> for Array3<T> {
     fn index_mut(&mut self, idx: [usize; 3]) -> &mut Self::Output {
-        let n0 = self.shape[0];
-        let n1 = self.shape[1];
-
-        let pos = idx[0] + idx[1] * n0 + idx[2] * n0 * n1;
-
-        &mut self.data[pos]
+        &mut self.data[[idx[0], idx[1], idx[2]]]
     }
 }

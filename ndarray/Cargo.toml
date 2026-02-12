@@ -12,3 +12,4 @@ dwconsts = { path = "../dwconsts" }
 itertools = "*"
 num = "*"
 hdf5 = "0.8.1"
+ndarray_crate = { package = "ndarray", version = "0.15.6" }

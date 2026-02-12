@@ -665,6 +665,7 @@ dependencies = [
  "dwconsts",
  "hdf5",
  "itertools",
+ "ndarray 0.15.6",
  "num",
  "types",
 ]
