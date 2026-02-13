@@ -1,5 +1,5 @@
 #![allow(warnings)]
-use control::Control;
+use control::{Control, SpinScheme};
 use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
@@ -91,6 +91,8 @@ fn main() {
 
     let density_driver = density::new(control.get_spin_scheme());
 
+    let spin_scheme = control.get_spin_scheme_enum();
+
     // crystal.display();
 
     loop {
@@ -131,21 +133,31 @@ fn main() {
 
         let ewald = ewald::Ewald::new(&crystal, &zions, &gvec, &pwden);
 
-        let nspin = if control.is_spin() { 2 } else { 1 };
-
-        let mut rhog = if control.is_spin() {
-            RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho])
-        } else {
-            RHOG::NonSpin(vec![c64::zero(); npw_rho])
+        let nspin = match spin_scheme {
+            SpinScheme::NonSpin => 1,
+            SpinScheme::Spin => 2,
+            SpinScheme::Ncl => {
+                panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            }
         };
 
-        let mut rho_3d = if control.is_spin() {
-            RHOR::Spin(
+        let mut rhog = match spin_scheme {
+            SpinScheme::NonSpin => RHOG::NonSpin(vec![c64::zero(); npw_rho]),
+            SpinScheme::Spin => RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
+            SpinScheme::Ncl => {
+                panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            }
+        };
+
+        let mut rho_3d = match spin_scheme {
+            SpinScheme::NonSpin => RHOR::NonSpin(Array3::<c64>::new([n1, n2, n3])),
+            SpinScheme::Spin => RHOR::Spin(
                 Array3::<c64>::new([n1, n2, n3]),
                 Array3::<c64>::new([n1, n2, n3]),
-            )
-        } else {
-            RHOR::NonSpin(Array3::<c64>::new([n1, n2, n3]))
+            ),
+            SpinScheme::Ncl => {
+                panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            }
         };
 
         // set rhog and rho_3d to be the atomic super position
@@ -153,7 +165,7 @@ fn main() {
         if dwmpi::is_root() {
             if geom_iter == 1 && std::path::Path::new("out.scf.rho.hdf5").exists() {
                 if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
-                    rho_3d = RHOR::load_hdf5(control.is_spin()).1;
+                    rho_3d = RHOR::load_hdf5(matches!(spin_scheme, SpinScheme::Spin)).1;
                     if let RHOR::NonSpin(data) = &mut rho_3d {
                         rgtrans.r3d_to_g1d(&gvec, &pwden, data.as_slice(), rhog);
                     }
@@ -176,26 +188,30 @@ fn main() {
             }
         }
 
-        if control.is_spin() {
-            let (rhog_up, rhog_dn) = rhog.as_spin_mut().unwrap();
+        match spin_scheme {
+            SpinScheme::Spin => {
+                let (rhog_up, rhog_dn) = rhog.as_spin_mut().unwrap();
 
-            dwmpi::bcast_slice(rhog_up.as_mut_slice(), MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rhog_dn.as_mut_slice(), MPI_COMM_WORLD);
+                dwmpi::bcast_slice(rhog_up.as_mut_slice(), MPI_COMM_WORLD);
+                dwmpi::bcast_slice(rhog_dn.as_mut_slice(), MPI_COMM_WORLD);
 
-            let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin_mut().unwrap();
+                let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin_mut().unwrap();
 
-            dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
-        } else {
-            dwmpi::bcast_slice(
-                rhog.as_non_spin_mut().unwrap().as_mut_slice(),
-                MPI_COMM_WORLD,
-            );
+                dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
+                dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
+            }
+            SpinScheme::NonSpin => {
+                dwmpi::bcast_slice(
+                    rhog.as_non_spin_mut().unwrap().as_mut_slice(),
+                    MPI_COMM_WORLD,
+                );
 
-            dwmpi::bcast_slice(
-                rho_3d.as_non_spin_mut().unwrap().as_mut_slice(),
-                MPI_COMM_WORLD,
-            );
+                dwmpi::bcast_slice(
+                    rho_3d.as_non_spin_mut().unwrap().as_mut_slice(),
+                    MPI_COMM_WORLD,
+                );
+            }
+            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in pw broadcast"),
         }
 
         let mut total_rho = 0.0;
@@ -294,109 +310,118 @@ fn main() {
 
         let mut vkscf: VKSCF;
 
-        if !control.is_spin() {
-            vkscf = VKSCF::NonSpin(Vec::<KSCF>::new());
-            if let VKSCF::NonSpin(ref mut vkscf) = vkscf {
-                if let Some((ik_first, ik_last)) = ik_range {
-                    for ik in ik_first..=ik_last {
-                        let k_frac = kpts.get_k_frac(ik);
-                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                        let k_weight = kpts.get_k_weight(ik);
+        match spin_scheme {
+            SpinScheme::NonSpin => {
+                vkscf = VKSCF::NonSpin(Vec::<KSCF>::new());
+                if let VKSCF::NonSpin(ref mut vkscf) = vkscf {
+                    if let Some((ik_first, ik_last)) = ik_range {
+                        for ik in ik_first..=ik_last {
+                            let k_frac = kpts.get_k_frac(ik);
+                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let k_weight = kpts.get_k_weight(ik);
 
-                        let kscf = KSCF::new(
-                            &control,
-                            &gvec,
-                            &crystal,
-                            &pots,
-                            &vpwwfc[ik - ik_first],
-                            &vvnl[ik - ik_first],
-                            fftgrid.get_size(),
-                            ik,
-                            k_cart,
-                            k_weight,
-                        );
+                            let kscf = KSCF::new(
+                                &control,
+                                &gvec,
+                                &crystal,
+                                &pots,
+                                &vpwwfc[ik - ik_first],
+                                &vvnl[ik - ik_first],
+                                fftgrid.get_size(),
+                                ik,
+                                k_cart,
+                                k_weight,
+                            );
 
-                        vkscf.push(kscf);
+                            vkscf.push(kscf);
+                        }
                     }
                 }
             }
-        } else {
-            vkscf = VKSCF::Spin(Vec::<KSCF>::new(), Vec::<KSCF>::new());
-            if let VKSCF::Spin(ref mut vkscf_up, ref mut vkscf_dn) = vkscf {
-                if let Some((ik_first, ik_last)) = ik_range {
-                    for ik in ik_first..=ik_last {
-                        let k_frac = kpts.get_k_frac(ik);
-                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                        let k_weight = kpts.get_k_weight(ik);
+            SpinScheme::Spin => {
+                vkscf = VKSCF::Spin(Vec::<KSCF>::new(), Vec::<KSCF>::new());
+                if let VKSCF::Spin(ref mut vkscf_up, ref mut vkscf_dn) = vkscf {
+                    if let Some((ik_first, ik_last)) = ik_range {
+                        for ik in ik_first..=ik_last {
+                            let k_frac = kpts.get_k_frac(ik);
+                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let k_weight = kpts.get_k_weight(ik);
 
-                        let kscf = KSCF::new(
-                            &control,
-                            &gvec,
-                            &crystal,
-                            &pots,
-                            &vpwwfc[ik - ik_first],
-                            &vvnl[ik - ik_first],
-                            fftgrid.get_size(),
-                            ik,
-                            k_cart,
-                            k_weight,
-                        );
+                            let kscf = KSCF::new(
+                                &control,
+                                &gvec,
+                                &crystal,
+                                &pots,
+                                &vpwwfc[ik - ik_first],
+                                &vvnl[ik - ik_first],
+                                fftgrid.get_size(),
+                                ik,
+                                k_cart,
+                                k_weight,
+                            );
 
-                        vkscf_up.push(kscf);
-                    }
+                            vkscf_up.push(kscf);
+                        }
 
-                    for ik in ik_first..=ik_last {
-                        let k_frac = kpts.get_k_frac(ik);
-                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                        let k_weight = kpts.get_k_weight(ik);
+                        for ik in ik_first..=ik_last {
+                            let k_frac = kpts.get_k_frac(ik);
+                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let k_weight = kpts.get_k_weight(ik);
 
-                        let kscf = KSCF::new(
-                            &control,
-                            &gvec,
-                            &crystal,
-                            &pots,
-                            &vpwwfc[ik - ik_first],
-                            &vvnl[ik - ik_first],
-                            fftgrid.get_size(),
-                            ik,
-                            k_cart,
-                            k_weight,
-                        );
+                            let kscf = KSCF::new(
+                                &control,
+                                &gvec,
+                                &crystal,
+                                &pots,
+                                &vpwwfc[ik - ik_first],
+                                &vvnl[ik - ik_first],
+                                fftgrid.get_size(),
+                                ik,
+                                k_cart,
+                                k_weight,
+                            );
 
-                        vkscf_dn.push(kscf);
+                            vkscf_dn.push(kscf);
+                        }
                     }
                 }
             }
+            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
         }
 
-        if !control.is_spin() {
-            vkevals = VKEigenValue::NonSpin(vec![vec![0.0; nband]; my_nkpt]);
-            vkevecs = VKEigenVector::NonSpin(vec![Matrix::new(0, 0); 0]);
+        match spin_scheme {
+            SpinScheme::NonSpin => {
+                vkevals = VKEigenValue::NonSpin(vec![vec![0.0; nband]; my_nkpt]);
+                vkevecs = VKEigenVector::NonSpin(vec![Matrix::new(0, 0); 0]);
 
-            if let VKEigenVector::NonSpin(ref mut vkevecs) = vkevecs {
-                for (ik, pwwfc) in vpwwfc.iter().enumerate() {
-                    let npw = pwwfc.get_n_plane_waves();
-                    vkevecs.push(Matrix::new(npw, nband));
+                if let VKEigenVector::NonSpin(ref mut vkevecs) = vkevecs {
+                    for (ik, pwwfc) in vpwwfc.iter().enumerate() {
+                        let npw = pwwfc.get_n_plane_waves();
+                        vkevecs.push(Matrix::new(npw, nband));
+                    }
                 }
             }
-        } else {
-            vkevals = VKEigenValue::Spin(
-                vec![vec![0.0; nband]; my_nkpt],
-                vec![vec![0.0; nband]; my_nkpt],
-            );
-            vkevecs = VKEigenVector::Spin(vec![Matrix::new(0, 0); 0], vec![Matrix::new(0, 0); 0]);
+            SpinScheme::Spin => {
+                vkevals = VKEigenValue::Spin(
+                    vec![vec![0.0; nband]; my_nkpt],
+                    vec![vec![0.0; nband]; my_nkpt],
+                );
+                vkevecs =
+                    VKEigenVector::Spin(vec![Matrix::new(0, 0); 0], vec![Matrix::new(0, 0); 0]);
 
-            if let VKEigenVector::Spin(ref mut vkevc_up, ref mut vkevc_dn) = vkevecs {
-                for (ik, pwwfc) in vpwwfc.iter().enumerate() {
-                    let npw = pwwfc.get_n_plane_waves();
-                    vkevc_up.push(Matrix::new(npw, nband));
-                }
+                if let VKEigenVector::Spin(ref mut vkevc_up, ref mut vkevc_dn) = vkevecs {
+                    for (ik, pwwfc) in vpwwfc.iter().enumerate() {
+                        let npw = pwwfc.get_n_plane_waves();
+                        vkevc_up.push(Matrix::new(npw, nband));
+                    }
 
-                for (ik, pwwfc) in vpwwfc.iter().enumerate() {
-                    let npw = pwwfc.get_n_plane_waves();
-                    vkevc_dn.push(Matrix::new(npw, nband));
+                    for (ik, pwwfc) in vpwwfc.iter().enumerate() {
+                        let npw = pwwfc.get_n_plane_waves();
+                        vkevc_dn.push(Matrix::new(npw, nband));
+                    }
                 }
             }
+            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
         }
 
         // ions optimization
