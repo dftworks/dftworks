@@ -4,6 +4,7 @@ use nonspin::*;
 mod spin;
 use spin::*;
 
+use control::SpinScheme;
 use dfttypes::*;
 
 pub trait FermiLevel {
@@ -18,10 +19,10 @@ pub trait FermiLevel {
     ) -> Option<f64>;
 }
 
-pub fn new(spin_scheme: &str) -> Box<dyn FermiLevel> {
+pub fn new(spin_scheme: SpinScheme) -> Box<dyn FermiLevel> {
     match spin_scheme {
-        "nonspin" => Box::new(FermiLevelNonspin::new()),
-        "spin" => Box::new(FermiLevelSpin::new()),
-        other => panic!("unsupported spin_scheme '{}'", other),
+        SpinScheme::NonSpin => Box::new(FermiLevelNonspin::new()),
+        SpinScheme::Spin => Box::new(FermiLevelSpin::new()),
+        SpinScheme::Ncl => panic!("unsupported spin_scheme 'ncl' in fermilevel::new"),
     }
 }

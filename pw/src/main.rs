@@ -87,11 +87,11 @@ fn main() {
 
     // self-consistent field
 
-    let scf_driver = scf::new(control.get_spin_scheme());
-
-    let density_driver = density::new(control.get_spin_scheme());
-
     let spin_scheme = control.get_spin_scheme_enum();
+
+    let scf_driver = scf::new(spin_scheme);
+
+    let density_driver = density::new(spin_scheme);
 
     // crystal.display();
 

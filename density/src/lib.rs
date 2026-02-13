@@ -4,6 +4,7 @@ mod spin;
 use nonspin::*;
 use spin::*;
 
+use control::SpinScheme;
 use crystal::Crystal;
 use dfttypes::*;
 use gvector::GVector;
@@ -36,10 +37,10 @@ pub trait Density {
     );
 }
 
-pub fn new(spin_scheme: &str) -> Box<dyn Density> {
+pub fn new(spin_scheme: SpinScheme) -> Box<dyn Density> {
     match spin_scheme {
-        "nonspin" => Box::new(DensityNonspin::new()),
-        "spin" => Box::new(DensitySpin::new()),
-        other => panic!("unsupported spin_scheme '{}'", other),
+        SpinScheme::NonSpin => Box::new(DensityNonspin::new()),
+        SpinScheme::Spin => Box::new(DensitySpin::new()),
+        SpinScheme::Ncl => panic!("unsupported spin_scheme 'ncl' in density::new"),
     }
 }

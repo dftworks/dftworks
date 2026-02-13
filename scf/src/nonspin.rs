@@ -58,7 +58,7 @@ impl SCF for SCFNonspin {
         //println!("   {:*^120}", " self-consistent field ");
         utils::display_parallel_runtime_info();
 
-        let density_driver = density::new(control.get_spin_scheme());
+        let density_driver = density::new(control.get_spin_scheme_enum());
 
         //
 
@@ -125,7 +125,7 @@ impl SCF for SCFNonspin {
 
         let npw_wfc_max = utils::get_n_plane_waves_max(vpwwfc);
 
-        let fermi_driver = fermilevel::new(control.get_spin_scheme());
+        let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
 
         //
 

@@ -62,7 +62,7 @@ impl SCF for SCFSpin {
         println!("   {:*^60}", " self-consistent field ");
         utils::display_parallel_runtime_info();
 
-        let density_driver = density::new(control.get_spin_scheme());
+        let density_driver = density::new(control.get_spin_scheme_enum());
 
         let blatt = crystal.get_latt().reciprocal();
 
@@ -315,7 +315,7 @@ impl SCF for SCFSpin {
             }
             // calculate Fermi level; vkscf has to be &mut since occ will be modified
 
-            let fermi_driver = fermilevel::new(control.get_spin_scheme());
+            let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
 

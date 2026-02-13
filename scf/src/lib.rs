@@ -7,7 +7,7 @@ use nonspin::*;
 mod spin;
 use spin::*;
 
-use control::Control;
+use control::{Control, SpinScheme};
 use crystal::Crystal;
 use dfttypes::*;
 use ewald::Ewald;
@@ -48,12 +48,10 @@ pub trait SCF {
     );
 }
 
-pub fn new(spin_scheme: &str) -> Box<dyn SCF> {
+pub fn new(spin_scheme: SpinScheme) -> Box<dyn SCF> {
     match spin_scheme {
-        "nonspin" => Box::new(SCFNonspin::new()),
-
-        "spin" => Box::new(SCFSpin::new()),
-
-        other => panic!("unsupported spin_scheme '{}'", other),
+        SpinScheme::NonSpin => Box::new(SCFNonspin::new()),
+        SpinScheme::Spin => Box::new(SCFSpin::new()),
+        SpinScheme::Ncl => panic!("unsupported spin_scheme 'ncl' in scf::new"),
     }
 }
