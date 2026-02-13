@@ -90,7 +90,16 @@ impl SCF for SCFNonspin {
 
         utils::compute_v_hartree(pwden, rhog, &mut vhg);
 
-        utils::compute_v_e_xc_of_r(xc.as_ref(), rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
+        utils::compute_v_e_xc_of_r(
+            xc.as_ref(),
+            gvec,
+            pwden,
+            rgtrans,
+            rho_3d,
+            rhocore_3d,
+            &mut vxc_3d,
+            &mut exc_3d,
+        );
 
         utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &vxc_3d, &mut vxcg);
 
@@ -218,7 +227,16 @@ impl SCF for SCFNonspin {
             // rhog_out: out rho in G
             // rho_3d:   out rho in r
 
-            utils::compute_v_e_xc_of_r(xc.as_ref(), rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
+            utils::compute_v_e_xc_of_r(
+                xc.as_ref(),
+                gvec,
+                pwden,
+                rgtrans,
+                rho_3d,
+                rhocore_3d,
+                &mut vxc_3d,
+                &mut exc_3d,
+            );
 
             // calculate scf energy
 
@@ -309,7 +327,16 @@ impl SCF for SCFNonspin {
 
             // v_xc in r space
 
-            utils::compute_v_e_xc_of_r(xc.as_ref(), rho_3d, rhocore_3d, &mut vxc_3d, &mut exc_3d);
+            utils::compute_v_e_xc_of_r(
+                xc.as_ref(),
+                gvec,
+                pwden,
+                rgtrans,
+                rho_3d,
+                rhocore_3d,
+                &mut vxc_3d,
+                &mut exc_3d,
+            );
 
             // v_xc in G space
 

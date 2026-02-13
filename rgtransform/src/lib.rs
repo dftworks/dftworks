@@ -93,6 +93,51 @@ impl RGTransform {
         });
     }
 
+    pub fn gradient_norm_r3d(
+        &self,
+        gvec: &GVector,
+        pwden: &PWDensity,
+        rho_3d: &[c64],
+        grad_norm_3d: &mut [c64],
+    ) {
+        let npw = pwden.get_n_plane_waves();
+        let nfft = rho_3d.len();
+
+        let mut rhog = vec![c64::new(0.0, 0.0); npw];
+        self.r3d_to_g1d(gvec, pwden, rho_3d, &mut rhog);
+
+        let mut drhog_x = vec![c64::new(0.0, 0.0); npw];
+        let mut drhog_y = vec![c64::new(0.0, 0.0); npw];
+        let mut drhog_z = vec![c64::new(0.0, 0.0); npw];
+
+        let gindex = pwden.get_gindex();
+        let gcart = gvec.get_cart();
+
+        for ipw in 0..npw {
+            let g = gcart[gindex[ipw]];
+            let v = rhog[ipw];
+
+            // i * G * rho(G)
+            drhog_x[ipw] = c64::new(-g.x * v.im, g.x * v.re);
+            drhog_y[ipw] = c64::new(-g.y * v.im, g.y * v.re);
+            drhog_z[ipw] = c64::new(-g.z * v.im, g.z * v.re);
+        }
+
+        let mut drho_x = vec![c64::new(0.0, 0.0); nfft];
+        let mut drho_y = vec![c64::new(0.0, 0.0); nfft];
+        let mut drho_z = vec![c64::new(0.0, 0.0); nfft];
+
+        self.g1d_to_r3d(gvec, pwden, &drhog_x, &mut drho_x);
+        self.g1d_to_r3d(gvec, pwden, &drhog_y, &mut drho_y);
+        self.g1d_to_r3d(gvec, pwden, &drhog_z, &mut drho_z);
+
+        for i in 0..nfft {
+            let grad_norm = (drho_x[i].norm_sqr() + drho_y[i].norm_sqr() + drho_z[i].norm_sqr())
+                .sqrt();
+            grad_norm_3d[i] = c64::new(grad_norm, 0.0);
+        }
+    }
+
     pub fn r3d_to_g3d(&self, r: &[c64], g: &mut [c64]) {
         self.with_workspace(|pfft, _| forward(pfft, r, g));
     }
