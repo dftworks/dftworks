@@ -1,0 +1,4 @@
+lda_nonspin	nonspin	lda-pz	-1.568496334838E1	6.643E0
+lsda_spin	spin	lsda-pz	-15.684963280128	6.64262
+pbe_nonspin	nonspin	pbe	-1.581140034026E1	6.881E0
+pbe_spin	spin	pbe	-14.905025054598	8.69621

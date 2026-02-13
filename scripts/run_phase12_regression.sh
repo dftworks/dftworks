@@ -42,6 +42,17 @@ patch_ctrl() {
     perl -i -pe "s/^xc_scheme\\s*=\\s*\\S+/xc_scheme = ${xc_scheme}/" "$ctrl_file"
 }
 
+contains_text() {
+    local pattern="$1"
+    local file="$2"
+
+    if command -v rg >/dev/null 2>&1; then
+        rg -q "$pattern" "$file"
+    else
+        grep -q "$pattern" "$file"
+    fi
+}
+
 parse_nonspin_energy_fermi() {
     local log_file="$1"
     local energy fermi
@@ -81,7 +92,7 @@ for case_spec in "${CASES[@]}"; do
         "$PW_BIN" > out.log 2>&1
     )
 
-    if ! rg -q "scf_convergence_success" "$case_dir/out.log"; then
+    if ! contains_text "scf_convergence_success" "$case_dir/out.log"; then
         echo "Case '$case_name' did not converge. See $case_dir/out.log"
         exit 1
     fi
