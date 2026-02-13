@@ -46,3 +46,15 @@ pub fn new(spin_scheme: SpinScheme) -> Box<dyn Density> {
         SpinScheme::Ncl => Box::new(DensityNcl::new()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_density_factory_supports_spin_modes() {
+        let _ = new(SpinScheme::NonSpin);
+        let _ = new(SpinScheme::Spin);
+        let _ = new(SpinScheme::Ncl);
+    }
+}
