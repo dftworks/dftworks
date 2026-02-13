@@ -112,6 +112,7 @@ name = "density"
 version = "0.1.0"
 dependencies = [
  "atompsp",
+ "control",
  "crystal",
  "dfttypes",
  "dwconsts",
@@ -258,6 +259,7 @@ dependencies = [
 name = "fermilevel"
 version = "0.1.0"
 dependencies = [
+ "control",
  "dfttypes",
  "dwconsts",
  "dwmpi",
