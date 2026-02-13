@@ -20,6 +20,7 @@ use num_traits::Zero;
 use pspot::PSPot;
 use pwbasis::*;
 use pwdensity::*;
+use rayon::prelude::*;
 use rgtransform::RGTransform;
 use std::io::Write;
 use symmetry::SymmetryDriver;
@@ -27,10 +28,40 @@ use types::*;
 use vector3::Vector3f64;
 use xc::*;
 
+const PARALLEL_MIN_LEN: usize = 8192;
+
+#[inline]
+fn use_parallel_for_len(len: usize) -> bool {
+    len >= PARALLEL_MIN_LEN && rayon::current_num_threads() > 1
+}
+
 pub fn compute_v_hartree(pwden: &PWDensity, rhog: &RHOG, vhg: &mut [c64]) {
     if let RHOG::NonSpin(rhog) = rhog {
         hartree::potential(pwden.get_g(), rhog, vhg);
     }
+}
+
+pub fn display_parallel_runtime_info() {
+    if !dwmpi::is_root() {
+        return;
+    }
+
+    let rayon_threads = rayon::current_num_threads();
+    let rayon_env = std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "unset".to_string());
+    let host_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(0);
+    let mpi_ranks = dwmpi::get_comm_world_size();
+
+    println!(
+        "     {:<width1$} = {:>4} (RAYON_NUM_THREADS={}, host_threads={}, mpi_ranks={})",
+        "rayon_threads",
+        rayon_threads,
+        rayon_env,
+        host_threads,
+        mpi_ranks,
+        width1 = OUT_WIDTH1
+    );
 }
 
 // v_xc in r space first and then transform to G space; this will change with the density
@@ -73,13 +104,26 @@ pub fn compute_v_xc_of_g(
 // v_xc + v_h + v_psloc in G space
 
 pub fn add_up_v(vpslocg: &[c64], vhg: &[c64], vxcg: &VXCG, vlocg: &mut [c64]) {
-    for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-        vlocg.iter_mut(),
-        vxcg.as_non_spin().unwrap().iter(),
-        vhg.iter(),
-        vpslocg.iter(),
-    )) {
-        *v_loc = *v_xc + *v_ha + *v_psloc;
+    let vxcg = vxcg.as_non_spin().unwrap();
+    debug_assert_eq!(vpslocg.len(), vlocg.len());
+    debug_assert_eq!(vhg.len(), vlocg.len());
+    debug_assert_eq!(vxcg.len(), vlocg.len());
+
+    if use_parallel_for_len(vlocg.len()) {
+        vlocg
+            .par_iter_mut()
+            .zip(vxcg.par_iter())
+            .zip(vhg.par_iter())
+            .zip(vpslocg.par_iter())
+            .for_each(|(((v_loc, v_xc), v_ha), v_psloc)| {
+                *v_loc = *v_xc + *v_ha + *v_psloc;
+            });
+    } else {
+        for (v_loc, v_xc, v_ha, v_psloc) in
+            multizip((vlocg.iter_mut(), vxcg.iter(), vhg.iter(), vpslocg.iter()))
+        {
+            *v_loc = *v_xc + *v_ha + *v_psloc;
+        }
     }
 }
 
@@ -103,9 +147,22 @@ pub fn compute_next_density(
     rhog: &mut RHOG,
 ) {
     if let RHOG::NonSpin(rhog) = rhog {
+        debug_assert_eq!(rhog_out.len(), rhog_diff.len());
+        debug_assert_eq!(rhog.len(), rhog_diff.len());
+
         // mix old and new densities to get the density for the next iteration
-        for ipw in 0..rhog_diff.len() {
-            rhog_diff[ipw] = rhog_out[ipw] - rhog[ipw];
+        if use_parallel_for_len(rhog_diff.len()) {
+            rhog_diff
+                .par_iter_mut()
+                .zip(rhog_out.par_iter())
+                .zip(rhog.par_iter())
+                .for_each(|((d, out), old)| {
+                    *d = *out - *old;
+                });
+        } else {
+            for ipw in 0..rhog_diff.len() {
+                rhog_diff[ipw] = rhog_out[ipw] - rhog[ipw];
+            }
         }
 
         mixing.compute_next_density(pwden.get_g(), rhog, rhog_diff);

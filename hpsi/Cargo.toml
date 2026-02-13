@@ -20,3 +20,4 @@ dwconsts = { path = "../dwconsts" }
 rgtransform = { path = "../rgtransform" }
 kgylm = { path = "../kgylm" }
 num-traits = "*"
+rayon = "*"

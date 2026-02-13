@@ -13,3 +13,4 @@ itertools = "*"
 num = "*"
 hdf5 = { package = "hdf5-metno", version = "0.9" }
 ndarray_crate = { package = "ndarray", version = "0.15.6" }
+rayon = "*"

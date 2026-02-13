@@ -432,6 +432,7 @@ dependencies = [
  "ndarray 0.1.0",
  "num-traits",
  "pwbasis",
+ "rayon",
  "rgtransform",
  "types",
  "utility",
@@ -683,6 +684,7 @@ dependencies = [
  "itertools",
  "ndarray 0.15.6",
  "num",
+ "rayon",
  "types",
 ]
 

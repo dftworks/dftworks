@@ -10,7 +10,9 @@ fn main() {
     println!(
         "Running {} FFT benchmark: size = {} x {} x {}",
         if cfg!(feature = "gpu") { "GPU" } else { "CPU" },
-        n1, n2, n3
+        n1,
+        n2,
+        n3
     );
 
     // Create FFT object
@@ -36,4 +38,3 @@ fn main() {
 
     println!("FFT time: {:.6} sec", elapsed.as_secs_f64());
 }
-
