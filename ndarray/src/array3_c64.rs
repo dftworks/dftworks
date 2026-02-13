@@ -1,10 +1,18 @@
 use crate::Array3;
 
 use itertools::multizip;
+use rayon::prelude::*;
 
 use types::*;
 
 use std::convert::TryInto;
+
+const PARALLEL_MIN_LEN: usize = 8192;
+
+#[inline]
+fn use_parallel_for_len(len: usize) -> bool {
+    len >= PARALLEL_MIN_LEN && rayon::current_num_threads() > 1
+}
 
 impl Array3<c64> {
     pub fn scale(&mut self, f: f64) {
@@ -47,8 +55,14 @@ impl Array3<c64> {
 
         assert_eq!(psrc.len(), pdst.len());
 
-        for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
-            *d += s.norm_sqr();
+        if use_parallel_for_len(pdst.len()) {
+            pdst.par_iter_mut().zip(psrc.par_iter()).for_each(|(d, s)| {
+                *d += s.norm_sqr();
+            });
+        } else {
+            for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
+                *d += s.norm_sqr();
+            }
         }
     }
 
@@ -58,8 +72,14 @@ impl Array3<c64> {
 
         assert_eq!(psrc.len(), pdst.len());
 
-        for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
-            *d += s.norm_sqr() * factor;
+        if use_parallel_for_len(pdst.len()) {
+            pdst.par_iter_mut().zip(psrc.par_iter()).for_each(|(d, s)| {
+                *d += s.norm_sqr() * factor;
+            });
+        } else {
+            for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
+                *d += s.norm_sqr() * factor;
+            }
         }
     }
 
@@ -69,8 +89,14 @@ impl Array3<c64> {
 
         assert_eq!(psrc.len(), pdst.len());
 
-        for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
-            *d += (*s) * factor;
+        if use_parallel_for_len(pdst.len()) {
+            pdst.par_iter_mut().zip(psrc.par_iter()).for_each(|(d, s)| {
+                *d += (*s) * factor;
+            });
+        } else {
+            for (s, d) in multizip((psrc.iter(), pdst.iter_mut())) {
+                *d += (*s) * factor;
+            }
         }
     }
 

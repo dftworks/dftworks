@@ -5,13 +5,33 @@ use kgylm::KGYLM;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pwbasis::PWBasis;
+use rayon::prelude::*;
 use rgtransform::RGTransform;
 use types::c64;
 use vector3::Vector3f64;
 
+const PARALLEL_MIN_LEN: usize = 8192;
+
+#[inline]
+fn use_parallel_for_len(len: usize) -> bool {
+    len >= PARALLEL_MIN_LEN && rayon::current_num_threads() > 1
+}
+
 pub fn kinetic_on_psi(kin: &[f64], vin: &[c64], vout: &mut [c64]) {
-    for (x, y, z) in multizip((kin.iter(), vin.iter(), vout.iter_mut())) {
-        *z += (*x) * (*y);
+    debug_assert_eq!(kin.len(), vin.len());
+    debug_assert_eq!(vin.len(), vout.len());
+
+    if use_parallel_for_len(vout.len()) {
+        vout.par_iter_mut()
+            .zip(kin.par_iter())
+            .zip(vin.par_iter())
+            .for_each(|((z, x), y)| {
+                *z += (*x) * (*y);
+            });
+    } else {
+        for (x, y, z) in multizip((kin.iter(), vin.iter(), vout.iter_mut())) {
+            *z += (*x) * (*y);
+        }
     }
 }
 
@@ -60,8 +80,23 @@ pub fn vnl_on_psi_with_structure_factors(
 }
 
 fn zddzs_product(v_out: &mut [c64], a: &[f64], b: &[f64], c: &[c64], s: c64) {
-    for (vx, ax, bx, cx) in multizip((v_out.iter_mut(), a.iter(), b.iter(), c.iter())) {
-        *vx += ax * bx * cx * s;
+    debug_assert_eq!(v_out.len(), a.len());
+    debug_assert_eq!(a.len(), b.len());
+    debug_assert_eq!(b.len(), c.len());
+
+    if use_parallel_for_len(v_out.len()) {
+        v_out
+            .par_iter_mut()
+            .zip(a.par_iter())
+            .zip(b.par_iter())
+            .zip(c.par_iter())
+            .for_each(|(((vx, ax), bx), cx)| {
+                *vx += ax * bx * cx * s;
+            });
+    } else {
+        for (vx, ax, bx, cx) in multizip((v_out.iter_mut(), a.iter(), b.iter(), c.iter())) {
+            *vx += ax * bx * cx * s;
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 use super::hartree;
+use super::utils;
 use crate::SCF;
 use control::Control;
 use crystal::Crystal;
@@ -59,6 +60,7 @@ impl SCF for SCFSpin {
     ) {
         println!("");
         println!("   {:*^60}", " self-consistent field ");
+        utils::display_parallel_runtime_info();
 
         let density_driver = density::new(control.get_spin_scheme());
 

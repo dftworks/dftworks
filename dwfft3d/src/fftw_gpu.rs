@@ -34,12 +34,8 @@ extern "C" {
 
     fn cufftDestroy(plan: CufftHandle) -> c_int;
 
-    fn cufftExecZ2Z(
-        plan: CufftHandle,
-        idata: *mut c64,
-        odata: *mut c64,
-        direction: c_int,
-    ) -> c_int;
+    fn cufftExecZ2Z(plan: CufftHandle, idata: *mut c64, odata: *mut c64, direction: c_int)
+        -> c_int;
 }
 
 // ---------------------------
@@ -74,11 +70,7 @@ pub unsafe fn fftw_plan_dft_3d(
     Box::into_raw(Box::new(plan)) as *mut c_void
 }
 
-pub unsafe fn fftw_execute_dft(
-    p: *const c_void,
-    in_: *const c64,
-    out: *mut c64,
-) {
+pub unsafe fn fftw_execute_dft(p: *const c_void, in_: *const c64, out: *mut c64) {
     if p.is_null() {
         eprintln!("FFTW/FFT plan is null");
         return;
@@ -100,4 +92,3 @@ pub unsafe fn fftw_destroy_plan(p: *const c_void) {
 }
 
 pub unsafe fn fftw_cleanup() {}
-

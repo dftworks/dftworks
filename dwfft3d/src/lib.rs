@@ -33,7 +33,6 @@ pub struct DWFFT3D {
     plan_bwd: *const c_void,
 }
 
-
 use cfg_if::cfg_if;
 
 pub fn init_backend() {
@@ -47,7 +46,6 @@ pub fn init_backend() {
         }
     }
 }
-
 
 impl DWFFT3D {
     pub fn new(n1: usize, n2: usize, n3: usize) -> DWFFT3D {
@@ -72,7 +70,7 @@ impl DWFFT3D {
 
         let plan_fwd: *const c_void;
         let plan_bwd: *const c_void;
-       unsafe {
+        unsafe {
             plan_fwd = fftw_plan_dft_3d(
                 n3 as i32,
                 n2 as i32,
@@ -120,4 +118,3 @@ impl Drop for DWFFT3D {
         }
     }
 }
-
