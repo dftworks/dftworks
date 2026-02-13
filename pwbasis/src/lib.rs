@@ -145,9 +145,9 @@ impl PWBasis {
     /// - Data format is invalid (e.g., k_cart doesn't have 3 elements)
     /// - Data dimensions are inconsistent
     pub fn load_hdf5(group: &hdf5::Group) -> Self {
-        let kg: Vec<f64> = group
-            .dataset("kg")
-            .expect("Failed to find kg dataset")
+        let kg_dataset = group.dataset("kg").expect("Failed to find kg dataset");
+
+        let kg: Vec<f64> = kg_dataset
             .read()
             .expect("Failed to read kg dataset")
             .to_vec();
@@ -159,20 +159,25 @@ impl PWBasis {
             .expect("Failed to read gindex dataset")
             .to_vec();
 
-        let k_index: usize = group
+        // New files store metadata on the "kg" dataset; keep a fallback to group-level attrs
+        // for compatibility with any legacy files.
+        let k_index: usize = kg_dataset
             .attr("k_index")
+            .or_else(|_| group.attr("k_index"))
             .expect("Failed to find k_index attribute")
             .read_scalar()
             .expect("Failed to read k_index attribute");
 
-        let npw: usize = group
+        let npw: usize = kg_dataset
             .attr("n_pw")
+            .or_else(|_| group.attr("n_pw"))
             .expect("Failed to find n_pw attribute")
             .read_scalar()
             .expect("Failed to read n_pw attribute");
 
-        let k_cart_vec: Vec<f64> = group
+        let k_cart_vec: Vec<f64> = kg_dataset
             .attr("k_cart")
+            .or_else(|_| group.attr("k_cart"))
             .expect("Failed to find k_cart attribute")
             .read()
             .expect("Failed to read k_cart attribute")

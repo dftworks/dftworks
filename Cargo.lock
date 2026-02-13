@@ -937,6 +937,7 @@ dependencies = [
  "types",
  "vector3",
  "vnl",
+ "wannier90",
  "xc",
 ]
 
@@ -1366,6 +1367,25 @@ dependencies = [
  "pspot",
  "pwbasis",
  "special",
+]
+
+[[package]]
+name = "wannier90"
+version = "0.1.0"
+dependencies = [
+ "control",
+ "crystal",
+ "dfttypes",
+ "dwconsts",
+ "dwmpi",
+ "fftgrid",
+ "gvector",
+ "kpts",
+ "matrix",
+ "mpi_sys",
+ "pwbasis",
+ "types",
+ "vector3",
 ]
 
 [[package]]

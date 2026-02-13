@@ -36,6 +36,7 @@ vnl = { path = "../vnl" }
 kscf = { path = "../kscf" }
 linalg = { path = "../linalg" }
 dfttypes = { path = "../dfttypes" }
+wannier90 = { path = "../wannier90" }
 num-traits = "*"
 dwmpi = { path = "../dwmpi" }
 mpi_sys = { path = "../mpi_sys" }

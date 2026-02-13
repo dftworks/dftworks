@@ -54,6 +54,29 @@ In the directory dftworks, run the following command.
 
 This will download the dependency modules and compile the code to generate the executable **pw** in the directory **target/release**.
 
+# Wannier90 interface
+
+DFTWorks can now export a Wannier90 interface dataset (`.win`, `.nnkp`, `.mmn`, `.amn`, `.eig`) directly after the final SCF/geometry step.
+
+Add the following keys to `in.ctrl`:
+
+```
+wannier90_export = true
+wannier90_seedname = dftworks
+wannier90_num_wann = 8
+wannier90_num_iter = 200
+```
+
+Notes:
+
+* `wannier90_export` requires `kpts_scheme = kmesh`.
+* Non-spin runs write `dftworks.win`, `dftworks.nnkp`, `dftworks.mmn`, `dftworks.amn`, `dftworks.eig`.
+* Collinear spin runs write channel-separated files with `dftworks.up.*` and `dftworks.dn.*`.
+* `save_wfc` is forced internally for export, since `.mmn` is built from wavefunctions.
+* The exported `.amn` currently uses an identity-gauge initial guess for the first `num_wann` bands.
+
+An end-to-end example is provided in `test_example/si-oncv/wannier90`.
+
 # Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.

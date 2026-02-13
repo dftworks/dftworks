@@ -1,0 +1,20 @@
+[package]
+name = "wannier90"
+version = "0.1.0"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]
+edition = "2018"
+
+[dependencies]
+control = { path = "../control" }
+crystal = { path = "../crystal" }
+dfttypes = { path = "../dfttypes" }
+dwconsts = { path = "../dwconsts" }
+dwmpi = { path = "../dwmpi" }
+fftgrid = { path = "../fftgrid" }
+gvector = { path = "../gvector" }
+kpts = { path = "../kpts" }
+matrix = { path = "../matrix" }
+mpi_sys = { path = "../mpi_sys" }
+pwbasis = { path = "../pwbasis" }
+types = { path = "../types" }
+vector3 = { path = "../vector3" }

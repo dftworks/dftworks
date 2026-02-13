@@ -95,6 +95,11 @@ pub struct Control {
     symmetry: bool,
 
     occ_inversion: f64,
+
+    wannier90_export: bool,
+    wannier90_seedname: String,
+    wannier90_num_wann: usize,
+    wannier90_num_iter: usize,
 }
 
 impl Control {
@@ -318,6 +323,22 @@ impl Control {
         self.occ_inversion
     }
 
+    pub fn get_wannier90_export(&self) -> bool {
+        self.wannier90_export
+    }
+
+    pub fn get_wannier90_seedname(&self) -> &str {
+        &self.wannier90_seedname
+    }
+
+    pub fn get_wannier90_num_wann(&self) -> usize {
+        self.wannier90_num_wann
+    }
+
+    pub fn get_wannier90_num_iter(&self) -> usize {
+        self.wannier90_num_iter
+    }
+
     pub fn read_file(&mut self, inpfile: &str) {
         self.task = "scf".to_string();
 
@@ -369,9 +390,15 @@ impl Control {
 
         self.occ_inversion = 0.0;
 
+        self.wannier90_export = false;
+        self.wannier90_seedname = "dftworks".to_string();
+        self.wannier90_num_wann = 0;
+        self.wannier90_num_iter = 200;
+
         let mut b_has_invalid_parameter = false;
 
         let mut b_ecut_rho_set = false;
+        let mut b_wannier90_num_wann_set = false;
 
         let lines = self.read_file_data_to_vec(inpfile);
 
@@ -558,6 +585,23 @@ impl Control {
                     self.occ_inversion = s[1].parse::<f64>().unwrap();
                 }
 
+                "wannier90_export" => {
+                    self.wannier90_export = s[1].parse().unwrap();
+                }
+
+                "wannier90_seedname" => {
+                    self.wannier90_seedname = s[1].trim().to_string();
+                }
+
+                "wannier90_num_wann" => {
+                    self.wannier90_num_wann = s[1].parse().unwrap();
+                    b_wannier90_num_wann_set = true;
+                }
+
+                "wannier90_num_iter" => {
+                    self.wannier90_num_iter = s[1].parse().unwrap();
+                }
+
                 "symmetry" => {
                     self.symmetry = s[1].parse().unwrap();
                     //println!(" symmetry = {}", self.get_symmetry());
@@ -583,6 +627,35 @@ impl Control {
 
         if b_ecut_rho_set.not() {
             self.ecut_rho = 4.0 * self.ecut_wfc;
+        }
+
+        if b_wannier90_num_wann_set.not() {
+            self.wannier90_num_wann = self.nband;
+        }
+
+        if self.wannier90_export {
+            if self.wannier90_seedname.trim().is_empty() {
+                println!("invalid wannier90_seedname: must not be empty");
+                std::process::exit(-1);
+            }
+
+            if self.wannier90_num_wann == 0 {
+                println!("invalid wannier90_num_wann: must be > 0");
+                std::process::exit(-1);
+            }
+
+            if self.nband == 0 {
+                println!("invalid nband: must be > 0 when wannier90_export=true");
+                std::process::exit(-1);
+            }
+
+            if self.wannier90_num_wann > self.nband {
+                println!(
+                    "invalid wannier90_num_wann: {} > nband ({})",
+                    self.wannier90_num_wann, self.nband
+                );
+                std::process::exit(-1);
+            }
         }
     }
 
@@ -706,6 +779,38 @@ impl Control {
             "   {:<width1$} = {:>width2$}",
             "nband",
             self.get_nband(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "wannier90_export",
+            self.get_wannier90_export(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "wannier90_seedname",
+            self.get_wannier90_seedname(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "wannier90_num_wann",
+            self.get_wannier90_num_wann(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "wannier90_num_iter",
+            self.get_wannier90_num_iter(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );

@@ -464,7 +464,7 @@ fn main() {
         }
 
         // save wavefunction
-        if control.get_save_wfc() {
+        if control.get_save_wfc() || control.get_wannier90_export() {
             vkevecs.save_hdf5(ik_first, &vpwwfc, &blatt);
         }
 
@@ -474,6 +474,8 @@ fn main() {
 
         let stress_max = stress::get_max_stress(&stress_total);
 
+        let mut should_exit = false;
+
         if control.get_geom_optim_cell() {
             if force_max < control.get_geom_optim_force_tolerance() * FORCE_EV_TO_HA
                 && stress_max < control.get_geom_optim_stress_tolerance() * STRESS_KB_TO_HA
@@ -481,29 +483,47 @@ fn main() {
                 if dwmpi::is_root() {
                     println!("\n   {} : {:<5}", "geom_exit_tolerance_reached", geom_iter);
                 }
-
-                post_processing(&control, &vkevals, &vkevecs, &vkscf);
-
-                break;
+                should_exit = true;
             }
         } else {
             if force_max < control.get_geom_optim_force_tolerance() * FORCE_EV_TO_HA {
                 if dwmpi::is_root() {
                     println!("\n   {} : {:<5}", "geom_exit_tolerance_reached", geom_iter);
                 }
-
-                post_processing(&control, &vkevals, &vkevecs, &vkscf);
-
-                break;
+                should_exit = true;
             }
         }
 
         // if not converged, but reach the max geometry optimization steps, then exit
 
-        if geom_iter >= control.get_geom_optim_max_steps() {
+        if !should_exit && geom_iter >= control.get_geom_optim_max_steps() {
             if dwmpi::is_root() {
                 println!("\n   {} : {:<5}", "geom_exit_max_steps_reached", geom_iter);
             }
+            should_exit = true;
+        }
+
+        if should_exit {
+            if control.get_wannier90_export() {
+                match wannier90::export(&control, &crystal, kpts.as_ref(), &vkevals, ik_first) {
+                    Ok(summary) => {
+                        if dwmpi::is_root() {
+                            println!();
+                            println!("   {:-^88}", " wannier90 export ");
+                            for file in summary.written_files.iter() {
+                                println!("   wrote {}", file);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        if dwmpi::is_root() {
+                            eprintln!("   wannier90 export failed: {}", err);
+                        }
+                    }
+                }
+            }
+
+            post_processing(&control, &vkevals, &vkevecs, &vkscf);
 
             break;
         }
