@@ -4,6 +4,9 @@ mod utils;
 mod nonspin;
 use nonspin::*;
 
+mod ncl;
+use ncl::*;
+
 mod spin;
 use spin::*;
 
@@ -52,6 +55,6 @@ pub fn new(spin_scheme: SpinScheme) -> Box<dyn SCF> {
     match spin_scheme {
         SpinScheme::NonSpin => Box::new(SCFNonspin::new()),
         SpinScheme::Spin => Box::new(SCFSpin::new()),
-        SpinScheme::Ncl => panic!("unsupported spin_scheme 'ncl' in scf::new"),
+        SpinScheme::Ncl => Box::new(SCFNcl::new()),
     }
 }

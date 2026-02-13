@@ -1,6 +1,9 @@
 mod nonspin;
 use nonspin::*;
 
+mod ncl;
+use ncl::*;
+
 mod spin;
 use spin::*;
 
@@ -23,6 +26,6 @@ pub fn new(spin_scheme: SpinScheme) -> Box<dyn FermiLevel> {
     match spin_scheme {
         SpinScheme::NonSpin => Box::new(FermiLevelNonspin::new()),
         SpinScheme::Spin => Box::new(FermiLevelSpin::new()),
-        SpinScheme::Ncl => panic!("unsupported spin_scheme 'ncl' in fermilevel::new"),
+        SpinScheme::Ncl => Box::new(FermiLevelNcl::new()),
     }
 }

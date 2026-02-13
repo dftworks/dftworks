@@ -1,6 +1,8 @@
 mod nonspin;
 mod spin;
+mod ncl;
 
+use ncl::*;
 use nonspin::*;
 use spin::*;
 
@@ -41,6 +43,6 @@ pub fn new(spin_scheme: SpinScheme) -> Box<dyn Density> {
     match spin_scheme {
         SpinScheme::NonSpin => Box::new(DensityNonspin::new()),
         SpinScheme::Spin => Box::new(DensitySpin::new()),
-        SpinScheme::Ncl => panic!("unsupported spin_scheme 'ncl' in density::new"),
+        SpinScheme::Ncl => Box::new(DensityNcl::new()),
     }
 }
