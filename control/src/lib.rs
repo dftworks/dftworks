@@ -791,3 +791,24 @@ impl Control {
         println!();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SpinScheme;
+
+    #[test]
+    fn test_spin_scheme_parse_accepts_supported_values() {
+        assert_eq!(SpinScheme::parse("nonspin"), Some(SpinScheme::NonSpin));
+        assert_eq!(SpinScheme::parse("spin"), Some(SpinScheme::Spin));
+        assert_eq!(SpinScheme::parse("ncl"), Some(SpinScheme::Ncl));
+        assert_eq!(SpinScheme::parse("  Spin "), Some(SpinScheme::Spin));
+    }
+
+    #[test]
+    fn test_spin_scheme_parse_rejects_unsupported_values() {
+        assert_eq!(SpinScheme::parse(""), None);
+        assert_eq!(SpinScheme::parse("collinear"), None);
+        assert_eq!(SpinScheme::parse("spin-orbit"), None);
+        assert_eq!(SpinScheme::parse("foo"), None);
+    }
+}
