@@ -8,13 +8,14 @@ REFERENCE_FILE="$ROOT_DIR/test_example/si-oncv/regression/phase12_reference.tsv"
 PW_BIN="${PW_BIN:-$ROOT_DIR/target/debug/pw}"
 ENERGY_TOL_RY="${ENERGY_TOL_RY:-5e-4}"
 FERMI_TOL_EV="${FERMI_TOL_EV:-5e-3}"
+FORCE_BUILD="${FORCE_BUILD:-0}"
 
 UPDATE_MODE=0
 if [[ "${1:-}" == "--update" ]]; then
     UPDATE_MODE=1
 fi
 
-if [[ ! -x "$PW_BIN" ]]; then
+if [[ "$FORCE_BUILD" == "1" || ! -x "$PW_BIN" ]]; then
     echo "Building pw binary at $PW_BIN ..."
     cargo build -p pw
 fi
