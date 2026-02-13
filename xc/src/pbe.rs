@@ -186,3 +186,90 @@ fn evc_pz_unpolarized(rho: f64) -> (f64, f64) {
         (vc, ec)
     }
 }
+
+#[test]
+fn test_pbe_nonspin_finite_and_gradient_sensitive() {
+    let n = 8;
+    let shape = [2, 2, 2];
+
+    let mut rho_data = Vec::with_capacity(n);
+    for i in 0..n {
+        rho_data.push(c64::new(0.02 + i as f64 * 0.001, 0.0));
+    }
+    let rho_arr = Array3::from_vec(shape, rho_data);
+    let rho = RHOR::NonSpin(rho_arr.clone());
+
+    let mut vxc_no_grad = VXCR::NonSpin(Array3::new(shape));
+    let mut exc_no_grad = Array3::<c64>::new(shape);
+
+    let pbe = XCPBE::new();
+    pbe.potential_and_energy(&rho, None, &mut vxc_no_grad, &mut exc_no_grad);
+
+    let mut grad_data = Vec::with_capacity(n);
+    for i in 0..n {
+        grad_data.push(c64::new(0.001 + i as f64 * 1.0E-4, 0.0));
+    }
+    let drho = DRHOR::NonSpin(Array3::from_vec(shape, grad_data));
+
+    let mut vxc_with_grad = VXCR::NonSpin(Array3::new(shape));
+    let mut exc_with_grad = Array3::<c64>::new(shape);
+    pbe.potential_and_energy(&rho, Some(&drho), &mut vxc_with_grad, &mut exc_with_grad);
+
+    let v0 = vxc_no_grad.as_non_spin().unwrap();
+    let v0s = v0.as_slice();
+    let e0 = exc_no_grad.as_slice();
+    let v1 = vxc_with_grad.as_non_spin().unwrap();
+    let v1s = v1.as_slice();
+    let e1 = exc_with_grad.as_slice();
+
+    for i in 0..n {
+        assert!(v0s[i].re.is_finite());
+        assert!(e0[i].re.is_finite());
+        assert!(v1s[i].re.is_finite());
+        assert!(e1[i].re.is_finite());
+    }
+
+    let gradient_changed = v0s
+        .iter()
+        .zip(v1s.iter())
+        .any(|(a, b)| (a.re - b.re).abs() > 1.0E-12);
+    assert!(gradient_changed);
+}
+
+#[test]
+fn test_pbe_spin_finite_outputs() {
+    let n = 8;
+    let shape = [2, 2, 2];
+
+    let mut rho_up = Vec::with_capacity(n);
+    let mut rho_dn = Vec::with_capacity(n);
+    let mut grad_up = Vec::with_capacity(n);
+    let mut grad_dn = Vec::with_capacity(n);
+
+    for i in 0..n {
+        rho_up.push(c64::new(0.015 + i as f64 * 8.0E-4, 0.0));
+        rho_dn.push(c64::new(0.010 + i as f64 * 5.0E-4, 0.0));
+        grad_up.push(c64::new(8.0E-4 + i as f64 * 5.0E-5, 0.0));
+        grad_dn.push(c64::new(6.0E-4 + i as f64 * 4.0E-5, 0.0));
+    }
+
+    let rho = RHOR::Spin(Array3::from_vec(shape, rho_up), Array3::from_vec(shape, rho_dn));
+    let drho = DRHOR::Spin(
+        Array3::from_vec(shape, grad_up),
+        Array3::from_vec(shape, grad_dn),
+    );
+
+    let mut vxc = VXCR::Spin(Array3::new(shape), Array3::new(shape));
+    let mut exc = Array3::<c64>::new(shape);
+
+    let pbe = XCPBE::new();
+    pbe.potential_and_energy(&rho, Some(&drho), &mut vxc, &mut exc);
+
+    let (vup, vdn) = vxc.as_spin().unwrap();
+    let e = exc.as_slice();
+    for i in 0..n {
+        assert!(vup.as_slice()[i].re.is_finite());
+        assert!(vdn.as_slice()[i].re.is_finite());
+        assert!(e[i].re.is_finite());
+    }
+}
