@@ -6,6 +6,38 @@ use std::{
     ops::Not,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpinScheme {
+    NonSpin,
+    Spin,
+    Ncl,
+}
+
+impl Default for SpinScheme {
+    fn default() -> Self {
+        SpinScheme::NonSpin
+    }
+}
+
+impl SpinScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SpinScheme::NonSpin => "nonspin",
+            SpinScheme::Spin => "spin",
+            SpinScheme::Ncl => "ncl",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "nonspin" => Some(SpinScheme::NonSpin),
+            "spin" => Some(SpinScheme::Spin),
+            "ncl" => Some(SpinScheme::Ncl),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Control {
     verbosity: String,
@@ -39,8 +71,8 @@ pub struct Control {
 
     nband: usize,
 
-    spin_scheme: String, // nonspin, spin, ncl
-    task: String,        // scf, band
+    spin_scheme: SpinScheme, // nonspin, spin, ncl
+    task: String,            // scf, band
     restart: bool,
     save_rho: bool,
     save_wfc: bool,
@@ -91,7 +123,15 @@ impl Control {
     //}
 
     pub fn is_spin(&self) -> bool {
-        "spin" == self.get_spin_scheme()
+        matches!(self.spin_scheme, SpinScheme::Spin)
+    }
+
+    pub fn is_noncollinear(&self) -> bool {
+        matches!(self.spin_scheme, SpinScheme::Ncl)
+    }
+
+    pub fn is_collinear(&self) -> bool {
+        matches!(self.spin_scheme, SpinScheme::NonSpin | SpinScheme::Spin)
     }
 
     //pub fn is_nscf(&self) -> bool {
@@ -219,7 +259,11 @@ impl Control {
     }
 
     pub fn get_spin_scheme(&self) -> &str {
-        &self.spin_scheme
+        self.spin_scheme.as_str()
+    }
+
+    pub fn get_spin_scheme_enum(&self) -> SpinScheme {
+        self.spin_scheme
     }
 
     pub fn get_task(&self) -> &str {
@@ -277,7 +321,7 @@ impl Control {
     pub fn read_file(&mut self, inpfile: &str) {
         self.task = "scf".to_string();
 
-        self.spin_scheme = "nonspin".to_string();
+        self.spin_scheme = SpinScheme::NonSpin;
 
         self.geom_optim_cell = false;
         self.geom_optim_scheme = "bfgs".to_string();
@@ -457,7 +501,12 @@ impl Control {
                 }
 
                 "spin_scheme" => {
-                    self.spin_scheme = s[1].parse().unwrap();
+                    if let Some(spin_scheme) = SpinScheme::parse(s[1]) {
+                        self.spin_scheme = spin_scheme;
+                    } else {
+                        println!("invalid spin_scheme : {}", s[1]);
+                        b_has_invalid_parameter = true;
+                    }
                 }
 
                 "task" => {
