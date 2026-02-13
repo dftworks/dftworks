@@ -4,26 +4,6 @@ This document captures prioritized software engineering improvements identified 
 
 ## P1 - Correctness and Reliability
 
-### 1) Fail fast on invalid runtime schemes
-- Problem:
-  - Unknown `spin_scheme` silently falls back to nonspin in `scf/src/lib.rs`.
-  - Unknown smearing silently falls back to FD in `smearing/src/lib.rs`.
-- Plan:
-  - Change factory APIs to return `Result<Box<dyn ...>, ConfigError>`.
-  - Validate all schemes during startup config parsing.
-  - Stop execution with explicit error messages instead of implicit fallback.
-- Expected impact:
-  - Prevents silent physics/algorithm changes and hard-to-debug runs.
-
-### 2) Fix or rename misleading symmetry path
-- Problem:
-  - `compute_and_symmetrize_rho_of_g` in `scf/src/utils.rs` only transforms `r -> G` and does not symmetrize, despite API name and arguments.
-- Plan:
-  - Either implement actual symmetry handling there, or rename/simplify function and remove unused parameters.
-  - Add a small regression test that verifies output symmetry behavior for a known structure.
-- Expected impact:
-  - Improves correctness clarity and reduces future maintenance errors.
-
 ### 3) Remove hard-coded linker paths from build scripts
 - Problem:
   - `matrix/build.rs` and `symmetry/build.rs` hardcode local library paths.
@@ -108,19 +88,20 @@ This document captures prioritized software engineering improvements identified 
 
 ## P4 - Future Physics Features
 
-### 10) Add full PBE exchange-correlation support
-- Problem:
-  - PBE-related code exists, but end-to-end production support needs explicit integration and validation across energy, potential, force, and stress paths.
-- Plan:
-  - Ensure `xc_scheme = pbe` is fully wired through configuration and runtime factory selection.
-  - Implement/validate required density-gradient data flow (`rho`, `grad rho`) for both nonspin and spin paths.
-  - Verify consistency of:
-    - total energy decomposition
-    - exchange-correlation potential in SCF loop
-    - force/stress contributions (including NLCC interactions)
-  - Add reference tests against a trusted code path (for example, QE benchmarks on Si and at least one magnetic case).
+### 10) Advance non-collinear roadmap (post-Phase 1/2)
+- Completed on 2026-02-13 (removed from active backlog):
+  - Phase 1 complete: production PBE kernel on collinear `nonspin` and `spin`, including `drho` plumbing and tests.
+  - Phase 2 complete: enum-driven `spin_scheme` (`nonspin`/`spin`/`ncl`) with NCL extension hooks and parser/runtime factory refactor.
+  - Regression artifacts added:
+    - `test_example/si-oncv/regression/phase12_reference.tsv`
+    - `test_example/si-oncv/regression/phase12_parity_report.md`
+- Remaining roadmap (Phase 3+):
+  - Implement spinor wavefunction and magnetization-density data model for true NCL physics.
+  - Extend SCF pipeline for NCL Hamiltonian assembly, mixing, and occupation handling.
+  - Add NCL-specific XC integration and validation benchmarks.
+  - Define parity and reference targets for NCL vs trusted external solvers.
 - Expected impact:
-  - Enables GGA-level accuracy and broadens practical materials coverage.
+  - Keeps plan focused on remaining NCL deliverables after finishing the PBE and spin-mode groundwork.
 
 ### 11) Add full symmetry support (irreducible k-mesh and field symmetrization)
 - Problem:
@@ -279,11 +260,11 @@ This document captures prioritized software engineering improvements identified 
 
 ## Recommended Execution Order
 
-1. P1 items (1-3) first to eliminate correctness and portability risk.
+1. P1 item (3) first to eliminate correctness and portability risk.
 2. P2 items (4-6) next for runtime gains.
 3. P2/P3 item (7) then API cleanup (8).
 4. Finish current hardening with (9).
-5. Implement future feature roadmap (10-11) with benchmark validation.
+5. Implement future feature roadmap (10-11) with benchmark validation, in this order: PBE on existing modes -> non-collinear extension -> symmetry expansion.
 6. Apply Rust scalability patterns (12-18), prioritizing 12, 15, and 18 first.
 7. Execute framework modernization track (19-23), beginning with 19 and 20.
 
@@ -293,7 +274,7 @@ This document captures prioritized software engineering improvements identified 
 - Phase B: hot-path memory reuse
 - Phase C: API/error refactor
 - Phase D: tests + lint tightening
-- Phase E: feature enablement (full PBE + full symmetry)
+- Phase E: feature enablement (phased PBE + non-collinear + full symmetry)
 - Phase F: Rust scalability architecture + benchmarking
 - Phase G: framework modernization and execution engine
 
