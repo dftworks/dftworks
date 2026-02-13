@@ -253,7 +253,10 @@ fn test_pbe_spin_finite_outputs() {
         grad_dn.push(c64::new(6.0E-4 + i as f64 * 4.0E-5, 0.0));
     }
 
-    let rho = RHOR::Spin(Array3::from_vec(shape, rho_up), Array3::from_vec(shape, rho_dn));
+    let rho = RHOR::Spin(
+        Array3::from_vec(shape, rho_up),
+        Array3::from_vec(shape, rho_dn),
+    );
     let drho = DRHOR::Spin(
         Array3::from_vec(shape, grad_up),
         Array3::from_vec(shape, grad_dn),

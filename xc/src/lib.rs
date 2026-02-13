@@ -3,9 +3,6 @@
 mod ldapz;
 use ldapz::*;
 
-mod lsdapz;
-use lsdapz::*;
-
 mod pbe;
 use pbe::*;
 
@@ -32,7 +29,7 @@ pub fn new(xc_scheme: &str) -> Box<dyn XC> {
         }
 
         "lsda-pz" => {
-            xc = Box::new(XCLSDAPZ::new());
+            xc = Box::new(XCLDAPZ::new());
         }
 
         "pbe" => {
