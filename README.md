@@ -75,7 +75,10 @@ Notes:
 * `save_wfc` is forced internally for export, since `.mmn` is built from wavefunctions.
 * The exported `.amn` currently uses an identity-gauge initial guess for the first `num_wann` bands.
 
-An end-to-end example is provided in `test_example/si-oncv/wannier90`.
+End-to-end examples are provided in:
+
+* `test_example/si-oncv/wannier90` (non-spin)
+* `test_example/si-oncv/wannier90-spin` (collinear spin: `up`/`dn` channels)
 
 # Test the code
 

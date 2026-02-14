@@ -1,0 +1,9 @@
+out.crystal
+out.scf.rho.hdf5
+out.wfc*.hdf5
+*.amn
+*.eig
+*.mmn
+*.nnkp
+*.win
+*.wout

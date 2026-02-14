@@ -2,6 +2,8 @@
 
 This example runs DFTWorks for silicon and exports Wannier90 interface files.
 
+For a collinear-spin export example, see `../wannier90-spin`.
+
 ## Run DFTWorks
 
 From this directory:

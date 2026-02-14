@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libssl-dev \
     libfftw3-dev liblapack-dev libblas-dev libhdf5-dev \
-    less curl vim emacs mpich pkg-config
+    less curl vim emacs mpich pkg-config \
+    wannier90
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
@@ -41,4 +42,3 @@ ENV LD_LIBRARY_PATH=/opt/spglib/lib:$LD_LIBRARY_PATH
 WORKDIR /usr/src/app
 # Command to run your application
 CMD ["bash"]
-
