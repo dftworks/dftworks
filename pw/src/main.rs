@@ -18,6 +18,12 @@ use vector3::Vector3f64;
 use vnl::VNL;
 
 fn main() {
+    // Top-level program flow:
+    // 1) initialize MPI/runtime and read all inputs
+    // 2) build per-geometry numerical context (FFT/G-vectors/k-points)
+    // 3) run SCF to obtain energies, forces, and stress
+    // 4) optionally perform geometry optimization step
+    // 5) export requested artifacts (bands, Wannier90, charge/wfc files)
     // first statement
     dwmpi::init();
 
@@ -75,7 +81,7 @@ fn main() {
 
     let mut vkevecs: VKEigenVector;
 
-    // geometry optimization
+    // Geometry optimizer state (BFGS/DIIS depending on in.ctrl).
 
     let mut geom_iter = 1;
 
@@ -85,7 +91,7 @@ fn main() {
         control.get_geom_optim_history_steps(),
     );
 
-    // self-consistent field
+    // Self-consistent field drivers selected by spin scheme.
 
     let spin_scheme = control.get_spin_scheme_enum();
 
@@ -96,6 +102,8 @@ fn main() {
     // crystal.display();
 
     loop {
+        // Rebuild reciprocal/FFT objects each geometry step because lattice may
+        // change during cell optimization.
         // FFT Grid
 
         let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
@@ -160,7 +168,8 @@ fn main() {
             }
         };
 
-        // set rhog and rho_3d to be the atomic super position
+        // Initialize density either from previous converged file (restart) or
+        // from atomic superposition.
 
         if dwmpi::is_root() {
             if geom_iter == 1 && std::path::Path::new("out.scf.rho.hdf5").exists() {
@@ -231,7 +240,7 @@ fn main() {
             println!("   initial_charge = {}", total_rho);
         }
 
-        // core charge
+        // Core charge used by NLCC terms.
 
         let mut rhocoreg = vec![c64::zero(); npw_rho];
         let mut rhocore_3d = Array3::<c64>::new([n1, n2, n3]);
@@ -247,7 +256,7 @@ fn main() {
             &mut rhocore_3d,
         );
 
-        // symmetry
+        // Symmetry helper used by force/stress post-processing.
 
         let mut atom_positions = vec![[0.0; 3]; crystal.get_n_atoms()];
 

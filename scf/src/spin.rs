@@ -118,11 +118,13 @@ impl SCF for SCFSpin {
 
         hartree::potential(pwden.get_g(), &rhog_tot, &mut vhg);
 
-        // v_xc in r space first and then transform to G space; this will change with the density
+        // v_xc in r space first and then transform to G space; this changes
+        // with density every SCF iteration.
 
         let xc = xc::new(control.get_xc_scheme());
 
-        // rho_3d <-- rho_3d + rhocore_3d
+        // NLCC: evaluate XC using total charge seen by the functional.
+        // In spin-collinear mode we split rhocore equally across up/down.
         if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
             for i in 0..nfft {
                 rho_3d_up.as_mut_slice()[i] += rhocore_3d.as_slice()[i];
@@ -130,9 +132,10 @@ impl SCF for SCFSpin {
             }
         }
 
+        // XC call includes full GGA derivative logic internally.
         xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
 
-        // rho_3d <-- rho_3d - rhocore_3d
+        // Restore valence-only rho in SCF state.
         if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
             for i in 0..nfft {
                 rho_3d_up.as_mut_slice()[i] -= rhocore_3d.as_slice()[i];
@@ -385,7 +388,7 @@ impl SCF for SCFSpin {
             // rhog_out: out rho in G
             // rho_3d:   out rho in r
 
-            // rho_3d <-- rho_3d + rhocore_3d
+            // NLCC: add core density before XC evaluation.
 
             if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
                 for i in 0..nfft {
@@ -394,9 +397,10 @@ impl SCF for SCFSpin {
                 }
             }
 
+            // Full GGA-consistent v_xc and eps_xc.
             xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
 
-            // rho_3d <-- rho_3d - rhocore_3d
+            // Restore valence-only rho after XC.
 
             if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
                 for i in 0..nfft {
@@ -530,7 +534,7 @@ impl SCF for SCFSpin {
 
             // v_xc
 
-            // rho_3d <-- rho_3d + rhocore_3d
+            // NLCC: include core density during XC update.
 
             if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
                 for i in 0..nfft {
@@ -542,9 +546,10 @@ impl SCF for SCFSpin {
                 }
             }
 
+            // Full GGA-consistent XC refresh for next SCF iteration.
             xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
 
-            // rho_3d <-- rho_3d - rhocore_3d
+            // Restore valence-only rho for SCF state/mixing.
 
             if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
                 for i in 0..nfft {

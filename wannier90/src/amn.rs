@@ -17,6 +17,8 @@ pub(crate) fn build_trial_orbitals(
     crystal: &Crystal,
     pots: &PSPot,
 ) -> io::Result<Vec<TrialOrbital>> {
+    // Build an ordered list of candidate projector orbitals from PP_CHI
+    // channels in pseudopotentials, then truncate to num_wann.
     let mut all_trial_orbitals = Vec::new();
 
     for (iat, species) in crystal.get_atom_species().iter().enumerate() {
@@ -33,6 +35,7 @@ pub(crate) fn build_trial_orbitals(
         }
 
         for l in l_channels {
+            // Include all m for each angular momentum channel.
             for m in utility::get_quant_num_m(l) {
                 all_trial_orbitals.push(TrialOrbital {
                     atom_index: iat,
@@ -70,6 +73,9 @@ pub(crate) fn write_amn_file(
     pots: &PSPot,
     trial_orbitals: &[TrialOrbital],
 ) -> io::Result<()> {
+    // AMN contains overlaps:
+    //   A_{m n}^{(k)} = <psi_{m k} | g_n>
+    // where g_n are trial orbitals (projectors).
     let nkpt = eigvecs.len();
     if nkpt != all_pwbasis.len() {
         return Err(io::Error::new(
@@ -109,9 +115,12 @@ pub(crate) fn write_amn_file(
 
         let pwwfc = &all_pwbasis[ik];
         let npw = pwwfc.get_n_plane_waves();
+        // Y_lm(k+G) values reused for all bands at this k.
         let kgylm = KGYLM::new(pwwfc.get_k_cart(), lmax_trial, gvec, pwwfc);
         let k_frac = kpts.get_k_frac(ik);
 
+        // Per-atom structure factors include additional k·tau phase needed
+        // by Wannier90 AMN convention for Bloch functions.
         let mut atom_structure_factors = Vec::with_capacity(atom_positions.len());
         for atom_pos in atom_positions.iter() {
             let mut sfact = fhkl::compute_structure_factor_for_many_g_one_atom(
@@ -133,6 +142,7 @@ pub(crate) fn write_amn_file(
         for orb in trial_orbitals.iter() {
             let key = (orb.species.clone(), orb.l);
             if radial_lookup.contains_key(&key) {
+                // Reuse radial transform for same (species,l).
                 continue;
             }
 
@@ -148,6 +158,7 @@ pub(crate) fn write_amn_file(
             }
 
             let chi = atpsp.get_wfc(orb.l);
+            // Transform pseudo-atomic radial orbital to |k+G| representation.
             let chi_kg = compute_atomic_wfc_of_kg(
                 pwwfc.get_kg(),
                 orb.l,
@@ -172,6 +183,8 @@ pub(crate) fn write_amn_file(
             let sfact = &atom_structure_factors[orb.atom_index];
 
             for mband in 0..num_bands {
+                // Overlap in PW basis:
+                // <psi_mk|g_n> = sum_G c_mk^*(G) g_n(k+G)
                 let mut overlap = c64::new(0.0, 0.0);
                 for ig in 0..npw {
                     let g_n = ylm[ig] * chi_kg[ig] * sfact[ig];
@@ -216,10 +229,12 @@ fn compute_atomic_wfc_of_kg(
     let prefactor = dwconsts::FOURPI / volume.sqrt();
 
     for ig in 0..npw {
+        // Radial integral of chi(r) * r * j_l(|k+G|r).
         for ir in 0..rad.len() {
             let r = rad[ir];
             work[ir] = chi[ir] * r * special::spherical_bessel_jn(l, kg[ig] * r);
         }
+        // Simpson integration over radial mesh.
         chi_kg[ig] = prefactor * integral::simpson_rab(&work, rab);
     }
 

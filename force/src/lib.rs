@@ -17,6 +17,16 @@ use vector3::*;
 
 use itertools::multizip;
 
+// Force decomposition utilities.
+//
+// Total ionic force is assembled from:
+// - local ionic term
+// - non-local pseudopotential term
+// - Ewald ion-ion term
+// - NLCC correction term involving v_xc
+//
+// SCF drivers compute each component separately and add them for diagnostics.
+
 // Phys. Rev. B 41, 7876 (1990)
 pub fn nlcc_xc(
     atpsps: &PSPot,
@@ -26,6 +36,7 @@ pub fn nlcc_xc(
     vxcg: &[c64],
     force: &mut [Vector3f64],
 ) {
+    // NLCC force starts from zero and accumulates per atom.
     force.iter_mut().for_each(|x| x.set_zeros());
 
     let volume = crystal.get_latt().volume();
@@ -44,6 +55,7 @@ pub fn nlcc_xc(
     let species = crystal.get_atom_species();
 
     for iat in 0..natoms {
+        // Complex accumulator in reciprocal space, converted to real at the end.
         let mut v = Vector3c64::zeros();
 
         let atom = atom_positions[iat];
@@ -73,6 +85,7 @@ pub fn nlcc_xc(
             v.z += I_C64 * gcoord.z * comm * volume;
         }
 
+        // Physical force is the real part.
         force[iat].x = v.x.re;
         force[iat].y = v.y.re;
         force[iat].z = v.z.re;
@@ -87,6 +100,7 @@ pub fn vpsloc(
     rhog: &[c64],
     force: &mut [Vector3f64],
 ) {
+    // Local ionic force in reciprocal space.
     force.iter_mut().for_each(|x| x.set_zeros());
 
     let volume = crystal.get_latt().volume();
@@ -105,6 +119,7 @@ pub fn vpsloc(
     let species = crystal.get_atom_species();
 
     for iat in 0..natoms {
+        // Complex accumulator in reciprocal space, converted to real at the end.
         let mut v = Vector3c64::zeros();
 
         let atom = atom_positions[iat];
@@ -141,6 +156,7 @@ pub fn vpsloc(
 }
 
 pub fn vnl(crystal: &Crystal, vkscf: &[KSCF], vevecs: &[Matrix<c64>], force: &mut [Vector3f64]) {
+    // Non-local force is summed over k points and weighted by k-point weights.
     let natoms = crystal.get_n_atoms();
     let atom_positions = crystal.get_atom_positions();
     let atom_species = crystal.get_atom_species();
@@ -188,6 +204,7 @@ pub fn vnl_of_one_atom_one_k(
     kscf: &KSCF,
     evecs: &Matrix<c64>,
 ) -> Vector3f64 {
+    // One-atom/one-k contribution to non-local KB force.
     let npw = pwwfc.get_n_plane_waves();
     let gidx = pwwfc.get_gindex();
 
@@ -240,6 +257,7 @@ pub fn vnl_of_one_atom_one_k(
         v.z += v_band.z * occ;
     }
 
+    // Factor 2 accounts for complex-conjugate pair in this formulation.
     Vector3f64 {
         x: 2.0 * v.x.re,
         y: 2.0 * v.y.re,
@@ -253,6 +271,8 @@ pub fn get_total(
     force_vpsloc: &[Vector3f64],
     force_vnl: &[Vector3f64],
 ) {
+    // Historical helper: total = Ewald + local + non-local.
+    // (NLCC is added explicitly by SCF code paths that need it.)
     let natoms = force.len();
 
     for i in 0..natoms {
@@ -263,6 +283,7 @@ pub fn get_total(
 }
 
 pub fn get_max_force(force: &[Vector3f64]) -> f64 {
+    // Infinity norm over Cartesian components and atoms.
     let p_force = vector3::as_slice_of_element(force);
 
     p_force

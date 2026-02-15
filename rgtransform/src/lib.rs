@@ -100,6 +100,8 @@ impl RGTransform {
         rho_3d: &[c64],
         grad_norm_3d: &mut [c64],
     ) {
+        // Convenience wrapper used by code paths that only need |grad rho|.
+        // Internally we compute full Cartesian gradients first.
         let nfft = rho_3d.len();
         let mut drho_x = vec![c64::new(0.0, 0.0); nfft];
         let mut drho_y = vec![c64::new(0.0, 0.0); nfft];
@@ -115,6 +117,7 @@ impl RGTransform {
         );
 
         for i in 0..nfft {
+            // Norm of gradient vector at each real-space grid point.
             let grad_norm = (drho_x[i].norm_sqr() + drho_y[i].norm_sqr() + drho_z[i].norm_sqr())
                 .sqrt();
             grad_norm_3d[i] = c64::new(grad_norm, 0.0);
@@ -130,6 +133,10 @@ impl RGTransform {
         grad_y_3d: &mut [c64],
         grad_z_3d: &mut [c64],
     ) {
+        // Spectral derivative workflow:
+        //   rho(r) --FFT--> rho(G)
+        //   d/dx rho <-> i Gx rho(G), similarly for y/z
+        //   iG*rho(G) --iFFT--> grad components in real space
         let npw = pwden.get_n_plane_waves();
 
         let mut rhog = vec![c64::new(0.0, 0.0); npw];
@@ -146,12 +153,14 @@ impl RGTransform {
             let g = gcart[gindex[ipw]];
             let v = rhog[ipw];
 
-            // i * G * rho(G)
+            // i * G * rho(G): complex multiplication expanded explicitly to
+            // avoid temporary complex-object overhead in this hot loop.
             drhog_x[ipw] = c64::new(-g.x * v.im, g.x * v.re);
             drhog_y[ipw] = c64::new(-g.y * v.im, g.y * v.re);
             drhog_z[ipw] = c64::new(-g.z * v.im, g.z * v.re);
         }
 
+        // Back-transform each derivative component independently.
         self.g1d_to_r3d(gvec, pwden, &drhog_x, grad_x_3d);
         self.g1d_to_r3d(gvec, pwden, &drhog_y, grad_y_3d);
         self.g1d_to_r3d(gvec, pwden, &drhog_z, grad_z_3d);
@@ -166,6 +175,10 @@ impl RGTransform {
         vec_z_3d: &[c64],
         div_3d: &mut [c64],
     ) {
+        // Spectral divergence workflow:
+        //   F(r) --FFT--> F(G)
+        //   div F <-> i G dot F(G)
+        //   i(G·F(G)) --iFFT--> div F(r)
         let npw = pwden.get_n_plane_waves();
         let mut vg_x = vec![c64::new(0.0, 0.0); npw];
         let mut vg_y = vec![c64::new(0.0, 0.0); npw];
@@ -181,6 +194,7 @@ impl RGTransform {
 
         for ipw in 0..npw {
             let g = gcart[gindex[ipw]];
+            // Dot product G·F(G), then multiply by i.
             let dot = vg_x[ipw] * g.x + vg_y[ipw] * g.y + vg_z[ipw] * g.z;
             div_g[ipw] = c64::new(-dot.im, dot.re);
         }
@@ -202,6 +216,8 @@ fn forward(pfft: &DWFFT3D, r: &[c64], g: &mut [c64]) {
 
     let ng_f64 = g.len() as f64;
 
+    // Normalize forward transform so r<->g mappings remain consistent with
+    // energy/derivative formulas used throughout the codebase.
     g.iter_mut().for_each(|x| *x /= ng_f64);
 }
 

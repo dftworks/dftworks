@@ -6,8 +6,8 @@ pub struct PWDensity {
     gindex: Vec<usize>,
     g: Vec<f64>, // storing the norm of the vectors G
     nshell: usize,
-    gshell: Vec<f64>,         //the norm of unique Gs size
-    gshell_index: Vec<usize>, // each G vector size's index in gshell
+    gshell: Vec<f64>,         // unique |G| shell values (ascending)
+    gshell_index: Vec<usize>, // map each PW index -> shell index
 }
 
 impl PWDensity {
@@ -40,6 +40,7 @@ impl PWDensity {
     }
 
     pub fn new(ecut: f64, gvec: &GVector) -> PWDensity {
+        // Density grid uses Gamma-centered selection (k=0).
         let k_gamma = Vector3f64::zeros();
 
         let npw = gvec.get_n_plane_waves(ecut, k_gamma);
@@ -76,6 +77,7 @@ impl PWDensity {
 }
 
 fn compute_g(gvec: &GVector, gindex: &[usize], gnorm: &mut [f64]) {
+    // Populate |G| for selected density basis vectors.
     let gcart = gvec.get_cart();
 
     for (i, j) in gindex.iter().enumerate() {
@@ -84,6 +86,7 @@ fn compute_g(gvec: &GVector, gindex: &[usize], gnorm: &mut [f64]) {
 }
 
 fn get_n_g_shell(g: &[f64]) -> usize {
+    // Count distinct |G| values with numerical tolerance.
     let mut ng: usize = 0;
 
     let mut glen: f64 = -1.0;
@@ -99,6 +102,7 @@ fn get_n_g_shell(g: &[f64]) -> usize {
 }
 
 fn set_g_shell_and_index(g: &[f64], shell: &mut [f64], index: &mut [usize]) {
+    // Build shell table and per-vector shell lookup in one pass.
     let mut ng: usize = 0;
 
     let mut glen: f64 = -1.0;

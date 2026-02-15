@@ -15,6 +15,7 @@ pub struct KptsLine {
 
 impl KptsLine {
     pub fn new() -> KptsLine {
+        // Read explicit high-symmetry path from in.kline.
         let k_frac = read_k_line();
 
         let nk = k_frac.len();
@@ -33,6 +34,7 @@ impl KptsLine {
 
 impl KPTS for KptsLine {
     fn get_k_mesh(&self) -> [i32; 3] {
+        // Line mode does not represent a regular 3D mesh.
         println!("get_k_mesh not implemented");
         //std::process::exit(1);
 
@@ -56,6 +58,7 @@ impl KPTS for KptsLine {
     }
 
     fn frac_to_cart(&self, k_frac: &Vector3f64, blatt: &Lattice) -> Vector3f64 {
+        // k_cart = k1*b1 + k2*b2 + k3*b3
         let a = blatt.get_vector_a();
         let b = blatt.get_vector_b();
         let c = blatt.get_vector_c();
@@ -100,6 +103,10 @@ impl KPTS for KptsLine {
 }
 
 fn read_k_line() -> Vec<Vector3f64> {
+    // in.kline format:
+    // line 1: "npts <N>"
+    // next lines: label1 k1x k1y k1z label2 k2x k2y k2z
+    // Each segment is linearly interpolated with N points.
     let lines = read_file_data_to_vec("in.kline");
 
     let s: Vec<&str> = lines[0].split_whitespace().collect();
@@ -107,6 +114,7 @@ fn read_k_line() -> Vec<Vector3f64> {
 
     let mut kpts = Vec::new();
 
+    // Example segment:
     // L 0.5 0.5 0.5 G 0.0 0.0 0.0
     for line in lines[1..].iter() {
         let s: Vec<&str> = line.split_whitespace().collect();
@@ -138,6 +146,7 @@ fn read_k_line() -> Vec<Vector3f64> {
 }
 
 fn read_file_data_to_vec(kfile: &str) -> Vec<String> {
+    // Lightweight line reader used by k-point input parsers.
     let file = File::open(kfile).unwrap();
     let lines = BufReader::new(file).lines();
     let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();

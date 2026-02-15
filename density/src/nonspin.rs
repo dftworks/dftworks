@@ -37,16 +37,19 @@ impl Density for DensityNonspin {
         let rhog = rhog.as_non_spin_mut().unwrap();
         let rho_3d = rho_3d.as_non_spin_mut().unwrap();
 
-        // 1D Rho(G)
+        // Build initial reciprocal-space density by summing pseudo-atomic
+        // charge densities centered on each atom.
 
         atomic_super_position(pspot, crystal, pwden, gvec, rhog);
 
-        // 1D Rho(G) -> 3D Rho(r)
+        // Transform to real-space mesh used by SCF mixing/potentials.
 
         rgtrans.g1d_to_r3d(gvec, pwden, rhog, rho_3d.as_mut_slice());
     }
 
     fn get_change_in_density(&self, rhog: &[c64], rhog_new: &[c64]) -> f64 {
+        // L2-norm squared in reciprocal space; SCF code uses this as a
+        // monotonic residual-like quantity.
         let mut delta_rho = 0.0;
 
         for (&x, &y) in multizip((rhog.iter(), rhog_new.iter())) {
@@ -69,6 +72,7 @@ impl Density for DensityNonspin {
         let vkscf = vkscf.as_non_spin().unwrap();
         let vkevecs = vkevecs.as_non_spin().unwrap();
 
+        // Start accumulation from zero each SCF step.
         rho_3d.set_value(c64::zero());
 
         let [n1, n2, n3] = rho_3d.shape();
@@ -80,6 +84,8 @@ impl Density for DensityNonspin {
         let mut rho_3d_local = Array3::<c64>::new([n1, n2, n3]);
         rho_3d_local.set_value(c64::zero());
 
+        // Local rank contribution:
+        // rho(r) = sum_{n,k} f_{nk} w_k |u_{nk}(r)|^2
         for (ik, kscf) in vkscf.iter().enumerate() {
             let occ = kscf.get_occ();
 
@@ -87,19 +93,21 @@ impl Density for DensityNonspin {
 
             for ib in 0..nev {
                 if occ[ib] > EPS20 {
-                    // c_nk(G) -> u_nk(r)
+                    // Plane-wave coefficients -> real-space periodic part u_nk(r).
 
                     kscf.get_unk(rgtrans, &vkevecs[ik], volume, ib, &mut unk, &mut fft_work);
 
-                    // |u_nk(r)|^2 -> rho_nk(r)
+                    // Add weighted orbital density to local accumulator.
 
                     rho_3d_local.scaled_sqr_add(&unk, occ[ib] * kscf.get_k_weight());
                 } else {
+                    // Occupations are sorted; once empty, higher bands are empty.
                     break;
                 }
             }
         }
 
+        // MPI reduction + broadcast so all ranks carry the same final rho(r).
         dwmpi::reduce_slice_sum(
             rho_3d_local.as_slice(),
             rho_3d.as_mut_slice(),
@@ -122,6 +130,7 @@ fn atomic_super_position(
 
     let npw_rho = pwden.get_n_plane_waves();
 
+    // Sum species contributions into total rho(G).
     for (isp, sp) in species.iter().enumerate() {
         let atpsp = atpsps.get_psp(sp);
 
@@ -150,15 +159,15 @@ fn atom_super_pos_one_specie(
 
     let npw_rho = pwden.get_n_plane_waves();
 
-    // structure factor
+    // Structure factor captures atomic positions for this species.
 
     let sfact = fhkl::compute_structure_factor(miller, gindex, atom_positions);
 
-    // form factor on G shells
+    // Radial atomic form factor sampled on |G| shells.
 
     let ffact_rho = rho_of_g_on_shells(atompsp, &pwden, volume);
 
-    // crystal rho of G for rho
+    // Combine radial form factor and structure factor to get rho(G).
 
     let mut rhog = vec![c64::zero(); npw_rho];
 
@@ -201,11 +210,11 @@ fn compute_rho_of_g(
 
     let mut work = vec![0.0; mmax];
 
-    // G = 0
+    // G = 0 limit.
 
     rhog[0] = integral::simpson_rab(rho, rab);
 
-    // G > 0
+    // Finite-G spherical transform of radial density.
 
     for iw in 1..nshell {
         for i in 0..mmax {
@@ -225,6 +234,7 @@ fn compute_rho_of_g(
     //     *v /= volume;
     // }
 
+    // Convert to crystal-normalized reciprocal density.
     rhog.iter_mut().for_each(|v| *v /= volume);
 
     rhog

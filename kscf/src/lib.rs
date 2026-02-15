@@ -25,12 +25,23 @@ use itertools::multizip;
 
 mod subspace;
 
+// Cached non-local data for one species at one k-point.
+// Keeping structure factors + projector tables together avoids repeated
+// reconstruction inside Hamiltonian applications.
 struct NonLocalTerm<'a> {
     atompsp: &'a dyn AtomPSP,
     kgbeta: &'a [Vec<f64>],
     sfact_by_atom: Vec<Vec<c64>>,
 }
 
+// Per-k-point SCF worker.
+//
+// Encapsulates everything required to apply the Kohn-Sham Hamiltonian and
+// solve the eigenproblem at one k-point:
+// - kinetic diagonal
+// - local potential application buffers/layout
+// - non-local projector terms
+// - occupations and smearing model
 pub struct KSCF<'a> {
     control: &'a Control,
     gvec: &'a GVector,
@@ -85,8 +96,10 @@ impl<'a> KSCF<'a> {
         k_cart: Vector3f64,
         k_weight: f64,
     ) -> KSCF<'a> {
+        // Real spherical harmonics Y_lm(k+G) table for this k-point.
         let kgylm = KGYLM::new(k_cart, pspot.get_max_lmax(), gvec, pwwfc);
 
+        // Kinetic diagonal 1/2 |k+G|^2.
         let kin = compute_kinetic_energy(pwwfc.get_kg());
 
         let occ = vec![0.0; control.get_nband()];
@@ -94,6 +107,7 @@ impl<'a> KSCF<'a> {
         let smearing = smearing::new(control.get_smearing_scheme());
 
         let volume = crystal.get_latt().volume();
+        // Cache FFT index mapping for fast v_loc application.
         let fft_linear_index = utility::compute_fft_linear_index_map(
             gvec.get_miller(),
             pwwfc.get_gindex(),
@@ -101,6 +115,7 @@ impl<'a> KSCF<'a> {
             fft_shape[1],
             fft_shape[2],
         );
+        // Precompute non-local projector terms by species.
         let vnl_terms = build_nonlocal_terms(crystal, gvec, pspot, pwwfc, vnl);
 
         KSCF {
@@ -135,6 +150,7 @@ impl<'a> KSCF<'a> {
     }
 
     pub fn get_band_structure_energy(&self, evals: &[f64]) -> f64 {
+        // Occupation-weighted eigenvalue sum for this k-point.
         let mut ebands = 0.0;
 
         for (ibnd, &occ) in self.occ.iter().enumerate() {
@@ -172,6 +188,7 @@ impl<'a> KSCF<'a> {
         upper_level: f64,
         lower_level: f64,
     ) -> f64 {
+        // Counts nominal states in [lower, upper] used by inversion workflows.
         let mut ntot = 0.0;
 
         let mut occ = 1.0;
@@ -199,6 +216,7 @@ impl<'a> KSCF<'a> {
         unk: &mut Array3<c64>,
         fft_workspace: &mut Array3<c64>,
     ) {
+        // Reconstruct periodic part u_nk(r) from PW coefficients.
         hpsi::compute_unk_3d(
             self.gvec,
             self.pwwfc,
@@ -222,6 +240,7 @@ impl<'a> KSCF<'a> {
         evals: &mut [f64],
         evecs: &mut Matrix<c64>,
     ) -> (usize, usize) {
+        // Optional randomized initialization in early SCF cycles.
         if scf_iter <= self.control.get_scf_max_iter_rand_wfc() {
             let kg = self.pwwfc.get_kg();
 
@@ -240,7 +259,7 @@ impl<'a> KSCF<'a> {
 
         let npw_wfc = self.pwwfc.get_n_plane_waves();
 
-        // workspace for hamiltonian_on_psi
+        // Workspaces reused by Hamiltonian applications.
 
         let mut vunkg_3d = Array3::<c64>::new(self.fft_shape);
         let mut unk_3d = Array3::<c64>::new(self.fft_shape);
@@ -248,12 +267,13 @@ impl<'a> KSCF<'a> {
 
         //
 
+        // Closure implementing H|psi> for eigensolver backend.
         let mut hamiltonian_on_psi = |vin: &[c64], vout: &mut [c64]| {
             for v in vout.iter_mut() {
                 *v = c64::zero();
             }
 
-            // compute vloc on |psi>
+            // Local potential contribution.
 
             hpsi::vloc_on_psi_with_cached_fft_index(
                 rgtrans,
@@ -267,7 +287,7 @@ impl<'a> KSCF<'a> {
                 vout,
             );
 
-            // add v_nl |psi> to v_loc |psi>
+            // Non-local pseudopotential projector contribution.
 
             for term in self.vnl_terms.iter() {
                 hpsi::vnl_on_psi_with_structure_factors(
@@ -280,21 +300,12 @@ impl<'a> KSCF<'a> {
                 );
             }
 
-            // add kinetic energy | psi> to v_loc |psi> + v_nl |psi>
+            // Kinetic contribution (diagonal in PW basis).
 
             hpsi::kinetic_on_psi(&self.kin, vin, vout);
         };
 
-        // begin: preconditioner
-
-        //h_diag(ig,:) = 1.D0 + g2kin(ig) + SQRT( 1.D0 + ( g2kin(ig) - 1.D0 )**2 )
-
-        // for x in h_diag.iter_mut() {
-        //     *x = 1.0 + *x + (1.0 + (*x - 1.0).powf(2.0)).sqrt();
-        // }
-
-        // end: preconditioner
-
+        // Eigensolver instance (PCG or chosen backend).
         let mut sparse = eigensolver::new(
             self.control.get_eigen_solver(),
             npw_wfc,
@@ -312,7 +323,7 @@ impl<'a> KSCF<'a> {
         loop {
             n_cg_loop += 1;
 
-            // subspace rotation
+            // Solve subspace eigenproblem / update eigenpairs.
 
             let (n_band_converged_this_loop, n_hpsi_this_loop) = sparse.compute(
                 &mut hamiltonian_on_psi,
@@ -328,8 +339,7 @@ impl<'a> KSCF<'a> {
             n_band_converged = n_band_converged_this_loop;
             n_hpsi += n_hpsi_this_loop; // total operations of Hamiltonian on the wavefunctions
 
-            // subspace rotation
-
+            // Optional Rayleigh-Ritz rotation pass.
             if need_rayleigh_quotient(self.control, scf_iter, n_cg_loop) {
                 let mut t_evecs = Matrix::<c64>::new(npw_wfc, self.control.get_nband());
 
@@ -345,12 +355,14 @@ impl<'a> KSCF<'a> {
             }
         }
 
+        // Keep eigenpairs sorted in ascending eigenvalue order.
         sort_eigen_values_and_vectors(evals, evecs);
 
         (n_band_converged, n_hpsi)
     }
 
     pub fn compute_occ(&mut self, fermi_level: f64, evals: &[f64]) {
+        // Smearing occupation update for this k-point.
         let occupation_scale = if self.control.is_spin() { 1.0 } else { 2.0 };
 
         for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
@@ -364,6 +376,7 @@ impl<'a> KSCF<'a> {
     }
 
     pub fn set_occ_inversion(&mut self, evals: &[f64], vb_level: f64, fermi_level: f64) {
+        // Simple valence-band clipping used by occupation inversion path.
         for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
             if ev > vb_level {
                 *occ = 0.0;
@@ -373,6 +386,7 @@ impl<'a> KSCF<'a> {
 }
 
 fn sort_eigen_values_and_vectors(evals: &mut [f64], evecs: &mut Matrix<c64>) {
+    // Stable sort of eigenvalues with synchronized eigenvector columns.
     let sort_idx = utility::argsort(evals);
     if sort_idx.iter().enumerate().all(|(i, &j)| i == j) {
         return;
@@ -399,6 +413,7 @@ fn build_nonlocal_terms<'a>(
     pwwfc: &PWBasis,
     vnl: &'a VNL,
 ) -> Vec<NonLocalTerm<'a>> {
+    // Species-local caches of structure factors + projector tables.
     let species = crystal.get_unique_species();
     let kgbeta_all = vnl.get_kgbeta_all();
 
@@ -425,6 +440,7 @@ fn build_nonlocal_terms<'a>(
 }
 
 fn compute_kinetic_energy(kg: &[f64]) -> Vec<f64> {
+    // T diagonal in PW basis: 1/2 |k+G|^2.
     kg.iter().map(|x| 0.5 * x * x).collect()
 }
 
@@ -432,6 +448,7 @@ fn time_to_exit_cg(control: &Control, n_cg_loop: usize, n_band_converged: usize)
     const MAX_CG_SCF: usize = 5;
     const MAX_CG_BAND: usize = 6;
 
+    // Exit criteria for inner eigensolver loops.
     let mut b_exit = false;
 
     let n_states_bad = control.get_nband() - n_band_converged;
@@ -452,6 +469,7 @@ fn time_to_exit_cg(control: &Control, n_cg_loop: usize, n_band_converged: usize)
 }
 
 fn need_rayleigh_quotient(control: &Control, scf_iter: usize, n_cg_loop: usize) -> bool {
+    // Heuristic toggle for optional subspace rotation.
     let mut b_subspace_diag = false;
 
     if n_cg_loop > 1 {

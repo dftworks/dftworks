@@ -18,6 +18,12 @@ use pwdensity::*;
 use types::*;
 use vector3::*;
 
+// Stress decomposition utilities.
+//
+// Similar to forces, total stress is assembled from multiple physically
+// distinct pieces (kinetic, Hartree, XC, local, non-local, Ewald, NLCC).
+// Keeping pieces separate makes convergence/debug output interpretable.
+
 // Phys. Rev. B 41, 7878 (1990)
 pub fn nlcc_xc(
     atpsps: &PSPot,
@@ -26,6 +32,7 @@ pub fn nlcc_xc(
     pwden: &PWDensity,
     vxcg: &Vec<c64>,
 ) -> Matrix<f64> {
+    // NLCC stress correction from core-charge response to XC potential.
     let mut stress_c64 = Matrix::<c64>::new(3, 3);
 
     let volume = crystal.get_latt().volume();
@@ -70,6 +77,7 @@ pub fn nlcc_xc(
 
             for i in 0..3 {
                 for j in 0..3 {
+                    // Isotropic + anisotropic pieces from radial derivative term.
                     stress_c64[[j, i]] += comm
                         * (rhocoreg[ipw] * unit_mat[[j, i]]
                             + drhocoreg[ipw] * 2.0 * gcoord[j] * gcoord[i]);
@@ -96,6 +104,7 @@ pub fn vpsloc(
     pwden: &PWDensity,
     rhog: &[c64],
 ) -> Matrix<f64> {
+    // Local ionic stress from reciprocal-space local potential form factor.
     let mut stress_c64 = Matrix::<c64>::new(3, 3);
 
     let volume = crystal.get_latt().volume();
@@ -140,6 +149,7 @@ pub fn vpsloc(
 
             for i in 0..3 {
                 for j in 0..3 {
+                    // Isotropic + anisotropic pieces from radial derivative term.
                     stress_c64[[j, i]] += comm
                         * (vatlocg[ipw] * unit_mat[[j, i]]
                             + dvatlocg[ipw] * 2.0 * gcoord[j] * gcoord[i]);
@@ -166,6 +176,8 @@ pub fn xc(
     vxc_3d: &Array3<c64>,
     exc_3d: &Array3<c64>,
 ) -> Matrix<f64> {
+    // In this implementation XC stress uses diagonal thermodynamic form:
+    // sigma_xc,ii = -(E_xc - \int rho v_xc)/Omega
     let stress_vxc_rho = energy::vxc(
         latt,
         rho_3d.as_slice(),
@@ -191,6 +203,7 @@ pub fn xc_spin(
     vxc_3d: &VXCR,
     exc_3d: &Array3<c64>,
 ) -> Matrix<f64> {
+    // Spin-resolved analogue of diagonal XC stress.
     let stress_vxc_rho =
         energy::vxc_spin(latt, rho_3d, rhocore_3d.as_slice(), vxc_3d) / latt.volume();
 
@@ -206,6 +219,7 @@ pub fn xc_spin(
 }
 
 pub fn hartree(gvec: &GVector, pwden: &PWDensity, rhog: &[c64]) -> Matrix<f64> {
+    // Reciprocal-space Hartree stress, excluding G=0 term.
     let cart = gvec.get_cart();
 
     let gnorm = pwden.get_g();
@@ -231,6 +245,7 @@ pub fn hartree(gvec: &GVector, pwden: &PWDensity, rhog: &[c64]) -> Matrix<f64> {
 }
 
 pub fn kinetic(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> Matrix<f64> {
+    // Kinetic stress from occupied states and plane-wave coefficients.
     let cart = vkscf[0].get_gvec().get_cart();
 
     let mut stress = Matrix::<f64>::new(3, 3);

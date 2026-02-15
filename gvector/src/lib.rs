@@ -7,39 +7,41 @@ use vector3::{Vector3f64, Vector3i32};
 
 #[derive(Debug)]
 pub struct GVector {
+    // Miller indices and Cartesian vectors are stored in ascending |G| order.
     miller: Vec<Vector3i32>,
     cart: Vec<Vector3f64>,
 }
 
 impl GVector {
     pub fn new(latt: &Lattice, n1: usize, n2: usize, n3: usize) -> GVector {
+        // Reciprocal lattice vectors.
         let blatt = latt.reciprocal();
 
         let nsize = n1 * n2 * n3;
 
-        // generate miller index
+        // Generate Miller index grid in FFT ordering.
 
         let mut t_miller = vec![Vector3i32::zeros(); nsize];
 
         set_miller(t_miller.as_mut_slice(), n1, n2, n3);
 
-        // calculate cartesian coordinates of miller index
+        // Convert Miller indices to Cartesian G-vectors.
 
         let mut t_cart = vec![Vector3f64::zeros(); nsize];
 
         miller_to_cart(t_cart.as_mut_slice(), t_miller.as_slice(), &blatt);
 
-        // calculate the length of each G vector
+        // Compute |G| for sorting.
 
         let mut t_g: Vec<f64> = vec![0.0; nsize];
 
         set_g_norm(t_g.as_mut_slice(), t_cart.as_slice());
 
-        // calculate the index of ordered G vector according to length
+        // Sort by |G| so cutoff scans can break early / stay cache-friendly.
 
         let ordered_index = utility::argsort(&t_g);
 
-        // sort cart
+        // Apply sorted ordering to Cartesian vectors.
 
         let mut cart = vec![Vector3f64::zeros(); nsize];
 
@@ -47,15 +49,13 @@ impl GVector {
             cart[i] = t_cart[j];
         }
 
-        // sort miller
+        // Apply sorted ordering to Miller indices.
 
         let mut miller = vec![Vector3i32::zeros(); nsize];
 
         for (i, &j) in ordered_index.iter().enumerate() {
             miller[i] = t_miller[j];
         }
-
-        // Construct a new GVector struct
 
         GVector { miller, cart }
     }
@@ -68,6 +68,8 @@ impl GVector {
     }
 
     pub fn set_g_vector_index(&self, ecut: f64, xk: Vector3f64, gindex: &mut [usize]) {
+        // Select all G satisfying |k+G|^2 <= 2*ecut and store source indices
+        // into preallocated `gindex`.
         let mut npw = 0;
 
         let two_ecut = 2.0 * ecut;
@@ -87,6 +89,7 @@ impl GVector {
 
     // |k+G|^2 < 2*Ecut
     pub fn get_n_plane_waves(&self, ecut: f64, xk: Vector3f64) -> usize {
+        // Count number of basis vectors inside kinetic-energy sphere.
         let mut npw = 0;
 
         let two_ecut = 2.0 * ecut;
@@ -106,6 +109,7 @@ impl GVector {
 }
 
 fn set_g_norm(g: &mut [f64], cart: &[Vector3f64]) {
+    // |G| for each vector.
     for (x, y) in multizip((g.iter_mut(), cart.iter())) {
         *x = y.norm2();
     }
@@ -131,6 +135,8 @@ fn miller_to_cart(cart: &mut [Vector3f64], miller: &[Vector3i32], blatt: &Lattic
 }
 
 fn set_miller(miller: &mut [Vector3i32], n1: usize, n2: usize, n3: usize) {
+    // Build full FFT-aligned integer grid:
+    // [fft_left_end, fft_right_end] along each direction.
     let i1 = utility::fft_left_end(n1);
     let i2 = utility::fft_left_end(n2);
     let i3 = utility::fft_left_end(n3);

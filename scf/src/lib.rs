@@ -26,6 +26,14 @@ use symmetry::SymmetryDriver;
 use types::*;
 use vector3::Vector3f64;
 
+// Unified SCF driver interface.
+//
+// Each concrete implementation (non-spin, collinear spin, NCL) follows the
+// same high-level contract:
+// 1) consume the current density/potential state
+// 2) iterate Kohn-Sham solve + density update until convergence (or max steps)
+// 3) return converged eigenpairs plus derived observables (forces/stress)
+//    through the mutable output arguments.
 pub trait SCF {
     fn run(
         &self,
@@ -51,6 +59,7 @@ pub trait SCF {
     );
 }
 
+// Factory that selects the SCF algorithm matching the requested spin scheme.
 pub fn new(spin_scheme: SpinScheme) -> Box<dyn SCF> {
     match spin_scheme {
         SpinScheme::NonSpin => Box::new(SCFNonspin::new()),

@@ -11,8 +11,9 @@ use std::collections::HashMap;
 pub struct VNL {
     _ik: usize,
 
-    // HashMap<specie, MultiMap<l, Vec<<k+G,beta_l>>>
+    // HashMap<specie, Vec<projector_index -> beta_l(|k+G|)>>
     kgbeta_all: HashMap<String, Vec<Vec<f64>>>,
+    // Derivative w.r.t. |k+G|^2 used by stress/nonlocal derivatives.
     dkgbeta_all: HashMap<String, Vec<Vec<f64>>>,
 }
 
@@ -24,6 +25,7 @@ impl VNL {
 
         let mut dkgbeta_all = HashMap::new();
 
+        // Precompute projector radial transforms for all species at this k-point.
         let species = crystal.get_unique_species();
 
         for specie in species.iter() {
@@ -54,12 +56,12 @@ impl VNL {
     }
 }
 
-// return (l, Vec<<k+G, beta_l>>)
+// Return one radial table per projector beta.
 pub fn atomic_super_position(atpsp: &dyn AtomPSP, pwwfc: &PWBasis, volume: f64) -> Vec<Vec<f64>> {
     let rad = atpsp.get_rad();
     let rab = atpsp.get_rab();
 
-    let mut kgbeta = Vec::new(); // nonlocal psp
+    let mut kgbeta = Vec::new();
 
     let nbeta = atpsp.get_nbeta();
 
@@ -95,6 +97,7 @@ fn compute_vnl_of_kg(
 
     let mut work = vec![0.0; mmax];
 
+    // Normalization for radial transform to reciprocal projector form.
     let fact = FOURPI / volume.sqrt();
 
     for iw in 0..npw {
@@ -111,7 +114,7 @@ fn compute_vnl_of_kg(
     vg
 }
 
-// return (l, Vec<<k+G, beta_l>>)
+// Derivative counterpart of `atomic_super_position`.
 pub fn atomic_super_position_diff(
     atpsp: &dyn AtomPSP,
     pwwfc: &PWBasis,
@@ -120,7 +123,7 @@ pub fn atomic_super_position_diff(
     let rad = atpsp.get_rad();
     let rab = atpsp.get_rab();
 
-    let mut kgbeta = Vec::new(); // nonlocal psp
+    let mut kgbeta = Vec::new();
 
     let nbeta = atpsp.get_nbeta();
 
@@ -156,6 +159,7 @@ fn compute_dvnl_of_kg(
 
     let mut work = vec![0.0; mmax];
 
+    // Prefactor from analytical derivative identities of spherical Bessel basis.
     let fact = FOURPI / volume.sqrt() / (2.0 * l as f64 + 1.0);
     if l == 0 {
         for iw in 0..npw {
@@ -176,7 +180,7 @@ fn compute_dvnl_of_kg(
                 // j_{l+1}
                 let j1 = special::spherical_bessel_jn(l + 1, kg[iw] * r);
 
-                //j_{l-1}
+                // j_{l-1}
                 let j2 = special::spherical_bessel_jn(l - 1, kg[iw] * r);
 
                 work[i] = beta[i] * r * r * ((l as f64 + 1.0) * j1 - (l as f64) * j2);

@@ -6,6 +6,20 @@ use types::c64;
 
 use crate::XC;
 
+// -----------------------------------------------------------------------------
+// PBE (GGA) XC implementation notes
+// -----------------------------------------------------------------------------
+//
+// We evaluate, point-by-point on the FFT real-space mesh:
+//   f(rho, |grad rho|) = rho * eps_xc(rho, |grad rho|)
+//
+// and return:
+//   exc(r)  = eps_xc(r)
+//   vxc(r)  = d f / d rho - div( (d f / d|grad rho|) * grad rho / |grad rho| )
+//
+// The second term is the key GGA correction that is required for
+// variational consistency (and therefore consistent HF/Pulay force behavior).
+// -----------------------------------------------------------------------------
 pub struct XCPBE {}
 
 impl XCPBE {
@@ -25,9 +39,12 @@ impl XC for XCPBE {
         exc: &mut Array3<c64>,
     ) {
         match (rho, vxc) {
+            // Non-spin workflow: one density channel and one XC potential field.
             (RHOR::NonSpin(rho), VXCR::NonSpin(vxc)) => {
                 compute_nonspin_potential(gvec, pwden, rgtrans, rho, vxc, exc);
             }
+            // Spin-collinear workflow: build channel-wise potentials and combine
+            // channel energy densities into a total per-point eps_xc.
             (RHOR::Spin(rho_up, rho_dn), VXCR::Spin(vxc_up, vxc_dn)) => {
                 compute_spin_potential(gvec, pwden, rgtrans, rho_up, rho_dn, vxc_up, vxc_dn, exc);
             }
@@ -46,6 +63,7 @@ fn compute_nonspin_potential(
 ) {
     let nfft = rho.as_slice().len();
 
+    // 1) Build Cartesian components of grad rho on the real-space mesh.
     let mut grad_x = Array3::<c64>::new(rho.shape());
     let mut grad_y = Array3::<c64>::new(rho.shape());
     let mut grad_z = Array3::<c64>::new(rho.shape());
@@ -58,6 +76,11 @@ fn compute_nonspin_potential(
         grad_z.as_mut_slice(),
     );
 
+    // 2) Build:
+    //    - local_part[i] = d f / d rho
+    //    - exc[i]        = eps_xc
+    //    - B[i]          = (d f / d|grad rho|) * grad rho / |grad rho|
+    //      where f = rho * eps_xc.
     let mut local_part = vec![0.0; nfft];
     let mut bx = vec![c64::new(0.0, 0.0); nfft];
     let mut by = vec![c64::new(0.0, 0.0); nfft];
@@ -75,9 +98,12 @@ fn compute_nonspin_potential(
         &mut bz,
     );
 
+    // 3) Compute divergence of B using FFT derivatives.
     let mut div_b = vec![c64::new(0.0, 0.0); nfft];
     rgtrans.divergence_r3d(gvec, pwden, &bx, &by, &bz, &mut div_b);
 
+    // 4) Final GGA potential: v_xc = d f / d rho - div(B).
+    // Imaginary parts are numerical noise only; keep potential real.
     let vxc_slice = vxc.as_mut_slice();
     for i in 0..nfft {
         vxc_slice[i] = c64::new(local_part[i] - div_b[i].re, 0.0);
@@ -96,6 +122,11 @@ fn compute_spin_potential(
 ) {
     let nfft = rho_up.as_slice().len();
 
+    // For spin-collinear PBE in this code path, we evaluate each spin channel
+    // with the same scalar non-spin PBE building blocks, then combine channel
+    // energy densities into the total eps_xc field.
+
+    // 1) Gradients for up channel.
     let mut grad_up_x = Array3::<c64>::new(rho_up.shape());
     let mut grad_up_y = Array3::<c64>::new(rho_up.shape());
     let mut grad_up_z = Array3::<c64>::new(rho_up.shape());
@@ -108,6 +139,7 @@ fn compute_spin_potential(
         grad_up_z.as_mut_slice(),
     );
 
+    // 2) Gradients for down channel.
     let mut grad_dn_x = Array3::<c64>::new(rho_dn.shape());
     let mut grad_dn_y = Array3::<c64>::new(rho_dn.shape());
     let mut grad_dn_z = Array3::<c64>::new(rho_dn.shape());
@@ -120,6 +152,7 @@ fn compute_spin_potential(
         grad_dn_z.as_mut_slice(),
     );
 
+    // 3) Channel-local terms and B vectors for up channel.
     let mut local_up = vec![0.0; nfft];
     let mut eps_up = vec![c64::new(0.0, 0.0); nfft];
     let mut bup_x = vec![c64::new(0.0, 0.0); nfft];
@@ -138,6 +171,7 @@ fn compute_spin_potential(
         &mut bup_z,
     );
 
+    // 4) Channel-local terms and B vectors for down channel.
     let mut local_dn = vec![0.0; nfft];
     let mut eps_dn = vec![c64::new(0.0, 0.0); nfft];
     let mut bdn_x = vec![c64::new(0.0, 0.0); nfft];
@@ -156,6 +190,7 @@ fn compute_spin_potential(
         &mut bdn_z,
     );
 
+    // 5) Divergence terms for each channel.
     let mut div_up = vec![c64::new(0.0, 0.0); nfft];
     let mut div_dn = vec![c64::new(0.0, 0.0); nfft];
     rgtrans.divergence_r3d(gvec, pwden, &bup_x, &bup_y, &bup_z, &mut div_up);
@@ -167,14 +202,17 @@ fn compute_spin_potential(
     let vxc_dn_slice = vxc_dn.as_mut_slice();
     let exc_slice = exc.as_mut_slice();
 
+    // 6) Assemble v_xc(up/down) and total eps_xc.
     for i in 0..nfft {
         let ru = rho_up_slice[i].norm().max(RHO_FLOOR);
         let rd = rho_dn_slice[i].norm().max(RHO_FLOOR);
         let rt = ru + rd;
 
+        // Channel-wise GGA functional derivative.
         vxc_up_slice[i] = c64::new(local_up[i] - div_up[i].re, 0.0);
         vxc_dn_slice[i] = c64::new(local_dn[i] - div_dn[i].re, 0.0);
 
+        // Total eps_xc returned in the conventional rho-weighted form.
         let eps = if rt > RHO_FLOOR {
             (ru * eps_up[i].re + rd * eps_dn[i].re) / rt
         } else {
@@ -195,6 +233,11 @@ fn build_channel_terms(
     by: &mut [c64],
     bz: &mut [c64],
 ) {
+    // Per-grid-point helper shared by spin/non-spin code:
+    // - compute local derivative d f / d rho
+    // - compute eps_xc
+    // - build the B vector used in the divergence correction
+    //   B = (d f / d|grad rho|) * grad rho / |grad rho|.
     for i in 0..rho.len() {
         let r = rho[i].norm().max(RHO_FLOOR);
 
@@ -207,6 +250,8 @@ fn build_channel_terms(
         local_part[i] = df_drho;
         eps_out[i] = c64::new(eps, 0.0);
 
+        // Guard against tiny |grad rho| to avoid numerical blow-up in
+        // grad rho / |grad rho| and keep B continuous around zero gradient.
         if grad_norm > GRAD_FLOOR {
             let coeff = df_dgrad / grad_norm;
             bx[i] = c64::new(coeff * gx, 0.0);
@@ -222,6 +267,10 @@ fn build_channel_terms(
 
 #[inline]
 fn pbe_local_derivatives(rho: f64, grad_norm: f64) -> (f64, f64, f64) {
+    // Local derivatives of f(rho, g) = rho * eps_xc(rho, g) with
+    // g = |grad rho|. We use central finite differences because this keeps
+    // the implementation compact while staying consistent with the same
+    // energy-density formulas used in production.
     let rho0 = rho.max(RHO_FLOOR);
     let g0 = grad_norm.max(0.0);
 
@@ -235,6 +284,7 @@ fn pbe_local_derivatives(rho: f64, grad_norm: f64) -> (f64, f64, f64) {
     let f_m = pbe_energy_density(rho_m, g0);
     let df_drho = (f_p - f_m) / (rho_p - rho_m);
 
+    // Derivative w.r.t. gradient magnitude at fixed rho.
     let dgrad = (g0 * 1.0E-6).max(1.0E-10);
     let g_p = g0 + dgrad;
     let g_m = (g0 - dgrad).max(0.0);
@@ -252,6 +302,8 @@ fn pbe_local_derivatives(rho: f64, grad_norm: f64) -> (f64, f64, f64) {
 
 #[inline]
 fn pbe_energy_density(rho: f64, grad_norm: f64) -> f64 {
+    // f = rho * eps_xc; this is the quantity whose functional derivative
+    // generates the XC potential in GGA.
     let rho = rho.max(RHO_FLOOR);
     rho * eps_xc_pbe_nonspin(rho, grad_norm.max(0.0))
 }
@@ -272,6 +324,8 @@ const GAMMA: f64 = 0.031_090_690_869_654_9; // (1 - ln 2) / pi^2
 
 #[inline]
 fn eps_xc_pbe_nonspin(rho: f64, grad_norm: f64) -> f64 {
+    // Total PBE energy density per particle:
+    // eps_xc = eps_x + eps_c
     let ex = eps_x_pbe_nonspin(rho, grad_norm);
     let ec = eps_c_pbe_nonspin(rho, grad_norm);
     ex + ec
@@ -294,6 +348,8 @@ fn eps_x_pbe_nonspin(rho: f64, grad_norm: f64) -> f64 {
 
 #[inline]
 fn eps_c_pbe_nonspin(rho: f64, grad_norm: f64) -> f64 {
+    // Correlation uses PBE correction around an LDA (PZ) base:
+    // eps_c = eps_c^LDA + H(rs, t).
     let (_vc_lda, eps_c_lda) = evc_pz_unpolarized(rho);
 
     // PBE correlation gradient correction H(rs, t)
@@ -312,6 +368,8 @@ fn eps_c_pbe_nonspin(rho: f64, grad_norm: f64) -> f64 {
 
 #[inline]
 fn evc_pz_unpolarized(rho: f64) -> (f64, f64) {
+    // Perdew-Zunger LDA correlation parameterization (unpolarized).
+    // Returns (v_c^LDA, eps_c^LDA).
     let rs = (3.0 / FOURPI / rho).powf(ONE_THIRD);
 
     if rs > 1.0 {
@@ -346,6 +404,7 @@ fn make_xc_test_context(
     shape: [usize; 3],
     ecut: f64,
 ) -> (gvector::GVector, pwdensity::PWDensity, rgtransform::RGTransform) {
+    // Lightweight cubic context for unit tests that need FFT gradients.
     let latt = lattice::Lattice::new(&[8.0, 0.0, 0.0], &[0.0, 8.0, 0.0], &[0.0, 0.0, 8.0]);
     let gvec = gvector::GVector::new(&latt, shape[0], shape[1], shape[2]);
     let pwden = pwdensity::PWDensity::new(ecut, &gvec);
@@ -361,6 +420,7 @@ fn eval_nonspin_vxc_exc(
     pwden: &pwdensity::PWDensity,
     rgtrans: &rgtransform::RGTransform,
 ) -> (Array3<c64>, Array3<c64>) {
+    // Convenience helper so tests can evaluate XC for arbitrary rho snapshots.
     let rho = RHOR::NonSpin(Array3::from_vec(shape, rho_data));
     let mut vxc = VXCR::NonSpin(Array3::new(shape));
     let mut exc = Array3::<c64>::new(shape);
@@ -370,6 +430,7 @@ fn eval_nonspin_vxc_exc(
 
 #[test]
 fn test_pbe_nonspin_finite_outputs() {
+    // Smoke test: basic finiteness in a smoothly varying density field.
     let shape = [4, 4, 4];
     let n = shape[0] * shape[1] * shape[2];
 
@@ -400,6 +461,9 @@ fn test_pbe_nonspin_finite_outputs() {
 
 #[test]
 fn test_pbe_nonspin_variational_consistency() {
+    // Core regression for force consistency:
+    // check that \int v_xc * delta_rho matches finite-difference derivative
+    // of \int rho * eps_xc under rho -> rho +/- alpha * delta_rho.
     let shape = [6, 6, 6];
     let n = shape[0] * shape[1] * shape[2];
     let alpha = 1.0E-4;
@@ -468,6 +532,7 @@ fn test_pbe_nonspin_variational_consistency() {
 
 #[test]
 fn test_pbe_gradient_changes_energy_density() {
+    // Ensure gradient channel is active (not silently ignored).
     let rho = 0.03;
     let e0 = eps_xc_pbe_nonspin(rho, 0.0);
     let e1 = eps_xc_pbe_nonspin(rho, 1.0E-3);
@@ -476,6 +541,7 @@ fn test_pbe_gradient_changes_energy_density() {
 
 #[test]
 fn test_pbe_spin_finite_outputs() {
+    // Smoke test for spin branch.
     let shape = [4, 4, 4];
     let n = shape[0] * shape[1] * shape[2];
 

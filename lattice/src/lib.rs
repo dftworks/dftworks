@@ -3,6 +3,12 @@ use vector3::*;
 
 use std::{f64::consts, fmt};
 
+// 3x3 lattice container (column vectors a,b,c).
+//
+// Conventions:
+// - internal matrix stores lattice vectors by columns
+// - direct and reciprocal transforms follow physics convention:
+//   b_i · a_j = 2*pi*delta_ij
 #[derive(Debug, Default, Clone)]
 pub struct Lattice {
     data: Matrix<f64>,
@@ -10,6 +16,7 @@ pub struct Lattice {
 
 impl Lattice {
     pub fn new(a: &[f64], b: &[f64], c: &[f64]) -> Lattice {
+        // Build lattice with columns (a,b,c).
         let mut data = Matrix::<f64>::new(3, 3);
 
         data.set_col(0, a);
@@ -20,6 +27,7 @@ impl Lattice {
     }
 
     pub fn get_metric_tensor(&self) -> Matrix<f64> {
+        // Metric tensor G_ij = a_i · a_j.
         let mut g = Matrix::<f64>::new(3, 3);
 
         let a = self.get_vector_a();
@@ -50,6 +58,7 @@ impl Lattice {
     }
 
     pub fn as_2d_array_col_major(&self) -> [[f64; 3]; 3] {
+        // Returns [vector_index][component].
         let mut latt = [[0.0f64; 3]; 3];
 
         for i in 0..3 {
@@ -62,6 +71,7 @@ impl Lattice {
     }
 
     pub fn as_2d_array_row_major(&self) -> [[f64; 3]; 3] {
+        // Returns [component][vector_index].
         let mut latt = [[0.0f64; 3]; 3];
 
         for i in 0..3 {
@@ -75,6 +85,7 @@ impl Lattice {
 
     // ( a x b ) . c
     pub fn volume(&self) -> f64 {
+        // Signed cell volume.
         let a = self.get_vector_a();
         let b = self.get_vector_b();
         let c = self.get_vector_c();
@@ -86,6 +97,7 @@ impl Lattice {
     // rb = 2 x PI x (c x a) / volume
     // rc = 2 x PI x (a x b) / volume
     pub fn reciprocal(&self) -> Lattice {
+        // Reciprocal lattice vectors satisfying b_i · a_j = 2*pi*delta_ij.
         let factor = 2.0 * consts::PI / self.volume();
 
         let a = self.get_vector_a();
@@ -130,14 +142,12 @@ impl Lattice {
     }
 
     pub fn scaled_by(&mut self, f: f64) {
-        // for v in self.data.as_mut_slice().iter_mut() {
-        //     *v *= f;
-        // }
-
+        // Uniformly scales all lattice vectors by factor f.
         self.data.as_mut_slice().iter_mut().for_each(|v| *v *= f);
     }
 
     pub fn frac_to_cart(&self, pos_f: &[f64], pos_c: &mut [f64]) {
+        // Cartesian position = lattice_matrix * fractional_position.
         for i in 0..3 {
             pos_c[i] = 0.0;
 
@@ -148,6 +158,7 @@ impl Lattice {
     }
 
     pub fn cart_to_frac(&self, pos_c: &[f64], pos_f: &mut [f64]) {
+        // Fractional position = inverse(lattice_matrix) * Cartesian position.
         let mut mat = self.data.clone();
 
         mat.inv();

@@ -15,6 +15,12 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 
+// Common density driver interface used by SCF.
+//
+// Responsibilities:
+// - build physically reasonable initial density from atomic superposition
+// - evaluate iterative density-change metric for SCF convergence logic
+// - rebuild rho(r) from occupied KS states and eigenvectors
 pub trait Density {
     fn from_atomic_super_position(
         &self,
@@ -39,6 +45,7 @@ pub trait Density {
     );
 }
 
+// Factory that dispatches to the density workflow matching spin treatment.
 pub fn new(spin_scheme: SpinScheme) -> Box<dyn Density> {
     match spin_scheme {
         SpinScheme::NonSpin => Box::new(DensityNonspin::new()),

@@ -17,7 +17,8 @@ pub fn from_atomic_super_position(
     pwden: &PWDensity,
     vpslocg: &mut [c64],
 ) {
-    // 1D Vloc(G)
+    // Build crystal local ionic potential in reciprocal space from atomic
+    // pseudopotential contributions.
 
     atomic_super_position(pspot, crystal, pwden, gvec, vpslocg);
 }
@@ -33,6 +34,7 @@ fn atomic_super_position(
 
     let species = crystal.get_unique_species();
 
+    // Sum species-resolved local potential contributions.
     for (isp, sp) in species.iter().enumerate() {
         let atpsp = atpsps.get_psp(sp);
 
@@ -61,15 +63,15 @@ fn atom_super_pos_one_specie(
 
     let npw_rho = pwden.get_n_plane_waves();
 
-    // structure factor
+    // Structure factor for all atoms of one species.
 
     let sfact = fhkl::compute_structure_factor(miller, gindex, atom_positions);
 
-    // form factor on G shells
+    // Radial form factor sampled on unique |G| shells.
 
     let ffact_vloc = vloc_of_g_on_shells(atompsp, &pwden, volume);
 
-    // form factor on G for rho
+    // Expand shell values back to per-G values and apply structure factor.
 
     let mut vlocg = vec![c64::zero(); npw_rho];
 
@@ -107,7 +109,7 @@ fn compute_vloc_of_g(
 
     let mut work = vec![0.0; mmax];
 
-    // G = 0
+    // G = 0:
     //
     // Here we neglect the divergent part which cancels with the (G = 0) part in Hartree.
     // So in the Hartree, we simply make the G = 0 term zero.
@@ -119,7 +121,7 @@ fn compute_vloc_of_g(
     //vg[0] = integral::simpson_log(&work, rad);
     vg[0] = integral::simpson_rab(&work, rab);
 
-    // G > 0
+    // G > 0: radial Fourier transform with analytic long-range subtraction.
 
     for iw in 1..nshell {
         let g = gshell[iw];
@@ -137,6 +139,7 @@ fn compute_vloc_of_g(
         vg[iw] = integral::simpson_rab(&work, rab) - vh;
     }
 
+    // Reciprocal-space normalization.
     vg.iter_mut().for_each(|v| *v *= FOURPI / volume);
 
     vg
@@ -170,11 +173,11 @@ pub fn compute_dvloc_of_g(
 
     let mut work = vec![0.0; mmax];
 
-    // G = 0
+    // G = 0 derivative term is set to zero in this treatment.
 
     vg[0] = 0.0;
 
-    // G > 0
+    // G > 0 derivative used by stress expressions.
 
     for iw in 1..nshell {
         let g = gshell[iw];
@@ -195,6 +198,7 @@ pub fn compute_dvloc_of_g(
         vg[iw] = integral::simpson_rab(&work, rab) + vh;
     }
 
+    // Reciprocal-space normalization.
     vg.iter_mut().for_each(|v| *v *= FOURPI / volume);
 
     vg

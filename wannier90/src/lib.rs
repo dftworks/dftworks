@@ -19,6 +19,17 @@ use std::io;
 
 pub use types::ExportSummary;
 
+// End-to-end Wannier90 export pipeline.
+//
+// Responsibilities:
+// 1) validate k-mesh metadata and neighbor topology
+// 2) write per-channel Wannier text inputs (.win/.nnkp/.amn/.mmn)
+// 3) collect distributed eigenvalue parts into final .eig files
+//
+// MPI behavior:
+// - root rank writes text outputs that require global context
+// - all ranks write local .eig parts
+// - barriers enforce deterministic handoff points.
 pub fn export(
     control: &Control,
     crystal: &Crystal,
@@ -39,7 +50,7 @@ pub fn export(
     let k_shift = read_k_shift("in.kmesh")?;
     let fallback_topology = build_mesh_topology(kpts, k_mesh, k_shift)?;
 
-    // Ensure all ranks have reached export after writing wavefunctions/eigenvalues.
+    // Ensure all ranks have reached export after SCF outputs are on disk.
     dwmpi::barrier(MPI_COMM_WORLD);
 
     let mut summary = ExportSummary::default();
@@ -49,6 +60,7 @@ pub fn export(
 
         match control.get_spin_scheme_enum() {
             SpinScheme::NonSpin => {
+                // Single-channel export.
                 let files = write_full_channel_data(
                     seedname,
                     control,
@@ -62,6 +74,8 @@ pub fn export(
                 summary.written_files.extend(files);
             }
             SpinScheme::Spin => {
+                // Two independent channels with Wannier90's conventional
+                // ".up"/".dn" seed naming.
                 let up_seed = format!("{}.up", seedname);
                 let dn_seed = format!("{}.dn", seedname);
 
@@ -102,6 +116,7 @@ pub fn export(
     dwmpi::barrier(MPI_COMM_WORLD);
 
     if dwmpi::is_root() {
+        // Merge rank-local .eig parts into one file per exported channel.
         match control.get_spin_scheme_enum() {
             SpinScheme::NonSpin => {
                 let eig_file = format!("{}.eig", seedname);

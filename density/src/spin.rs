@@ -17,6 +17,8 @@ use types::*;
 use vector3::*;
 
 pub struct DensitySpin {
+    // Per-species starting magnetization used to split initial atomic density
+    // into up/down channels.
     starting_mag: MagMoment,
 }
 
@@ -44,17 +46,19 @@ impl Density for DensitySpin {
         let (rhog_up, rhog_dn) = rhog.as_spin_mut().unwrap();
         let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin_mut().unwrap();
 
-        // 1D Rho(G)
+        // Build spin-resolved rho(G) from atomic superposition plus
+        // species-dependent initial magnetic moments.
 
         self.atomic_super_position(pspot, crystal, pwden, gvec, rhog_up, rhog_dn);
 
-        // 1D Rho(G) -> 3D Rho(r)
+        // Transform reciprocal densities to real-space mesh.
 
         rgtrans.g1d_to_r3d(gvec, pwden, rhog_up, rho_3d_up.as_mut_slice());
         rgtrans.g1d_to_r3d(gvec, pwden, rhog_dn, rho_3d_dn.as_mut_slice());
     }
 
     fn get_change_in_density(&self, rhog: &[c64], rhog_new: &[c64]) -> f64 {
+        // L2-norm squared in reciprocal space.
         let mut delta_rho = 0.0;
 
         for (&x, &y) in multizip((rhog.iter(), rhog_new.iter())) {
@@ -75,6 +79,7 @@ impl Density for DensitySpin {
     ) {
         let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin_mut().unwrap();
 
+        // Reset accumulators each SCF iteration.
         rho_3d_up.set_value(c64::zero());
         rho_3d_dn.set_value(c64::zero());
 
@@ -90,11 +95,12 @@ impl Density for DensitySpin {
 
         let mut unk = Array3::<c64>::new([n1, n2, n3]);
 
-        // work space
+        // FFT workspace reused while converting band coefficients to u_nk(r).
 
         let mut fft_work = Array3::<c64>::new([n1, n2, n3]);
 
-        // spin up
+        // Spin-up channel:
+        // rho_up(r) = sum_{n,k} f_up(n,k) w_k |u_up(n,k,r)|^2
 
         for (ik, kscf) in vkscf_up.iter().enumerate() {
             let occ = kscf.get_occ();
@@ -103,7 +109,7 @@ impl Density for DensitySpin {
 
             for ib in 0..nev {
                 if occ[ib] > EPS20 {
-                    // c_nk(G) -> u_nk(r)
+                    // Plane-wave coefficients -> u_nk(r).
 
                     kscf.get_unk(
                         rgtrans,
@@ -114,7 +120,7 @@ impl Density for DensitySpin {
                         &mut fft_work,
                     );
 
-                    // \sum |u_nk(r)|^2 -> rho_nk(r)
+                    // Add weighted orbital density.
 
                     let factor = occ[ib] * kscf.get_k_weight();
 
@@ -125,12 +131,14 @@ impl Density for DensitySpin {
                         *y += x.norm_sqr() * factor;
                     }
                 } else {
+                    // Occupations are ordered; remaining bands are empty.
                     break;
                 }
             }
         }
 
-        // spin down
+        // Spin-down channel:
+        // rho_dn(r) = sum_{n,k} f_dn(n,k) w_k |u_dn(n,k,r)|^2
 
         for (ik, kscf) in vkscf_dn.iter().enumerate() {
             let occ = kscf.get_occ();
@@ -139,7 +147,7 @@ impl Density for DensitySpin {
 
             for ib in 0..nev {
                 if occ[ib] > EPS20 {
-                    // c_nk(G) -> u_nk(r)
+                    // Plane-wave coefficients -> u_nk(r).
 
                     kscf.get_unk(
                         rgtrans,
@@ -150,7 +158,7 @@ impl Density for DensitySpin {
                         &mut fft_work,
                     );
 
-                    // \sum |u_nk(r)|^2 -> rho_nk(r)
+                    // Add weighted orbital density.
 
                     let factor = occ[ib] * kscf.get_k_weight();
 
@@ -161,11 +169,13 @@ impl Density for DensitySpin {
                         *y += x.norm_sqr() * factor;
                     }
                 } else {
+                    // Occupations are ordered; remaining bands are empty.
                     break;
                 }
             }
         }
 
+        // MPI reduction + broadcast so all ranks share identical rho_up/rho_dn.
         dwmpi::reduce_slice_sum(
             rho_3d_up_local.as_slice(),
             rho_3d_up.as_mut_slice(),
@@ -199,15 +209,15 @@ impl DensitySpin {
 
         let npw_rho = pwden.get_n_plane_waves();
 
-        // structure factor
+        // Structure factor for atomic positions of this species.
 
         let sfact = fhkl::compute_structure_factor(miller, gindex, atom_positions);
 
-        // form factor on G shells
+        // Radial atomic form factor sampled on |G| shells.
 
         let ffact_rho = rho_of_g_on_shells(atompsp, &pwden, volume);
 
-        // crystal rho of G for rho
+        // Combine radial form factor and structure factor.
 
         let mut rhog = vec![c64::zero(); npw_rho];
 
@@ -237,6 +247,10 @@ impl DensitySpin {
 
         let mag = self.starting_mag.get_starting_moment();
 
+        // Build species contribution then split into up/down using
+        // initial magnetization m:
+        //   rho_up = rho * (1 + m) / 2
+        //   rho_dn = rho * (1 - m) / 2
         for (isp, sp) in species.iter().enumerate() {
             let atpsp = atpsps.get_psp(sp);
 

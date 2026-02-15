@@ -18,7 +18,18 @@ use pwdensity::PWDensity;
 use types::c64;
 use vector3::Vector3f64;
 
+// Energy decomposition utilities.
+//
+// The SCF total energy is assembled from:
+// - band (one-electron eigenvalue) contribution
+// - double-counting corrections via v_xc and Hartree terms
+// - explicit E_xc, E_H, Ewald, and non-local pieces
+//
+// Routines here intentionally mirror the algebra used in SCF drivers to keep
+// reported energies and convergence criteria consistent.
 pub fn kinetic(vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> f64 {
+    // Kinetic energy from plane-wave coefficients:
+    // T = 1/2 * sum_{n,k,G} f_{nk} w_k |c_{nk}(G)|^2 |k+G|^2
     let mut etot = 0.0;
 
     for (ik, kscf) in vkscf.iter().enumerate() {
@@ -57,6 +68,8 @@ pub fn kinetic(vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> f64 {
 }
 
 pub fn vpsloc(crystal: &Crystal, vpslocg: &[c64], rhog: &[c64]) -> f64 {
+    // Local ionic potential energy:
+    // E_loc = Omega * sum_G v_loc(G) rho*(-G)
     let mut etot_vpsloc = c64::zero();
 
     for (vps, rho) in multizip((vpslocg.iter(), rhog.iter())) {
@@ -69,6 +82,8 @@ pub fn vpsloc(crystal: &Crystal, vpslocg: &[c64], rhog: &[c64]) -> f64 {
 }
 
 pub fn vnl(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> f64 {
+    // Non-local pseudopotential projector energy accumulated over
+    // k-points/species/bands.
     let mut etot = c64::zero();
 
     for (ik, kscf) in vkscf.iter().enumerate() {
@@ -151,12 +166,14 @@ pub fn vnl_of_one_specie_one_k(
                 for m in utility::get_quant_num_m(l) {
                     let ylm = kgylm.get_data(l, m);
 
+                    // Project KS state onto one projector channel.
                     let mut beta_kg_cnk = c64::zero();
 
                     for i in 0..npw {
                         beta_kg_cnk += ylm[i] * beta[i] * sfact[i].conj() * cnk[i];
                     }
 
+                    // Kleinman-Bylander form contributes |<beta|psi>|^2 * d.
                     etot_band += dfact * beta_kg_cnk.norm_sqr();
                 }
             }
@@ -172,6 +189,7 @@ pub fn vnl_of_one_specie_one_k(
 // vxc_3d: the xc potential calculated with the sum of valence charge and core charge
 // vxc: the potential energy of valence charge experienced in the potential vxc_3d
 pub fn vxc(latt: &Lattice, rho_3d: &[c64], _rhocore_3d: &[c64], vxc_3d: &[c64]) -> f64 {
+    // E_{rho*v_xc} = \int rho_valence(r) v_xc[rho_valence+rho_core](r) dr
     let mut etot_vxc = c64::zero();
 
     for (r, v) in multizip((rho_3d.iter(), vxc_3d.iter())) {
@@ -184,6 +202,7 @@ pub fn vxc(latt: &Lattice, rho_3d: &[c64], _rhocore_3d: &[c64], vxc_3d: &[c64]) 
 }
 
 pub fn vxc_spin(latt: &Lattice, rho_3d: &RHOR, _rhocore_3d: &[c64], vxc_3d: &VXCR) -> f64 {
+    // Spin-resolved analogue of E_{rho*v_xc}.
     let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin().unwrap();
     let rho_3d_up = rho_3d_up.as_slice();
     let rho_3d_dn = rho_3d_dn.as_slice();
@@ -217,6 +236,7 @@ pub fn exc(
     rhocore_3d: &Array3<c64>,
     exc_3d: &Array3<c64>,
 ) -> f64 {
+    // E_xc = \int (rho_valence + rho_core) * eps_xc(r) dr
     let rho = rho_3d.as_slice();
     let rhocore = rhocore_3d.as_slice();
     let exc = exc_3d.as_slice();
@@ -238,6 +258,7 @@ pub fn exc_spin(
     rhocore_3d: &Array3<c64>,
     exc_3d: &Array3<c64>,
 ) -> f64 {
+    // Spin-resolved analogue of E_xc with shared core density.
     let (rho_up, rho_dn) = rho_3d.as_spin().unwrap();
     let rho_up = rho_up.as_slice();
     let rho_dn = rho_dn.as_slice();
@@ -258,6 +279,7 @@ pub fn exc_spin(
 }
 
 pub fn hartree(pwden: &PWDensity, latt: &Lattice, rhog: &[c64]) -> f64 {
+    // Reciprocal-space Hartree energy, excluding G=0.
     let npw_rho = pwden.get_n_plane_waves();
 
     let g_pwden = pwden.get_g();
@@ -276,6 +298,7 @@ pub fn hartree(pwden: &PWDensity, latt: &Lattice, rhog: &[c64]) -> f64 {
 }
 
 pub fn band_structure(vkscf: &[KSCF], vevals: &[Vec<f64>]) -> f64 {
+    // Occupation-weighted sum of eigenvalues over k points.
     let mut etot_bands = 0.0;
 
     for (ik, kscf) in vkscf.iter().enumerate() {
@@ -297,6 +320,7 @@ pub fn output(
     etot: f64,
     etot0: f64,
 ) {
+    // Human-readable energy breakdown used in SCF logs.
     println!();
     println!("      {:-^30}", " total energy (Ry) ");
     println!();

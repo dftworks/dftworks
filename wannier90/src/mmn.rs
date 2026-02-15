@@ -15,6 +15,9 @@ pub(crate) fn write_mmn_file(
     all_pwbasis: &[PWBasis],
     gvec: &GVector,
 ) -> io::Result<()> {
+    // MMN stores overlaps between neighboring k points:
+    //   M_{mn}^{(k,b)} = <u_{m,k} | u_{n,k+b}>
+    // written as one block per (k, neighbor) pair.
     let nkpt = eigvecs.len();
     if nkpt != all_pwbasis.len() || nkpt != topology.neighbors.len() {
         return Err(io::Error::new(
@@ -30,6 +33,8 @@ pub(crate) fn write_mmn_file(
     writeln!(writer, "{:8} {:8} {:8}", num_bands, nkpt, topology.nntot)?;
 
     let miller = gvec.get_miller();
+    // Precompute Miller-index -> row lookup maps for each k basis to match
+    // shifted G vectors efficiently when building MMN blocks.
     let mut k_lookup_maps = Vec::with_capacity(nkpt);
     for pw in all_pwbasis.iter() {
         let mut map = HashMap::with_capacity(pw.get_n_plane_waves() * 2);
@@ -94,6 +99,7 @@ fn compute_mmn_block(
     gshift: [i32; 3],
     num_bands: usize,
 ) -> Vec<c64> {
+    // Build one num_bands x num_bands overlap block for a fixed (k, k+b).
     let mut out = vec![c64::new(0.0, 0.0); num_bands * num_bands];
 
     for (row_k, gidx) in gindex_k.iter().enumerate() {
@@ -101,12 +107,14 @@ fn compute_mmn_block(
         let key = (m.x + gshift[0], m.y + gshift[1], m.z + gshift[2]);
 
         let Some(&row_kb) = lookup_kb.get(&key) else {
+            // If shifted G not present in neighbor basis, contribution is zero.
             continue;
         };
 
         for ib in 0..num_bands {
             let c1_conj = c_k[[row_k, ib]].conj();
             for jb in 0..num_bands {
+                // Accumulate c_k^*(G,m) * c_{k+b}(G+b,n).
                 out[ib + jb * num_bands] += c1_conj * c_kb[[row_kb, jb]];
             }
         }

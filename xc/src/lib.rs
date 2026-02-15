@@ -13,6 +13,14 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 
+// Exchange-correlation model interface used by SCF.
+//
+// Important design choice:
+// - We pass `gvec/pwden/rgtrans` into XC so a GGA functional can evaluate
+//   gradients/divergences internally and return a variationally consistent
+//   real-space potential.
+// - This avoids ad-hoc "precomputed |grad rho|" plumbing and keeps the full
+//   GGA derivative workflow in one place.
 pub trait XC {
     fn potential_and_energy(
         &self,

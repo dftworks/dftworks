@@ -1,7 +1,12 @@
 #![allow(warnings)]
 use dwmpi;
 
-// Helper functions for direct computation without allocations
+// K-point distribution helpers for MPI ranks.
+//
+// Strategy:
+// - contiguous block distribution
+// - first `remainder` ranks take one extra point
+// - O(1) computations (no temporary chunk vectors needed)
 #[inline]
 fn compute_k_first(nkpt: usize, nrank: usize, rank: usize) -> usize {
     let base_size = nkpt / nrank;
@@ -38,11 +43,11 @@ fn compute_k_last(nkpt: usize, nrank: usize, rank: usize) -> usize {
     }
 }
 
-// Keep original function for compatibility if needed elsewhere
+// Reference chunk implementation retained for tests/compatibility.
 fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
     assert!(nrank > 0);
 
-    // Use more efficient computation of chunk sizes
+    // Same rule as O(1) helpers, materialized explicitly.
     let base_size = nkpt / nrank;
     let remainder = nkpt % nrank;
 
@@ -87,6 +92,7 @@ pub fn get_k_range(nkpt: usize, nrank: usize, rank: usize) -> Option<(usize, usi
 }
 
 pub fn get_my_k_first(nkpt: usize, nrank: usize) -> usize {
+    // Convenience wrappers bound to current MPI rank.
     let rank = dwmpi::get_comm_world_rank() as usize;
     get_k_first(nkpt, nrank, rank)
 }
@@ -124,7 +130,7 @@ fn test_kpts_distribution() {
 
 #[test]
 fn test_optimization_correctness() {
-    // Test against original implementation to ensure correctness
+    // Compare O(1) helpers against reference chunk-based implementation.
     let test_cases = [(10, 3), (31, 5), (100, 7), (1000, 16)];
 
     for (nkpt, nrank) in test_cases {
@@ -144,6 +150,7 @@ fn test_optimization_correctness() {
 
 #[test]
 fn test_oversubscribed_ranks() {
+    // Edge case: more ranks than k-points.
     let nkpt = 3;
     let nrank = 5;
 

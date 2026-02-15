@@ -18,8 +18,10 @@ pub struct KptsMesh {
 
 impl KptsMesh {
     pub fn new(crystal: &Crystal) -> KptsMesh {
+        // Read Monkhorst-Pack mesh + shift from in.kmesh.
         let (k_mesh, is_shift) = read_k_mesh();
 
+        // Convert crystal data to the format expected by the symmetry helper.
         let mut lattice = crystal.get_latt().as_2d_array_row_major();
         let natoms = crystal.get_n_atoms();
 
@@ -40,6 +42,7 @@ impl KptsMesh {
             }
         }
 
+        // Build irreducible reciprocal mesh using symmetry reduction.
         let (kpts, _mapping, _k_unique, _nk_unique) = get_ir_reciprocal_mesh(
             k_mesh,
             is_shift,
@@ -66,6 +69,7 @@ impl KptsMesh {
                 z: k[2],
             };
 
+            // Current path assigns uniform weights on the reduced list.
             k_weight[ik] = 1.0 / nk_total as f64;
             k_degeneracy[ik] = 1;
         }
@@ -101,6 +105,7 @@ impl KPTS for KptsMesh {
     }
 
     fn frac_to_cart(&self, k_frac: &Vector3f64, blatt: &Lattice) -> Vector3f64 {
+        // k_cart = k1*b1 + k2*b2 + k3*b3
         let a = blatt.get_vector_a();
         let b = blatt.get_vector_b();
         let c = blatt.get_vector_c();
@@ -145,6 +150,9 @@ impl KPTS for KptsMesh {
 }
 
 fn read_k_mesh() -> ([i32; 3], [i32; 3]) {
+    // in.kmesh format:
+    // line 1: nk1 nk2 nk3
+    // line 2: shift1 shift2 shift3 (0/1)
     let lines = read_file_data_to_vec("in.kmesh");
 
     let s: Vec<&str> = lines[0].split_whitespace().collect();
@@ -161,6 +169,7 @@ fn read_k_mesh() -> ([i32; 3], [i32; 3]) {
 }
 
 fn read_file_data_to_vec(kfile: &str) -> Vec<String> {
+    // Lightweight line reader used by k-point input parsers.
     let file = File::open(kfile).unwrap();
     let lines = BufReader::new(file).lines();
     let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();

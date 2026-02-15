@@ -77,14 +77,19 @@ pub fn compute_v_e_xc_of_r(
     exc_3d: &mut Array3<c64>,
 ) {
     if let RHOR::NonSpin(rho_3d) = rho_3d {
-        // rho_3d <-- rho_3d + rhocore_3d
+        // For NLCC we evaluate XC with the total charge seen by the functional:
+        // rho_total = rho_valence + rho_core.
         rho_3d.add_from(rhocore_3d);
     }
 
+    // XC implementation now owns the complete GGA derivative workflow
+    // (including gradients/divergences) and directly returns:
+    //   - vxc_3d(r): variational XC potential
+    //   - exc_3d(r): energy density per particle
     xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, vxc_3d, exc_3d);
 
     if let RHOR::NonSpin(rho_3d) = rho_3d {
-        // rho_3d <-- rho_3d - rhocore_3d
+        // Restore rho_3d to pure valence density for downstream routines.
         rho_3d.substract(rhocore_3d);
     }
 }

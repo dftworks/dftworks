@@ -40,6 +40,7 @@ impl SpinScheme {
 
 #[derive(Debug, Default)]
 pub struct Control {
+    // Runtime/solver settings parsed from in.ctrl with defaults.
     verbosity: String,
     ecut_wfc: f64,
     ecut_rho: f64,
@@ -340,6 +341,7 @@ impl Control {
     }
 
     pub fn read_file(&mut self, inpfile: &str) {
+        // Initialize defaults first; user file selectively overrides values.
         self.task = "scf".to_string();
 
         self.spin_scheme = SpinScheme::NonSpin;
@@ -403,6 +405,7 @@ impl Control {
         let lines = self.read_file_data_to_vec(inpfile);
 
         for line in lines.iter() {
+            // Parse key=value lines.
             let s: Vec<&str> = line.split('=').map(|x| x.trim()).collect();
 
             match s[0] {
@@ -611,6 +614,7 @@ impl Control {
                 "" => {}
 
                 _ => {
+                    // Unknown key is treated as an input error.
                     println!("unknown parameter : {}", line);
                     b_has_invalid_parameter = true;
                 }
@@ -634,6 +638,7 @@ impl Control {
         }
 
         if self.wannier90_export {
+            // Validate Wannier export settings early for clearer failures.
             if self.wannier90_seedname.trim().is_empty() {
                 println!("invalid wannier90_seedname: must not be empty");
                 std::process::exit(-1);
@@ -660,6 +665,7 @@ impl Control {
     }
 
     pub fn read_file_data_to_vec(&mut self, pspfile: &str) -> Vec<String> {
+        // Plain text line reader used by read_file.
         let file = File::open(pspfile).unwrap();
 
         let lines = BufReader::new(file).lines();

@@ -11,6 +11,12 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+// Crystal structure container.
+//
+// Coordinates:
+// - lattice vectors stored in Bohr
+// - atomic positions stored in fractional coordinates
+// - helper conversions provide Cartesian views when needed
 #[derive(Debug, Default)]
 pub struct Crystal {
     scale_a: f64,
@@ -25,6 +31,7 @@ pub struct Crystal {
 
 impl Crystal {
     pub fn get_n_total_electrons(&self, pots: &PSPot) -> f64 {
+        // Sum valence electrons by species multiplicity.
         let mut sum = 0.0;
 
         for (isp, sp) in self.get_unique_species().iter().enumerate() {
@@ -39,6 +46,7 @@ impl Crystal {
     }
 
     pub fn get_zions(&self, pots: &PSPot) -> Vec<f64> {
+        // Per-atom ionic charges aligned with atom ordering.
         let natoms = self.get_n_atoms();
 
         let mut zions = vec![0.0; natoms];
@@ -67,6 +75,7 @@ impl Crystal {
     }
 
     pub fn get_unique_species(&self) -> Vec<String> {
+        // Preserve first-occurrence order while removing duplicates.
         self.atom_species.clone().into_iter().unique().collect()
     }
 
@@ -80,6 +89,7 @@ impl Crystal {
     }
 
     pub fn get_atom_positions_of_specie(&self, isp: usize) -> Vec<Vector3f64> {
+        // Gather atoms by specie index map.
         let atom_indices = self.get_atom_indices_of_specie(isp);
 
         let mut atom_positions_for_this_specie = vec![Vector3f64::zeros(); atom_indices.len()];
@@ -100,6 +110,7 @@ impl Crystal {
     }
 
     pub fn get_atom_positions_cart(&self) -> Vec<Vector3f64> {
+        // Convert all fractional atomic positions to Cartesian coordinates.
         let natoms = self.atom_positions.len();
 
         let mut atoms_cart = vec![Vector3f64::zeros(); natoms];
@@ -115,6 +126,7 @@ impl Crystal {
     }
 
     pub fn set_atom_positions_from_cart(&mut self, atoms_cart: &[Vector3f64]) {
+        // Update internal fractional coordinates from Cartesian inputs.
         let natoms = self.atom_positions.len();
 
         let mut tpos = Vector3f64::zeros();
@@ -136,6 +148,7 @@ impl Crystal {
     }
 
     pub fn set_lattice_vectors(&mut self, latt: &Lattice) {
+        // Replace full lattice object (used by geometry optimizers).
         self.latt = latt.clone();
     }
 
@@ -160,6 +173,10 @@ impl Crystal {
     }
 
     pub fn read_file(&mut self, inpfile: &str) {
+        // Parse in.crystal with format:
+        // line 1: scale_a scale_b scale_c
+        // line 2-4: lattice vectors + T/F mask flags per Cartesian component
+        // remaining lines: species x y z (fractional atomic positions)
         let file = File::open(inpfile).unwrap();
         let lines = BufReader::new(file).lines();
 
@@ -177,12 +194,14 @@ impl Crystal {
 
             match i {
                 0 => {
+                    // Independent scale factors for three lattice vectors.
                     self.scale_a = s[0].parse().unwrap();
                     self.scale_b = s[1].parse().unwrap();
                     self.scale_c = s[2].parse().unwrap();
                 }
 
                 1 => {
+                    // Lattice vector a and optimization mask flags.
                     vec_a[0] = s[0].parse().unwrap();
                     vec_a[1] = s[1].parse().unwrap();
                     vec_a[2] = s[2].parse().unwrap();
@@ -211,6 +230,7 @@ impl Crystal {
                 }
 
                 2 => {
+                    // Lattice vector b and optimization mask flags.
                     vec_b[0] = s[0].parse().unwrap();
                     vec_b[1] = s[1].parse().unwrap();
                     vec_b[2] = s[2].parse().unwrap();
@@ -239,6 +259,7 @@ impl Crystal {
                 }
 
                 3 => {
+                    // Lattice vector c and optimization mask flags.
                     vec_c[0] = s[0].parse().unwrap();
                     vec_c[1] = s[1].parse().unwrap();
                     vec_c[2] = s[2].parse().unwrap();
@@ -277,15 +298,17 @@ impl Crystal {
                     let y: f64 = s[2].parse().unwrap();
                     let z: f64 = s[3].parse().unwrap();
 
+                    // Atomic position remains fractional.
                     self.atom_species.push(symbol);
                     self.atom_positions.push(Vector3f64 { x, y, z });
                 }
             }
 
+            // Keep lattice object synchronized while parsing.
             self.latt = Lattice::new(&vec_a, &vec_b, &vec_c);
         }
 
-        // group atoms by species
+        // Build specie -> atom-index lookup for fast grouped operations.
 
         let unique_species: Vec<String> = self.get_unique_species();
 
@@ -303,6 +326,7 @@ impl Crystal {
     }
 
     pub fn output(&self) {
+        // Write current structure in the same schema as in.crystal.
         let mut f = File::create("out.crystal").unwrap();
 
         writeln!(f, "{} {} {}", self.scale_a, self.scale_b, self.scale_c).unwrap();

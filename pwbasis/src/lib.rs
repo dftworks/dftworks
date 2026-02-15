@@ -7,6 +7,11 @@ use vector3::Vector3f64;
 ///
 /// PWBasis represents a set of plane wave basis functions for a given k-point,
 /// containing the G-vector indices and kinetic energies |k+G|² for each plane wave.
+///
+/// Storage convention:
+/// - `gindex[i]` points into the global sorted G-vector table.
+/// - `kg[i]` stores |k+G_i| for the same entry.
+/// - entries are sorted by increasing `kg`.
 #[derive(Default)]
 pub struct PWBasis {
     k_cart: Vector3f64, // in cartesian coordinates
@@ -53,24 +58,25 @@ impl PWBasis {
     /// # Returns
     /// A new PWBasis with plane waves sorted by |k+G|²
     pub fn new(k_cart: Vector3f64, k_index: usize, ecut: f64, gvec: &GVector) -> PWBasis {
+        // Determine basis size at this k-point.
         let npw = gvec.get_n_plane_waves(ecut, k_cart);
 
-        // Pre-allocate vectors with known capacity
+        // Build list of candidate G indices within cutoff sphere.
         let mut gindex = Vec::with_capacity(npw);
         gindex.resize(npw, 0);
 
         gvec.set_g_vector_index(ecut, k_cart, &mut gindex);
 
-        // Compute kinetic energies directly without temporary allocation
+        // Compute |k+G| values for each selected basis vector.
         let mut kg = Vec::with_capacity(npw);
         kg.resize(npw, 0.0);
 
         compute_kg_optimized(gvec, k_cart, &gindex, &mut kg);
 
-        // Sort by kinetic energy using argsort
+        // Sort basis by kinetic energy to stabilize iterative eigensolvers.
         let ordered_indices = utility::argsort(&kg);
 
-        // Apply sorting more efficiently
+        // Reorder metadata with sorted index map.
         let sorted_gindex = ordered_indices.iter().map(|&i| gindex[i]).collect();
         let sorted_kg = ordered_indices.iter().map(|&i| kg[i]).collect();
 
@@ -93,6 +99,7 @@ impl PWBasis {
     /// - HDF5 write operations fail
     /// - usize has an unsupported bit width
     pub fn save_hdf5(&self, group: &mut hdf5::Group) {
+        // Main numeric payload: |k+G| values.
         let dataset_pwbasis = group
             .new_dataset_builder()
             .with_data(&self.get_kg())
@@ -105,6 +112,7 @@ impl PWBasis {
             .create("k_cart")
             .expect("Failed to create k_cart attribute");
 
+        // Encode usize-size-dependent attributes explicitly for portability.
         let int_size = match usize::BITS {
             32 => hdf5::types::IntSize::U4,
             64 => hdf5::types::IntSize::U8,
@@ -159,8 +167,8 @@ impl PWBasis {
             .expect("Failed to read gindex dataset")
             .to_vec();
 
-        // New files store metadata on the "kg" dataset; keep a fallback to group-level attrs
-        // for compatibility with any legacy files.
+        // New files store metadata on the "kg" dataset; keep group-level
+        // fallback for compatibility with legacy output.
         let k_index: usize = kg_dataset
             .attr("k_index")
             .or_else(|_| group.attr("k_index"))
@@ -193,7 +201,7 @@ impl PWBasis {
 
         let k_cart = Vector3f64::new(k_cart_vec[0], k_cart_vec[1], k_cart_vec[2]);
 
-        // Validate data consistency
+        // Validate loaded dimensions before constructing object.
         if kg.len() != npw {
             panic!(
                 "Inconsistent kg data: expected {} elements, found {}",
@@ -223,7 +231,7 @@ impl PWBasis {
 fn compute_kg_optimized(gvec: &GVector, k_cart: Vector3f64, gindex: &[usize], kg: &mut [f64]) {
     let gcart = gvec.get_cart();
 
-    // Use iterators for better performance and avoid bounds checking
+    // Compute |k+G| in a single pass.
     kg.iter_mut()
         .zip(gindex.iter())
         .for_each(|(kg_val, &g_idx)| {

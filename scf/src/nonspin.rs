@@ -23,6 +23,10 @@ use vector3::Vector3f64;
 
 //use rayon::prelude::*;
 
+// Non-spin SCF driver:
+// - single density channel
+// - single local KS potential
+// - iterative solve/mix/update loop until energy convergence.
 pub struct SCFNonspin {}
 
 impl SCFNonspin {
@@ -58,6 +62,7 @@ impl SCF for SCFNonspin {
         //println!("   {:*^120}", " self-consistent field ");
         utils::display_parallel_runtime_info();
 
+        // Density helper chosen from spin scheme; this resolves to non-spin here.
         let density_driver = density::new(control.get_spin_scheme_enum());
 
         //
@@ -69,6 +74,7 @@ impl SCF for SCFNonspin {
 
         //
 
+        // Hartree potential buffer in reciprocal space.
         let mut vhg = vec![c64::zero(); npw_rho];
 
         //
@@ -105,6 +111,7 @@ impl SCF for SCFNonspin {
 
         //
 
+        // Total local KS potential in reciprocal space.
         let mut vlocg = vec![c64::zero(); npw_rho];
         utils::add_up_v(&vpslocg, &vhg, &vxcg, &mut vlocg);
 
@@ -138,7 +145,7 @@ impl SCF for SCFNonspin {
             );
         }
         loop {
-            // transform v_loc from G to r
+            // Step 1: transform local KS potential from G-space to real-space.
 
             rgtrans.g1d_to_r3d(gvec, pwden, &vlocg, vloc_3d.as_mut_slice());
 
@@ -164,7 +171,8 @@ impl SCF for SCFNonspin {
                 vkevecs,
             );
 
-            // calculate Fermi level; vkscf has to be &mut since occ will be modified
+            // Step 2: update occupations through Fermi-level search.
+            // vkscf is mutable because occupations are stored inside.
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, vkevals);
 
@@ -178,7 +186,7 @@ impl SCF for SCFNonspin {
             //     control.get_occ_inversion(),
             // );
 
-            // calculate Harris energy
+            // Step 3: Harris energy from current potential/density state.
 
             let energy_harris = utils::compute_total_energy(
                 pwden,
@@ -193,7 +201,7 @@ impl SCF for SCFNonspin {
                 ewald.get_energy(),
             );
 
-            // compute rho r by building the density based on the new wavefunctions
+            // Step 4: rebuild rho(r) from occupied states.
 
             density_driver.as_ref().compute_charge_density(
                 vkscf,
@@ -214,12 +222,12 @@ impl SCF for SCFNonspin {
             //         .add(nelec_jellium / crystal.get_latt().volume());
             // }
 
-            // calculate the total charge
+            // Step 5: integrated total charge for diagnostics.
 
             let charge = rho_3d.as_non_spin().unwrap().sum().re * crystal.get_latt().volume()
                 / fftgrid.get_ntotf64();
 
-            // rho r -> G
+            // Step 6: transform new rho(r) back to rho(G).
 
             utils::compute_rho_of_g(gvec, pwden, rgtrans, rho_3d, &mut rhog_out);
 
@@ -238,7 +246,7 @@ impl SCF for SCFNonspin {
                 &mut exc_3d,
             );
 
-            // calculate scf energy
+            // Step 7: evaluate self-consistent total energy.
 
             let energy_scf = utils::compute_total_energy(
                 pwden,
@@ -273,7 +281,7 @@ impl SCF for SCFNonspin {
             /////////////////////////////////////////////////
             // check convergence
 
-            // if converged, then exit
+            // Step 8: convergence check.
 
             if energy_diff < control.get_energy_epsilon() {
                 if dwmpi::is_root() {
@@ -303,11 +311,11 @@ impl SCF for SCFNonspin {
 
             /////////////////////////////////////////////////
 
-            // rho in G space
+            // Step 9: mix densities in reciprocal space.
 
             utils::compute_next_density(pwden, mixing.as_mut(), &rhog_out, &mut rhog_diff, rhog);
 
-            // rho  in r space
+            // Step 10: convert mixed rho(G) back to rho(r).
 
             rgtrans.g1d_to_r3d(
                 gvec,
@@ -317,15 +325,13 @@ impl SCF for SCFNonspin {
             );
 
             ///////////////////////////////////////////////////
-            // build the local potential for the next iteration
+            // Step 11: rebuild local KS potential for next iteration.
 
-            // v_h
+            // Hartree part.
 
             utils::compute_v_hartree(pwden, rhog, &mut vhg);
 
-            // v_xc
-
-            // v_xc in r space
+            // XC part in real space.
 
             utils::compute_v_e_xc_of_r(
                 xc.as_ref(),
@@ -338,11 +344,11 @@ impl SCF for SCFNonspin {
                 &mut exc_3d,
             );
 
-            // v_xc in G space
+            // XC part transformed to reciprocal space.
 
             utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &vxc_3d, &mut vxcg);
 
-            // v_xc + v_h + v_psloc in G space
+            // Assemble total local potential in reciprocal space.
 
             utils::add_up_v(&vpslocg, &vhg, &vxcg, &mut vlocg);
 

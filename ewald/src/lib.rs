@@ -11,6 +11,14 @@ use types::*;
 use utility;
 use vector3::*;
 
+// Ewald ion-ion interaction decomposition for periodic crystals.
+//
+// Splits long-range Coulomb sum into:
+// - short-range real-space part (erfc-screened)
+// - reciprocal-space part (Gaussian-damped)
+// - analytic G=0/self/background correction
+//
+// The same split is applied consistently for energy, forces, and stress.
 pub struct Ewald {
     energy: f64,
     force: Vec<Vector3f64>,
@@ -19,17 +27,17 @@ pub struct Ewald {
 
 impl Ewald {
     pub fn new(crystal: &Crystal, zions: &[f64], gvec: &GVector, pwden: &PWDensity) -> Ewald {
-        // cutoff in G space
+        // Choose splitting parameter from reciprocal cutoff target.
         let eta = get_eta_based_on_gcut(pwden, 1E-30);
 
-        // cutoff in R space
+        // Real-space cutoff implied by eta and tolerance.
         let rmax = get_rmax_based_on_eta(eta, 1E-30);
 
         let nn_cells = make_near_cells(crystal, rmax);
 
         let natoms = crystal.get_n_atoms();
 
-        // energy
+        // Energy decomposition.
 
         let energy_r = compute_energy_real_space_part(crystal, zions, eta, &nn_cells);
         let energy_g = compute_energy_g_space_part(crystal, zions, gvec, pwden, eta);
@@ -37,7 +45,7 @@ impl Ewald {
 
         let energy = energy_r + energy_g + energy_g0;
 
-        //force
+        // Force decomposition (real + reciprocal).
 
         let mut force = vec![Vector3f64::zeros(); natoms];
 
@@ -50,7 +58,7 @@ impl Ewald {
             force[i].z = force_r[i].z + force_g[i].z;
         }
 
-        //stress
+        // Stress decomposition (real + reciprocal).
 
         let mut stress = Matrix::<f64>::new(3, 3);
         let stress_r = compute_stress_real_space_part(crystal, zions, eta, &nn_cells);
@@ -94,6 +102,7 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
     let nb = (rmax / b.norm2()).ceil() as i32 + 2;
     let nc = (rmax / c.norm2()).ceil() as i32 + 2;
 
+    // Candidate translation vectors and their squared lengths.
     let mut t_rs: Vec<Vector3i32> = Vec::new();
     let mut t_r2: Vec<f64> = Vec::new();
 
@@ -118,6 +127,7 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
         }
     }
 
+    // Sort neighbors by distance to improve convergence behavior in loops.
     let ordered_index = utility::argsort(&t_r2);
 
     let mut rs: Vec<Vector3i32> = vec![Vector3i32 { x: 0, y: 0, z: 0 }; t_rs.len()];
@@ -132,6 +142,7 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
 // 4pi/G^2*exp(-G^2/4/eta) = eps
 
 fn get_eta_based_on_gcut(pwden: &PWDensity, eps: f64) -> f64 {
+    // Solve damping relation at gmax to pick eta.
     let gmax = pwden.get_gmax();
 
     let g2 = gmax * gmax;
@@ -140,6 +151,7 @@ fn get_eta_based_on_gcut(pwden: &PWDensity, eps: f64) -> f64 {
 }
 
 fn get_rmax_based_on_eta(eta: f64, eps: f64) -> f64 {
+    // Increase rmax until erfc(sqrt(eta) r) tail is below tolerance.
     let mut rmax = 0.0;
 
     while special::erfc(rmax * eta.sqrt()) > rmax * eps {
@@ -167,6 +179,7 @@ fn compute_energy_real_space_part(
 
     let eta_sqrt = eta.sqrt();
 
+    // Real-space screened pair sum.
     let mut sum = 0.0;
 
     for cell in nn_cells.iter() {
@@ -219,6 +232,7 @@ fn compute_energy_g_space_part(
 
     let atoms = crystal.get_atom_positions();
 
+    // Reciprocal-space structure-factor sum (G != 0).
     let mut sum = 0.0;
 
     for i in 1..npw {
@@ -246,6 +260,7 @@ fn compute_energy_g_space_part(
 }
 
 fn compute_energy_g0_part(crystal: &Crystal, zions: &[f64], eta: f64) -> f64 {
+    // Includes self term and compensating background/G=0 contribution.
     let volume = crystal.get_latt().volume();
 
     let s: f64 = zions.iter().sum();
@@ -275,6 +290,7 @@ fn compute_force_g_space_part(
 
     let natoms = crystal.get_n_atoms();
 
+    // Reciprocal-space ionic forces.
     let mut force = vec![Vector3f64::zeros(); natoms];
 
     for iat in 0..natoms {
@@ -285,7 +301,7 @@ fn compute_force_g_space_part(
 
             let g2 = g[i] * g[i];
 
-            // s = \sum_\beta e^{iG \cdot d_\beta} Z_\beta
+            // Structure factor s = sum_beta Z_beta exp(i G·d_beta).
 
             let mut s = c64::zero();
 
@@ -356,6 +372,7 @@ fn compute_force_real_space_part(
 
     let eta_sqrt = eta.sqrt();
 
+    // Real-space screened pair-force sum.
     let mut force = vec![Vector3f64::zeros(); natoms];
 
     for i in 0..natoms {
@@ -420,6 +437,7 @@ pub fn compute_stress_real_space_part(
 
     let eta_sqrt = eta.sqrt();
 
+    // Real-space screened stress tensor contribution.
     let mut stress = Matrix::<f64>::new(3, 3);
 
     for cell in nn_cells.iter() {
@@ -493,6 +511,7 @@ pub fn compute_stress_g_space_part(
 
     let unit_mat = Matrix::<f64>::unit(3);
 
+    // Reciprocal-space stress tensor contribution.
     let mut stress = Matrix::<f64>::new(3, 3);
 
     for ipw in 1..npw {
