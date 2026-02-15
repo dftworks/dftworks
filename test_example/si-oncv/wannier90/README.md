@@ -3,6 +3,7 @@
 This example runs DFTWorks for silicon and exports Wannier90 interface files.
 
 For a collinear-spin export example, see `../wannier90-spin`.
+For a non-spin explicit-projector example (`sp3`, `num_wann = 8`), see `../wannier90-projected`.
 
 ## Run DFTWorks
 
@@ -30,5 +31,5 @@ wannier90.x si
 
 Notes:
 
-- `si.amn` is an identity-gauge initial guess for the first `num_wann` bands.
-- If you want a different initial projection gauge, replace `si.amn` before running `wannier90.x`.
+- `si.amn` is generated from overlaps between Bloch states and pseudo-atomic trial orbitals.
+- If you want a different trial-orbital gauge, replace `si.amn` before running `wannier90.x`.

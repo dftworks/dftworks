@@ -35,5 +35,5 @@ wannier90.x si.dn
 
 Notes:
 
-- `si.up.amn` and `si.dn.amn` are identity-gauge initial guesses for the first `num_wann` bands.
-- If you want different initial projection gauges, replace `si.up.amn` and `si.dn.amn` before running Wannier90.
+- `si.up.amn` and `si.dn.amn` are generated from overlaps between Bloch states and pseudo-atomic trial orbitals.
+- If you want different trial-orbital gauges, replace `si.up.amn` and `si.dn.amn` before running Wannier90.

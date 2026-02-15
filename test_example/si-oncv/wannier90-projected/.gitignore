@@ -8,3 +8,4 @@ out.wfc*.hdf5
 *.win
 *.wout
 *.chk
+*band*

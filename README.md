@@ -73,12 +73,13 @@ Notes:
 * Non-spin runs write `dftworks.win`, `dftworks.nnkp`, `dftworks.mmn`, `dftworks.amn`, `dftworks.eig`.
 * Collinear spin runs write channel-separated files with `dftworks.up.*` and `dftworks.dn.*`.
 * `save_wfc` is forced internally for export, since `.mmn` is built from wavefunctions.
-* The exported `.amn` currently uses an identity-gauge initial guess for the first `num_wann` bands.
+* The exported `.amn` is built from overlaps between Bloch states and pseudo-atomic trial orbitals (`PP_CHI` channels from the pseudopotential), truncated to `num_wann`.
 
 End-to-end examples are provided in:
 
 * `test_example/si-oncv/wannier90` (non-spin)
 * `test_example/si-oncv/wannier90-spin` (collinear spin: `up`/`dn` channels)
+* `test_example/si-oncv/wannier90-projected` (non-spin with explicit `sp3` projectors, `num_wann = 8`)
 
 # Test the code
 

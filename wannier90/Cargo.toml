@@ -11,10 +11,16 @@ dfttypes = { path = "../dfttypes" }
 dwconsts = { path = "../dwconsts" }
 dwmpi = { path = "../dwmpi" }
 fftgrid = { path = "../fftgrid" }
+fhkl = { path = "../fhkl" }
 gvector = { path = "../gvector" }
+integral = { path = "../integral" }
+kgylm = { path = "../kgylm" }
 kpts = { path = "../kpts" }
 matrix = { path = "../matrix" }
 mpi_sys = { path = "../mpi_sys" }
+pspot = { path = "../pspot" }
 pwbasis = { path = "../pwbasis" }
+special = { path = "../special" }
 types = { path = "../types" }
+utility = { path = "../utility" }
 vector3 = { path = "../vector3" }

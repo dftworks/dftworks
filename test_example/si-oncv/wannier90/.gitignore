@@ -6,3 +6,5 @@ out.wfc*.hdf5
 *.mmn
 *.nnkp
 *.win
+*.wout
+*.chk

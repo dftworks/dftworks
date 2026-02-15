@@ -29,6 +29,8 @@ pub trait AtomPSP {
     fn get_nlcc(&self) -> bool;
     fn get_rhocore(&self) -> &[f64];
     fn get_wfc(&self, l: usize) -> &[f64];
+    fn has_wfc(&self, l: usize) -> bool;
+    fn get_wfc_channels(&self) -> Vec<usize>;
     fn get_vloc(&self) -> &[f64];
     fn read_file(&mut self, pspfile: &str);
 

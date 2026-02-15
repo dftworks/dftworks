@@ -1,12 +1,14 @@
 use control::{Control, SpinScheme};
 use crystal::Crystal;
 use dfttypes::{VKEigenValue, VKEigenVector};
-use dwconsts::{BOHR_TO_ANG, HA_TO_EV};
+use dwconsts::{BOHR_TO_ANG, HA_TO_EV, TWOPI};
 use fftgrid::FFTGrid;
 use gvector::GVector;
+use kgylm::KGYLM;
 use kpts::KPTS;
 use matrix::Matrix;
 use mpi_sys::MPI_COMM_WORLD;
+use pspot::PSPot;
 use pwbasis::PWBasis;
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -41,6 +43,14 @@ struct MeshTopology {
     nntot: usize,
 }
 
+#[derive(Debug, Clone)]
+struct TrialOrbital {
+    atom_index: usize,
+    species: String,
+    l: usize,
+    m: i32,
+}
+
 pub fn export(
     control: &Control,
     crystal: &Crystal,
@@ -67,12 +77,15 @@ pub fn export(
     let mut summary = ExportSummary::default();
 
     if dwmpi::is_root() {
+        let pots = PSPot::new(control.get_pot_scheme());
+
         match control.get_spin_scheme_enum() {
             SpinScheme::NonSpin => {
                 let files = write_full_channel_data(
                     seedname,
                     control,
                     crystal,
+                    &pots,
                     kpts,
                     &fallback_topology,
                     control.is_spin(),
@@ -88,6 +101,7 @@ pub fn export(
                     &up_seed,
                     control,
                     crystal,
+                    &pots,
                     kpts,
                     &fallback_topology,
                     true,
@@ -97,6 +111,7 @@ pub fn export(
                     &dn_seed,
                     control,
                     crystal,
+                    &pots,
                     kpts,
                     &fallback_topology,
                     true,
@@ -157,6 +172,7 @@ fn write_full_channel_data(
     channel_seed: &str,
     control: &Control,
     crystal: &Crystal,
+    pots: &PSPot,
     kpts: &dyn KPTS,
     fallback_topology: &MeshTopology,
     is_spin: bool,
@@ -165,8 +181,17 @@ fn write_full_channel_data(
     let nkpt = kpts.get_n_kpts();
     ensure_wfc_files_present(is_spin, nkpt)?;
 
+    let trial_orbitals = build_trial_orbitals(control.get_wannier90_num_wann(), crystal, pots)?;
+
     let win_file = format!("{}.win", channel_seed);
-    write_win_file(&win_file, control, crystal, kpts, spin_channel)?;
+    write_win_file(
+        &win_file,
+        control,
+        crystal,
+        kpts,
+        spin_channel,
+        &trial_orbitals,
+    )?;
 
     let topology = match build_topology_from_wannier90_pp(channel_seed, kpts.get_n_kpts())? {
         Some(topology_from_pp) => topology_from_pp,
@@ -176,21 +201,27 @@ fn write_full_channel_data(
     let nnkp_file = format!("{}.nnkp", channel_seed);
     write_nnkp_file(&nnkp_file, crystal, kpts, &topology)?;
 
-    let amn_file = format!("{}.amn", channel_seed);
-    write_amn_file(
-        &amn_file,
-        control.get_nband(),
-        nkpt,
-        control.get_wannier90_num_wann(),
-    )?;
-
     let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
     let [n1, n2, n3] = fftgrid.get_size();
     let gvec = GVector::new(crystal.get_latt(), n1, n2, n3);
 
-    let mmn_file = format!("{}.mmn", channel_seed);
     let (all_pwbasis, _blatt, all_eigvecs) = VKEigenVector::load_hdf5(is_spin, 0, nkpt - 1);
     let eigvecs = select_spin_channel(&all_eigvecs, spin_channel)?;
+
+    let amn_file = format!("{}.amn", channel_seed);
+    write_amn_file(
+        &amn_file,
+        control.get_nband(),
+        crystal,
+        kpts,
+        eigvecs,
+        &all_pwbasis,
+        &gvec,
+        pots,
+        &trial_orbitals,
+    )?;
+
+    let mmn_file = format!("{}.mmn", channel_seed);
     write_mmn_file(
         &mmn_file,
         control.get_nband(),
@@ -452,6 +483,7 @@ fn write_win_file(
     crystal: &Crystal,
     kpts: &dyn KPTS,
     spin_channel: Option<&str>,
+    trial_orbitals: &[TrialOrbital],
 ) -> io::Result<()> {
     let file = File::create(filename)?;
     let mut writer = BufWriter::new(file);
@@ -521,7 +553,22 @@ fn write_win_file(
     writeln!(writer)?;
 
     writeln!(writer, "! begin projections")?;
-    writeln!(writer, "! <SPECIES>:s;p;d")?;
+    writeln!(writer, "! DFTWorks writes .amn from Bloch-trial overlaps.")?;
+    writeln!(
+        writer,
+        "! trial orbitals used for .amn (index: atom/species l m):"
+    )?;
+    for (i, orb) in trial_orbitals.iter().enumerate() {
+        writeln!(
+            writer,
+            "! {:3}: atom#{:3} {:<6} l={} m={}",
+            i + 1,
+            orb.atom_index + 1,
+            orb.species,
+            orb.l,
+            orb.m
+        )?;
+    }
     writeln!(writer, "! end projections")?;
     writeln!(writer)?;
 
@@ -633,29 +680,180 @@ fn write_nnkp_file(
     Ok(())
 }
 
+fn build_trial_orbitals(
+    num_wann: usize,
+    crystal: &Crystal,
+    pots: &PSPot,
+) -> io::Result<Vec<TrialOrbital>> {
+    let mut all_trial_orbitals = Vec::new();
+
+    for (iat, species) in crystal.get_atom_species().iter().enumerate() {
+        let atpsp = pots.get_psp(species);
+        let l_channels = atpsp.get_wfc_channels();
+        if l_channels.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "no pseudo-atomic wavefunctions (PP_CHI) found for species '{}'",
+                    species
+                ),
+            ));
+        }
+
+        for l in l_channels {
+            for m in utility::get_quant_num_m(l) {
+                all_trial_orbitals.push(TrialOrbital {
+                    atom_index: iat,
+                    species: species.clone(),
+                    l,
+                    m,
+                });
+            }
+        }
+    }
+
+    if all_trial_orbitals.len() < num_wann {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "not enough trial orbitals from pseudo-atomic wavefunctions: requested num_wann={}, available={}",
+                num_wann,
+                all_trial_orbitals.len()
+            ),
+        ));
+    }
+
+    all_trial_orbitals.truncate(num_wann);
+    Ok(all_trial_orbitals)
+}
+
 fn write_amn_file(
     filename: &str,
     num_bands: usize,
-    num_kpts: usize,
-    num_wann: usize,
+    crystal: &Crystal,
+    kpts: &dyn KPTS,
+    eigvecs: &[Matrix<c64>],
+    all_pwbasis: &[PWBasis],
+    gvec: &GVector,
+    pots: &PSPot,
+    trial_orbitals: &[TrialOrbital],
 ) -> io::Result<()> {
+    let nkpt = eigvecs.len();
+    if nkpt != all_pwbasis.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "inconsistent dimensions for Wannier90 amn export",
+        ));
+    }
+
+    let num_wann = trial_orbitals.len();
+    if num_wann == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "trial orbital list for AMN must not be empty",
+        ));
+    }
+
     let file = File::create(filename)?;
     let mut writer = BufWriter::new(file);
 
     writeln!(
         writer,
-        "Generated by dftworks (identity gauge guess for first num_wann bands)"
+        "Generated by dftworks (Bloch-trial overlaps from pseudo-atomic wavefunctions)"
     )?;
-    writeln!(writer, "{:8} {:8} {:8}", num_bands, num_kpts, num_wann)?;
+    writeln!(writer, "{:8} {:8} {:8}", num_bands, nkpt, num_wann)?;
 
-    for ik in 1..=num_kpts {
-        for n in 1..=num_wann {
-            for m in 1..=num_bands {
-                let val = if m == n { 1.0 } else { 0.0 };
+    let lmax_trial = trial_orbitals.iter().map(|orb| orb.l).max().unwrap_or(0);
+    let atom_positions = crystal.get_atom_positions();
+    let miller = gvec.get_miller();
+
+    for ik in 0..nkpt {
+        if eigvecs[ik].ncol() != num_bands {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "number of bands in eigenvectors does not match control.nband",
+            ));
+        }
+
+        let pwwfc = &all_pwbasis[ik];
+        let npw = pwwfc.get_n_plane_waves();
+        let kgylm = KGYLM::new(pwwfc.get_k_cart(), lmax_trial, gvec, pwwfc);
+        let k_frac = kpts.get_k_frac(ik);
+
+        let mut atom_structure_factors = Vec::with_capacity(atom_positions.len());
+        for atom_pos in atom_positions.iter() {
+            let mut sfact = fhkl::compute_structure_factor_for_many_g_one_atom(
+                miller,
+                pwwfc.get_gindex(),
+                *atom_pos,
+            );
+
+            let k_dot_tau = k_frac.x * atom_pos.x + k_frac.y * atom_pos.y + k_frac.z * atom_pos.z;
+            let k_phase = c64::new(0.0, -TWOPI * k_dot_tau).exp();
+            for s in sfact.iter_mut() {
+                *s *= k_phase;
+            }
+
+            atom_structure_factors.push(sfact);
+        }
+
+        let mut radial_lookup = HashMap::new();
+        for orb in trial_orbitals.iter() {
+            let key = (orb.species.clone(), orb.l);
+            if radial_lookup.contains_key(&key) {
+                continue;
+            }
+
+            let atpsp = pots.get_psp(&orb.species);
+            if !atpsp.has_wfc(orb.l) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "missing pseudo-atomic wavefunction for species '{}' and l={}",
+                        orb.species, orb.l
+                    ),
+                ));
+            }
+
+            let chi = atpsp.get_wfc(orb.l);
+            let chi_kg = compute_atomic_wfc_of_kg(
+                pwwfc.get_kg(),
+                orb.l,
+                chi,
+                atpsp.get_rad(),
+                atpsp.get_rab(),
+                crystal.get_latt().volume(),
+            )?;
+            radial_lookup.insert(key, chi_kg);
+        }
+
+        for (n, orb) in trial_orbitals.iter().enumerate() {
+            let ylm = kgylm.get_data(orb.l, orb.m);
+            let chi_kg = radial_lookup
+                .get(&(orb.species.clone(), orb.l))
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "failed to locate precomputed radial orbital in AMN export",
+                    )
+                })?;
+            let sfact = &atom_structure_factors[orb.atom_index];
+
+            for mband in 0..num_bands {
+                let mut overlap = c64::new(0.0, 0.0);
+                for ig in 0..npw {
+                    let g_n = ylm[ig] * chi_kg[ig] * sfact[ig];
+                    overlap += eigvecs[ik][[ig, mband]].conj() * g_n;
+                }
+
                 writeln!(
                     writer,
                     "{:5} {:5} {:5} {:18.12E} {:18.12E}",
-                    m, n, ik, val, 0.0
+                    mband + 1,
+                    n + 1,
+                    ik + 1,
+                    overlap.re,
+                    overlap.im
                 )?;
             }
         }
@@ -663,6 +861,37 @@ fn write_amn_file(
 
     writer.flush()?;
     Ok(())
+}
+
+fn compute_atomic_wfc_of_kg(
+    kg: &[f64],
+    l: usize,
+    chi: &[f64],
+    rad: &[f64],
+    rab: &[f64],
+    volume: f64,
+) -> io::Result<Vec<f64>> {
+    if chi.len() != rad.len() || rad.len() != rab.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "inconsistent radial-grid dimensions while building trial orbitals",
+        ));
+    }
+
+    let npw = kg.len();
+    let mut chi_kg = vec![0.0; npw];
+    let mut work = vec![0.0; rad.len()];
+    let prefactor = dwconsts::FOURPI / volume.sqrt();
+
+    for ig in 0..npw {
+        for ir in 0..rad.len() {
+            let r = rad[ir];
+            work[ir] = chi[ir] * r * special::spherical_bessel_jn(l, kg[ig] * r);
+        }
+        chi_kg[ig] = prefactor * integral::simpson_rab(&work, rab);
+    }
+
+    Ok(chi_kg)
 }
 
 fn write_mmn_file(

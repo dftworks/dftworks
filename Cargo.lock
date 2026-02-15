@@ -1379,12 +1379,18 @@ dependencies = [
  "dwconsts",
  "dwmpi",
  "fftgrid",
+ "fhkl",
  "gvector",
+ "integral",
+ "kgylm",
  "kpts",
  "matrix",
  "mpi_sys",
+ "pspot",
  "pwbasis",
+ "special",
  "types",
+ "utility",
  "vector3",
 ]
 

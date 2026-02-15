@@ -22,6 +22,7 @@ enum UPF {
     RAB,
     LOCAL,
     BETA,
+    CHI,
     NLCC,
     DIJ,
     RHOATOM,
@@ -112,6 +113,16 @@ impl AtomPSP for AtomPSPUPF {
         self.chi.get(&l).unwrap()
     }
 
+    fn has_wfc(&self, l: usize) -> bool {
+        self.chi.contains_key(&l)
+    }
+
+    fn get_wfc_channels(&self) -> Vec<usize> {
+        let mut ls: Vec<usize> = self.chi.keys().copied().collect();
+        ls.sort_unstable();
+        ls
+    }
+
     fn get_vloc(&self) -> &[f64] {
         &self.vloc
     }
@@ -158,6 +169,7 @@ impl AtomPSPUPF {
         let mut parser = xml::reader::EventReader::new(file);
 
         let mut data_type = UPF::NULL;
+        let mut current_chi_l: Option<usize> = None;
 
         loop {
             match parser.next() {
@@ -187,6 +199,14 @@ impl AtomPSPUPF {
                         {
                             self.lbeta.push(attr_id.value.trim().parse().unwrap());
                         }
+                    }
+
+                    if name.local_name.contains("PP_CHI") {
+                        data_type = UPF::CHI;
+                        current_chi_l = attributes
+                            .iter()
+                            .find(|attr| attr.name.local_name == "l")
+                            .map(|attr| attr.value.trim().parse::<usize>().unwrap());
                     }
 
                     if name.local_name == "PP_NLCC" {
@@ -282,6 +302,13 @@ impl AtomPSPUPF {
                         data_type = UPF::NULL;
                     }
 
+                    if matches!(data_type, UPF::CHI) {
+                        if let Some(l) = current_chi_l {
+                            self.read_chi(l, &text);
+                        }
+                        data_type = UPF::NULL;
+                    }
+
                     if matches!(data_type, UPF::DIJ) {
                         self.read_dij(&text);
                         data_type = UPF::NULL;
@@ -342,6 +369,16 @@ impl AtomPSPUPF {
 
         //let l = get_usize_value(str_beta, "angular_momentum");
         //self.lbeta.push(l);
+    }
+
+    fn read_chi(&mut self, l: usize, str_chi: &str) {
+        let chi: Vec<f64> = str_chi
+            .split_whitespace()
+            .map(|x| x.parse::<f64>().unwrap())
+            .collect();
+        if !chi.is_empty() {
+            self.chi.entry(l).or_insert(chi);
+        }
     }
 
     fn read_rad(&mut self, str_r: &str) {
