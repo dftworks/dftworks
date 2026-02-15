@@ -39,8 +39,10 @@ impl XCLDAPZ {
 impl XC for XCLDAPZ {
     fn potential_and_energy(
         &self,
+        _gvec: &gvector::GVector,
+        _pwden: &pwdensity::PWDensity,
+        _rgtrans: &rgtransform::RGTransform,
         rho: &RHOR,
-        _drho: Option<&DRHOR>,
         vxc: &mut VXCR,
         exc: &mut Array3<c64>,
     ) {
@@ -79,6 +81,18 @@ impl XC for XCLDAPZ {
             _ => panic!("LDA/LSDA-PZ XC called with inconsistent rho/vxc spin variants"),
         }
     }
+}
+
+#[cfg(test)]
+fn make_xc_test_context(
+    shape: [usize; 3],
+    ecut: f64,
+) -> (gvector::GVector, pwdensity::PWDensity, rgtransform::RGTransform) {
+    let latt = lattice::Lattice::new(&[8.0, 0.0, 0.0], &[0.0, 8.0, 0.0], &[0.0, 0.0, 8.0]);
+    let gvec = gvector::GVector::new(&latt, shape[0], shape[1], shape[2]);
+    let pwden = pwdensity::PWDensity::new(ecut, &gvec);
+    let rgtrans = rgtransform::RGTransform::new(shape[0], shape[1], shape[2]);
+    (gvec, pwden, rgtrans)
 }
 
 #[inline]
@@ -221,8 +235,9 @@ fn test_lda_pz_nonspin_finite_outputs() {
     ));
     let mut vxc = VXCR::NonSpin(Array3::new(shape));
     let mut exc = Array3::<c64>::new(shape);
+    let (gvec, pwden, rgtrans) = make_xc_test_context(shape, 30.0);
 
-    XCLDAPZ::new().potential_and_energy(&rho, None, &mut vxc, &mut exc);
+    XCLDAPZ::new().potential_and_energy(&gvec, &pwden, &rgtrans, &rho, &mut vxc, &mut exc);
 
     for (v, e) in vxc
         .as_non_spin()
@@ -269,8 +284,9 @@ fn test_lsda_pz_spin_finite_outputs() {
     );
     let mut vxc = VXCR::Spin(Array3::new(shape), Array3::new(shape));
     let mut exc = Array3::<c64>::new(shape);
+    let (gvec, pwden, rgtrans) = make_xc_test_context(shape, 30.0);
 
-    XCLDAPZ::new().potential_and_energy(&rho, None, &mut vxc, &mut exc);
+    XCLDAPZ::new().potential_and_energy(&gvec, &pwden, &rgtrans, &rho, &mut vxc, &mut exc);
 
     let (vup, vdn) = vxc.as_spin().unwrap();
     for ((vu, vd), e) in vup

@@ -7,14 +7,19 @@ mod pbe;
 use pbe::*;
 
 use dfttypes::*;
+use gvector::GVector;
 use ndarray::*;
+use pwdensity::PWDensity;
+use rgtransform::RGTransform;
 use types::*;
 
 pub trait XC {
     fn potential_and_energy(
         &self,
+        gvec: &GVector,
+        pwden: &PWDensity,
+        rgtrans: &RGTransform,
         rho: &RHOR,
-        drho: Option<&DRHOR>,
         vxc: &mut VXCR,
         exc: &mut Array3<c64>,
     );

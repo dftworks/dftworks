@@ -1507,7 +1507,11 @@ name = "xc"
 version = "0.1.0"
 dependencies = [
  "dfttypes",
+ "gvector",
+ "lattice",
  "ndarray 0.1.0",
+ "pwdensity",
+ "rgtransform",
  "types",
  "utility",
 ]

@@ -11,3 +11,7 @@ ndarray = { path = "../ndarray" }
 types = { path = "../types" }
 utility = { path = "../utility" }
 dfttypes = { path = "../dfttypes" }
+gvector = { path = "../gvector" }
+pwdensity = { path = "../pwdensity" }
+rgtransform = { path = "../rgtransform" }
+lattice = { path = "../lattice" }

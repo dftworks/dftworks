@@ -81,14 +81,7 @@ pub fn compute_v_e_xc_of_r(
         rho_3d.add_from(rhocore_3d);
     }
 
-    let mut drho_3d: Option<DRHOR> = None;
-    if let RHOR::NonSpin(rho_3d) = rho_3d {
-        let mut grad = Array3::<c64>::new(rho_3d.shape());
-        rgtrans.gradient_norm_r3d(gvec, pwden, rho_3d.as_slice(), grad.as_mut_slice());
-        drho_3d = Some(DRHOR::NonSpin(grad));
-    }
-
-    xc.potential_and_energy(rho_3d, drho_3d.as_ref(), vxc_3d, exc_3d);
+    xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, vxc_3d, exc_3d);
 
     if let RHOR::NonSpin(rho_3d) = rho_3d {
         // rho_3d <-- rho_3d - rhocore_3d

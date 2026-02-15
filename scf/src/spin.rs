@@ -130,8 +130,7 @@ impl SCF for SCFSpin {
             }
         }
 
-        let drho_3d = compute_spin_drho(gvec, pwden, rgtrans, rho_3d);
-        xc.potential_and_energy(rho_3d, drho_3d.as_ref(), &mut vxc_3d, &mut exc_3d);
+        xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
 
         // rho_3d <-- rho_3d - rhocore_3d
         if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
@@ -395,8 +394,7 @@ impl SCF for SCFSpin {
                 }
             }
 
-            let drho_3d = compute_spin_drho(gvec, pwden, rgtrans, rho_3d);
-            xc.potential_and_energy(rho_3d, drho_3d.as_ref(), &mut vxc_3d, &mut exc_3d);
+            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
 
             // rho_3d <-- rho_3d - rhocore_3d
 
@@ -544,8 +542,7 @@ impl SCF for SCFSpin {
                 }
             }
 
-            let drho_3d = compute_spin_drho(gvec, pwden, rgtrans, rho_3d);
-            xc.potential_and_energy(rho_3d, drho_3d.as_ref(), &mut vxc_3d, &mut exc_3d);
+            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
 
             // rho_3d <-- rho_3d - rhocore_3d
 
@@ -779,25 +776,6 @@ pub fn compute_total_energy(
     let etot = etot_one + etot_xc + etot_hartree + ew_total;
 
     etot
-}
-
-fn compute_spin_drho(
-    gvec: &GVector,
-    pwden: &PWDensity,
-    rgtrans: &RGTransform,
-    rho_3d: &RHOR,
-) -> Option<DRHOR> {
-    if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-        let mut grad_up = Array3::<c64>::new(rho_3d_up.shape());
-        let mut grad_dn = Array3::<c64>::new(rho_3d_dn.shape());
-
-        rgtrans.gradient_norm_r3d(gvec, pwden, rho_3d_up.as_slice(), grad_up.as_mut_slice());
-        rgtrans.gradient_norm_r3d(gvec, pwden, rho_3d_dn.as_slice(), grad_dn.as_mut_slice());
-
-        Some(DRHOR::Spin(grad_up, grad_dn))
-    } else {
-        None
-    }
 }
 
 //hwf_energy = eband + ( etxc - etxcc ) + ewld + ehart + demet + deband_hwf
