@@ -1,7 +1,7 @@
 # Wannier90 Spin Example (Si)
 
-This example runs collinear-spin DFTWorks for silicon and exports
-channel-separated Wannier90 interface files.
+This example runs collinear-spin DFTWorks for silicon and then generates
+channel-separated Wannier90 inputs in post-SCF steps.
 
 ## Run DFTWorks
 
@@ -11,22 +11,27 @@ From this directory:
 ../../../target/release/pw
 ```
 
-After the run, DFTWorks writes:
+After the run, DFTWorks provides spin-resolved wavefunctions
+(`out.wfc.up.k.*.hdf5`, `out.wfc.dn.k.*.hdf5`) and, with
+`wannier90_export = true`, writes `si.up.eig` / `si.dn.eig`.
 
-- `si.up.win`
-- `si.up.nnkp`
-- `si.up.mmn`
-- `si.up.amn`
-- `si.up.eig`
-- `si.dn.win`
-- `si.dn.nnkp`
-- `si.dn.mmn`
-- `si.dn.amn`
-- `si.dn.eig`
+## Generate `si.up.win` and `si.dn.win`
+
+```bash
+../../../target/release/w90-win
+```
+
+## Configure projectors in `si.up.win` / `si.dn.win`
+
+Edit each `begin projections ... end projections` block as needed.
+
+## Generate overlaps (`*.nnkp`, `*.mmn`, `*.amn`)
+
+```bash
+../../../target/release/w90-amn
+```
 
 ## Run Wannier90
-
-Edit `si.up.win` and/or `si.dn.win` if needed (for example projections and runtime options), then run:
 
 ```bash
 wannier90.x si.up
@@ -35,5 +40,5 @@ wannier90.x si.dn
 
 Notes:
 
-- `si.up.amn` and `si.dn.amn` are generated from overlaps between Bloch states and pseudo-atomic trial orbitals.
-- If you want different trial-orbital gauges, replace `si.up.amn` and `si.dn.amn` before running Wannier90.
+- `w90-amn` reads projector settings from `si.up.win` / `si.dn.win`.
+- If a projections block is empty, that channel falls back to pseudo-atomic trial orbitals.

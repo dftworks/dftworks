@@ -23,7 +23,7 @@ fn main() {
     // 2) build per-geometry numerical context (FFT/G-vectors/k-points)
     // 3) run SCF to obtain energies, forces, and stress
     // 4) optionally perform geometry optimization step
-    // 5) export requested artifacts (bands, Wannier90, charge/wfc files)
+    // 5) export requested artifacts (charge/wfc/eig files)
     // first statement
     dwmpi::init();
 
@@ -514,19 +514,20 @@ fn main() {
 
         if should_exit {
             if control.get_wannier90_export() {
-                match wannier90::export(&control, &crystal, kpts.as_ref(), &vkevals, ik_first) {
+                match wannier90::write_eig_inputs(&control, &vkevals, ik_first) {
                     Ok(summary) => {
                         if dwmpi::is_root() {
                             println!();
-                            println!("   {:-^88}", " wannier90 export ");
+                            println!("   {:-^88}", " wannier90 eig export ");
                             for file in summary.written_files.iter() {
                                 println!("   wrote {}", file);
                             }
+                            println!("   run `w90-win` and `w90-amn` to generate remaining Wannier90 inputs");
                         }
                     }
                     Err(err) => {
                         if dwmpi::is_root() {
-                            eprintln!("   wannier90 export failed: {}", err);
+                            eprintln!("   wannier90 eig export failed: {}", err);
                         }
                     }
                 }

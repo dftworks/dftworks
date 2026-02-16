@@ -21,4 +21,12 @@ pub(crate) struct TrialOrbital {
     pub(crate) species: String,
     pub(crate) l: usize,
     pub(crate) m: i32,
+    pub(crate) hybrid_kind: Option<HybridKind>,
+    pub(crate) hybrid_group: Option<usize>,
+    pub(crate) hybrid_component: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HybridKind {
+    Sp3,
 }

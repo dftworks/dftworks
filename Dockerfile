@@ -1,5 +1,5 @@
 # Use the official Rust image as a base
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive 
 
@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libfftw3-dev liblapack-dev libblas-dev libhdf5-dev \
     less curl vim emacs mpich pkg-config \
-    wannier90
+    wannier90 \
+    quantum-espresso
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 

@@ -9,14 +9,19 @@ use std::process::Command;
 pub(crate) fn build_topology_from_wannier90_pp(
     seedname: &str,
     nkpt: usize,
-) -> io::Result<Option<MeshTopology>> {
+) -> io::Result<MeshTopology> {
     let output = match Command::new("wannier90.x")
         .arg("-pp")
         .arg(seedname)
         .output()
     {
         Ok(output) => output,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "required executable 'wannier90.x' is not found in PATH. Install Wannier90 and ensure 'wannier90.x' is available before running w90-amn",
+            ))
+        }
         Err(err) => {
             return Err(io::Error::other(format!(
                 "failed to run 'wannier90.x -pp {}': {}",
@@ -36,7 +41,7 @@ pub(crate) fn build_topology_from_wannier90_pp(
 
     let nnkp_filename = format!("{}.nnkp", seedname);
     let topology = parse_nnkp_topology(&nnkp_filename, nkpt)?;
-    Ok(Some(topology))
+    Ok(topology)
 }
 
 pub(crate) fn write_nnkp_file(

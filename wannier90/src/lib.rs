@@ -7,36 +7,18 @@ mod nnkp;
 mod types;
 mod win;
 
-use channel::write_full_channel_data;
+use channel::{write_overlap_files_for_channel, write_win_for_channel};
 use control::{Control, SpinScheme};
 use crystal::Crystal;
 use dfttypes::VKEigenValue;
 use eig::{merge_rank_parts, write_local_eig_part_files};
-use mesh::{build_mesh_topology, read_k_shift, validate_k_mesh};
+use mesh::validate_k_mesh;
 use mpi_sys::MPI_COMM_WORLD;
 use pspot::PSPot;
 use std::io;
-
 pub use types::ExportSummary;
 
-// End-to-end Wannier90 export pipeline.
-//
-// Responsibilities:
-// 1) validate k-mesh metadata and neighbor topology
-// 2) write per-channel Wannier text inputs (.win/.nnkp/.amn/.mmn)
-// 3) collect distributed eigenvalue parts into final .eig files
-//
-// MPI behavior:
-// - root rank writes text outputs that require global context
-// - all ranks write local .eig parts
-// - barriers enforce deterministic handoff points.
-pub fn export(
-    control: &Control,
-    crystal: &Crystal,
-    kpts: &dyn kpts::KPTS,
-    vkevals: &VKEigenValue,
-    ik_first: usize,
-) -> io::Result<ExportSummary> {
+fn validate_seedname(control: &Control) -> io::Result<&str> {
     let seedname = control.get_wannier90_seedname().trim();
     if seedname.is_empty() {
         return Err(io::Error::new(
@@ -44,58 +26,99 @@ pub fn export(
             "wannier90_seedname must not be empty",
         ));
     }
+    Ok(seedname)
+}
 
-    let k_mesh = kpts.get_k_mesh();
-    validate_k_mesh(k_mesh)?;
-    let k_shift = read_k_shift("in.kmesh")?;
-    let fallback_topology = build_mesh_topology(kpts, k_mesh, k_shift)?;
-
-    // Ensure all ranks have reached export after SCF outputs are on disk.
-    dwmpi::barrier(MPI_COMM_WORLD);
+pub fn write_win_inputs(
+    control: &Control,
+    crystal: &Crystal,
+    kpts: &dyn kpts::KPTS,
+) -> io::Result<ExportSummary> {
+    let seedname = validate_seedname(control)?;
+    validate_k_mesh(kpts.get_k_mesh())?;
 
     let mut summary = ExportSummary::default();
 
+    dwmpi::barrier(MPI_COMM_WORLD);
     if dwmpi::is_root() {
         let pots = PSPot::new(control.get_pot_scheme());
-
         match control.get_spin_scheme_enum() {
             SpinScheme::NonSpin => {
-                // Single-channel export.
-                let files = write_full_channel_data(
-                    seedname,
-                    control,
-                    crystal,
-                    &pots,
-                    kpts,
-                    &fallback_topology,
-                    control.is_spin(),
-                    None,
-                )?;
-                summary.written_files.extend(files);
+                summary.written_files.push(write_win_for_channel(
+                    seedname, control, crystal, &pots, kpts, None,
+                )?);
             }
             SpinScheme::Spin => {
-                // Two independent channels with Wannier90's conventional
-                // ".up"/".dn" seed naming.
                 let up_seed = format!("{}.up", seedname);
                 let dn_seed = format!("{}.dn", seedname);
-
-                let up_files = write_full_channel_data(
+                summary.written_files.push(write_win_for_channel(
                     &up_seed,
                     control,
                     crystal,
                     &pots,
                     kpts,
-                    &fallback_topology,
-                    true,
                     Some("up"),
-                )?;
-                let dn_files = write_full_channel_data(
+                )?);
+                summary.written_files.push(write_win_for_channel(
                     &dn_seed,
                     control,
                     crystal,
                     &pots,
                     kpts,
-                    &fallback_topology,
+                    Some("down"),
+                )?);
+            }
+            SpinScheme::Ncl => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "wannier90 export currently supports nonspin/spin only",
+                ));
+            }
+        }
+    }
+    dwmpi::barrier(MPI_COMM_WORLD);
+
+    Ok(summary)
+}
+
+pub fn write_overlap_inputs(
+    control: &Control,
+    crystal: &Crystal,
+    kpts: &dyn kpts::KPTS,
+) -> io::Result<ExportSummary> {
+    let seedname = validate_seedname(control)?;
+    let mut summary = ExportSummary::default();
+
+    // Ensure all ranks have reached post-processing after SCF outputs are on disk.
+    dwmpi::barrier(MPI_COMM_WORLD);
+    if dwmpi::is_root() {
+        let pots = PSPot::new(control.get_pot_scheme());
+        match control.get_spin_scheme_enum() {
+            SpinScheme::NonSpin => {
+                let files = write_overlap_files_for_channel(
+                    seedname, control, crystal, &pots, kpts, false, None,
+                )?;
+                summary.written_files.extend(files);
+            }
+            SpinScheme::Spin => {
+                let up_seed = format!("{}.up", seedname);
+                let dn_seed = format!("{}.dn", seedname);
+
+                let up_files = write_overlap_files_for_channel(
+                    &up_seed,
+                    control,
+                    crystal,
+                    &pots,
+                    kpts,
+                    true,
+                    Some("up"),
+                )?;
+                let dn_files = write_overlap_files_for_channel(
+                    &dn_seed,
+                    control,
+                    crystal,
+                    &pots,
+                    kpts,
                     true,
                     Some("down"),
                 )?;
@@ -111,7 +134,18 @@ pub fn export(
             }
         }
     }
+    dwmpi::barrier(MPI_COMM_WORLD);
 
+    Ok(summary)
+}
+
+pub fn write_eig_inputs(
+    control: &Control,
+    vkevals: &VKEigenValue,
+    ik_first: usize,
+) -> io::Result<ExportSummary> {
+    let seedname = validate_seedname(control)?;
+    let mut summary = ExportSummary::default();
     write_local_eig_part_files(seedname, vkevals, ik_first)?;
     dwmpi::barrier(MPI_COMM_WORLD);
 
@@ -148,5 +182,30 @@ pub fn export(
     }
 
     dwmpi::barrier(MPI_COMM_WORLD);
+    Ok(summary)
+}
+
+// End-to-end legacy wrapper:
+// 1) write .win
+// 2) write .nnkp/.amn/.mmn using saved SCF wavefunctions
+// 3) write final .eig from distributed eigenvalue parts
+pub fn export(
+    control: &Control,
+    crystal: &Crystal,
+    kpts: &dyn kpts::KPTS,
+    vkevals: &VKEigenValue,
+    ik_first: usize,
+) -> io::Result<ExportSummary> {
+    let mut summary = ExportSummary::default();
+
+    let win_summary = write_win_inputs(control, crystal, kpts)?;
+    summary.written_files.extend(win_summary.written_files);
+
+    let overlap_summary = write_overlap_inputs(control, crystal, kpts)?;
+    summary.written_files.extend(overlap_summary.written_files);
+
+    let eig_summary = write_eig_inputs(control, vkevals, ik_first)?;
+    summary.written_files.extend(eig_summary.written_files);
+
     Ok(summary)
 }

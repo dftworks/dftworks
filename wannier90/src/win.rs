@@ -81,11 +81,22 @@ pub(crate) fn write_win_file(
     writeln!(writer, "end atoms_frac")?;
     writeln!(writer)?;
 
-    writeln!(writer, "! begin projections")?;
-    writeln!(writer, "! DFTWorks writes .amn from Bloch-trial overlaps.")?;
+    writeln!(writer, "begin projections")?;
     writeln!(
         writer,
-        "! trial orbitals used for .amn (index: atom/species l m):"
+        "! DFTWorks reads this block when generating .amn (w90-amn)."
+    )?;
+    writeln!(
+        writer,
+        "! Add one or more entries like `Si1:sp3` or `O:s;p` as needed."
+    )?;
+    writeln!(
+        writer,
+        "! If this block is left empty, pseudo-atomic PP_CHI defaults are used."
+    )?;
+    writeln!(
+        writer,
+        "! default PP_CHI-derived orbitals (index: atom/species l m):"
     )?;
     for (i, orb) in trial_orbitals.iter().enumerate() {
         writeln!(
@@ -98,7 +109,7 @@ pub(crate) fn write_win_file(
             orb.m
         )?;
     }
-    writeln!(writer, "! end projections")?;
+    writeln!(writer, "end projections")?;
     writeln!(writer)?;
 
     writeln!(writer, "begin kpoints")?;

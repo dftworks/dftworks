@@ -1,7 +1,6 @@
-use crate::amn::{build_trial_orbitals, write_amn_file};
+use crate::amn::{build_trial_orbitals, build_trial_orbitals_from_nnkp, write_amn_file};
 use crate::mmn::write_mmn_file;
-use crate::nnkp::{build_topology_from_wannier90_pp, write_nnkp_file};
-use crate::types::MeshTopology;
+use crate::nnkp::build_topology_from_wannier90_pp;
 use crate::win::write_win_file;
 use control::Control;
 use crystal::Crystal;
@@ -15,30 +14,16 @@ use std::io;
 use std::path::Path;
 use types::c64;
 
-// Write all Wannier90 inputs for one logical channel (non-spin, spin-up, spin-down).
-//
-// File set:
-// - *.win  : control + projections + k-grid metadata
-// - *.nnkp : explicit nearest-neighbor topology and geometry
-// - *.amn  : Bloch <-> trial-orbital overlaps
-// - *.mmn  : Bloch overlap matrices between neighbor k points
-pub(crate) fn write_full_channel_data(
+pub(crate) fn write_win_for_channel(
     channel_seed: &str,
     control: &Control,
     crystal: &Crystal,
     pots: &PSPot,
     kpts: &dyn KPTS,
-    fallback_topology: &MeshTopology,
-    is_spin: bool,
     spin_channel: Option<&str>,
-) -> io::Result<Vec<String>> {
-    let nkpt = kpts.get_n_kpts();
-    // AMN/MMN need saved wavefunction files from SCF output.
-    ensure_wfc_files_present(is_spin, nkpt)?;
-
-    // Trial orbitals are derived from pseudo-atomic PP_CHI channels.
+) -> io::Result<String> {
+    // The generated .win documents the default pseudo-atomic projector list.
     let trial_orbitals = build_trial_orbitals(control.get_wannier90_num_wann(), crystal, pots)?;
-
     let win_file = format!("{}.win", channel_seed);
     write_win_file(
         &win_file,
@@ -48,16 +33,34 @@ pub(crate) fn write_full_channel_data(
         spin_channel,
         &trial_orbitals,
     )?;
+    Ok(win_file)
+}
 
-    // Prefer topology from wannier90.pp if available; otherwise use internal
-    // mesh-derived fallback built during export setup.
-    let topology = match build_topology_from_wannier90_pp(channel_seed, kpts.get_n_kpts())? {
-        Some(topology_from_pp) => topology_from_pp,
-        None => fallback_topology.clone(),
-    };
+pub(crate) fn write_overlap_files_for_channel(
+    channel_seed: &str,
+    control: &Control,
+    crystal: &Crystal,
+    pots: &PSPot,
+    kpts: &dyn KPTS,
+    is_spin: bool,
+    spin_channel: Option<&str>,
+) -> io::Result<Vec<String>> {
+    let nkpt = kpts.get_n_kpts();
+    // AMN/MMN need saved wavefunction files from SCF output.
+    ensure_wfc_files_present(is_spin, nkpt)?;
 
+    // `w90-amn` requires `wannier90.x -pp` so that .nnkp is generated in the
+    // canonical Wannier90 format (including projection semantics).
     let nnkp_file = format!("{}.nnkp", channel_seed);
-    write_nnkp_file(&nnkp_file, crystal, kpts, &topology)?;
+    let topology = build_topology_from_wannier90_pp(channel_seed, kpts.get_n_kpts())?;
+
+    // Drive projector semantics from nnkp (QE-style interface behavior).
+    let trial_orbitals = build_trial_orbitals_from_nnkp(
+        &nnkp_file,
+        control.get_wannier90_num_wann(),
+        crystal,
+        pots,
+    )?;
 
     let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
     let [n1, n2, n3] = fftgrid.get_size();
@@ -90,7 +93,7 @@ pub(crate) fn write_full_channel_data(
         &gvec,
     )?;
 
-    Ok(vec![win_file, nnkp_file, amn_file, mmn_file])
+    Ok(vec![nnkp_file, amn_file, mmn_file])
 }
 
 fn select_spin_channel<'a>(
@@ -122,7 +125,7 @@ fn ensure_wfc_files_present(is_spin: bool, nkpt: usize) -> io::Result<()> {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!(
-                    "missing required wavefunction file '{}'; set save_wfc=true or enable wannier90_export during SCF",
+                    "missing required wavefunction file '{}'; run SCF with save_wfc=true before Wannier90 post-processing",
                     filename
                 ),
             ));
