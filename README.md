@@ -54,6 +54,80 @@ In the directory dftworks, run the following command.
 
 This will download the dependency modules and compile the code to generate the executable **pw** in the directory **target/release**.
 
+# Workflow wrapper (`dwf`)
+
+A lightweight stage wrapper is available for SCF / NSCF / bands / Wannier orchestration:
+
+```bash
+cargo run -p workflow --bin dwf -- help
+```
+
+Supported commands:
+
+```bash
+cargo run -p workflow --bin dwf -- validate <case_dir> [--config <yaml>]
+cargo run -p workflow --bin dwf -- run scf <case_dir>
+cargo run -p workflow --bin dwf -- run nscf <case_dir> --from scf:latest
+cargo run -p workflow --bin dwf -- run bands <case_dir> --from latest
+cargo run -p workflow --bin dwf -- run wannier <case_dir> --from latest
+cargo run -p workflow --bin dwf -- run pipeline <case_dir> [--stages scf,nscf,bands,wannier]
+cargo run -p workflow --bin dwf -- status <case_dir> [--config <yaml>]
+```
+
+Recommended case layout:
+
+```text
+<case_dir>/
+  dwf.yaml                    # optional, auto-discovered
+  common/
+    in.crystal
+    in.pot
+    in.spin            # optional, required for spin runs
+  scf/
+    in.ctrl
+    in.kmesh
+  nscf/
+    in.ctrl
+    in.kmesh
+  bands/
+    in.ctrl
+    in.kline
+  wannier/
+    in.ctrl
+    in.kmesh
+    in.proj            # optional, e.g. Si1:sp3
+```
+
+`dwf` defaults pipeline order to `scf -> nscf -> bands -> wannier`.
+If `wannier/in.proj` is present, `dwf` injects those projector lines into
+generated `*.win` files before running `w90-amn`.
+
+YAML config example:
+
+```yaml
+common_dir: common
+stages:
+  scf:
+    dir: scf
+  nscf:
+    dir: nscf
+  bands:
+    dir: bands
+  wannier:
+    dir: wannier
+pipeline:
+  stages:
+    - scf
+    - nscf
+    - bands
+    - wannier
+```
+
+Full pipeline example:
+
+* `test_example/si-oncv/workflow-pipeline-yaml` (YAML-driven full pipeline, NSCF on 4x4x4)
+* `just si-dwf-pipeline-keep-all` (docker-based test that keeps outputs under `runs/`)
+
 # Wannier90 interface (step-by-step)
 
 The Wannier90 workflow is now split into explicit post-SCF steps:
@@ -100,6 +174,7 @@ End-to-end examples are provided in:
 * `test_example/si-oncv/wannier90` (non-spin)
 * `test_example/si-oncv/wannier90-spin` (collinear spin: `up`/`dn` channels)
 * `test_example/si-oncv/wannier90-projected` (non-spin with explicit `sp3` projectors, `num_wann = 8`)
+* `test_example/si-oncv/workflow-pipeline-yaml` (full YAML pipeline with `scf -> nscf -> bands -> wannier`)
 
 # Test the code
 

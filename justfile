@@ -59,3 +59,79 @@ si-w90-test-summary:
   tail -n 40 {{si_w90_case}}/si.wout
 
 si-w90-test-all: si-w90-test-prepare si-w90-test-build si-w90-test-scf si-w90-test-win si-w90-test-set-sp3 si-w90-test-amn si-w90-test-wannier si-w90-test-summary
+
+# ---- Silicon dwf YAML pipeline test (scf -> nscf -> bands -> wannier) ----
+
+si_dwf_case := "/tmp/si-dwf-yaml"
+
+si-dwf-pipeline-prepare:
+  rm -rf {{si_dwf_case}}
+  mkdir -p {{si_dwf_case}}
+  cp -R {{justfile_directory()}}/test_example/si-oncv/workflow-pipeline-yaml/* {{si_dwf_case}}/
+
+si-dwf-pipeline-build:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -w /usr/src/app \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo build -p workflow -p pw -p wannier90'
+
+si-dwf-pipeline-validate:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -v {{si_dwf_case}}:/work \
+    -w /work \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p workflow --bin dwf -- validate .'
+
+si-dwf-pipeline-run:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -v {{si_dwf_case}}:/work \
+    -w /work \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p workflow --bin dwf -- run pipeline . --pw-bin /usr/src/app/target-docker-linux/debug/pw --w90-win-bin /usr/src/app/target-docker-linux/debug/w90-win --w90-amn-bin /usr/src/app/target-docker-linux/debug/w90-amn --wannier90-x-bin wannier90.x'
+
+si-dwf-pipeline-status:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -v {{si_dwf_case}}:/work \
+    -w /work \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p workflow --bin dwf -- status .'
+
+si-dwf-pipeline-all: si-dwf-pipeline-prepare si-dwf-pipeline-build si-dwf-pipeline-validate si-dwf-pipeline-run si-dwf-pipeline-status
+
+# Keep outputs in repository case directory:
+# test_example/si-oncv/workflow-pipeline-yaml/runs
+si_dwf_repo_case_container := "/usr/src/app/test_example/si-oncv/workflow-pipeline-yaml"
+
+si-dwf-pipeline-keep-build:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -w /usr/src/app \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo build -p workflow -p pw -p wannier90'
+
+si-dwf-pipeline-keep-validate:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -w /usr/src/app \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p workflow --bin dwf -- validate {{si_dwf_repo_case_container}}'
+
+si-dwf-pipeline-keep-run:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -w /usr/src/app \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p workflow --bin dwf -- run pipeline {{si_dwf_repo_case_container}} --pw-bin /usr/src/app/target-docker-linux/debug/pw --w90-win-bin /usr/src/app/target-docker-linux/debug/w90-win --w90-amn-bin /usr/src/app/target-docker-linux/debug/w90-amn --wannier90-x-bin wannier90.x'
+
+si-dwf-pipeline-keep-status:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -w /usr/src/app \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p workflow --bin dwf -- status {{si_dwf_repo_case_container}}'
+
+si-dwf-pipeline-keep-all: si-dwf-pipeline-keep-build si-dwf-pipeline-keep-validate si-dwf-pipeline-keep-run si-dwf-pipeline-keep-status

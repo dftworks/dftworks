@@ -56,5 +56,6 @@ members = [
 	"geom",
 	"wannier90",
 	"pw",
+	"workflow",
 	"test_mpi"
 ]

@@ -1,0 +1,21 @@
+common_dir: common
+stages:
+  scf:
+    dir: scf
+  nscf:
+    dir: nscf
+  bands:
+    dir: bands
+  wannier:
+    dir: wannier
+pipeline:
+  stages:
+    - scf
+    - nscf
+    - bands
+    - wannier
+binaries:
+  pw: pw
+  w90_win: w90-win
+  w90_amn: w90-amn
+  wannier90_x: wannier90.x

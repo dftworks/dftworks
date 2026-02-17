@@ -1,0 +1,44 @@
+symmetry = false
+
+save_rho = false
+save_wfc = false
+
+kpts_scheme = kmesh
+
+geom_optim_cell = true
+geom_optim_scheme = diis
+geom_optim_max_steps = 1
+geom_optim_history_steps = 4
+geom_optim_alpha = 0.7
+geom_optim_force_tolerance = 0.01
+geom_optim_stress_tolerance = 0.05
+
+scf_rho_mix_scheme = broyden
+scf_rho_mix_pulay_metric_weight = 2.0
+scf_rho_mix_alpha = 0.8
+scf_rho_mix_beta = 0.01
+scf_rho_mix_history_steps = 4
+scf_harris = false
+scf_min_iter = 1
+scf_max_iter = 1
+scf_max_iter_wfc = 60
+scf_max_iter_rand_wfc = 1
+eigval_epsilon = 1E-6
+energy_epsilon = 1E-6
+
+eigen_solver = pcg
+davidson_ndim = 6
+ecut_wfc = 400
+nband = 16
+spin_scheme = nonspin
+xc_scheme = lda-pz
+pot_scheme = upf
+temperature = 0
+smearing_scheme = mp2
+output_atomic_density = true
+occ_inversion = 0.0
+
+wannier90_export = true
+wannier90_seedname = si
+wannier90_num_wann = 8
+wannier90_num_iter = 200

@@ -1,0 +1,10 @@
+runs/
+out.*
+*.win
+*.nnkp
+*.mmn
+*.amn
+*.eig
+*.chk
+*.wout
+*_band.*
