@@ -88,10 +88,51 @@ pub fn simpson_log(y: &[f64], r: &[f64]) -> f64 {
 #[test]
 fn test_simpson() {
     let y: Vec<f64> = itertools_num::linspace::<f64>(0.0, 4.0, 5).collect();
-
-    println!("{:?}", &y);
-
     let sum = simpson(&y[..], 1.0);
-
     assert_eq!(sum, 8.0);
+}
+
+#[test]
+fn test_simpson_rab_odd_count_matches_analytic() {
+    // Integrate y = x^2 on [0, 4] with dx = 1.
+    let y = vec![0.0, 1.0, 4.0, 9.0, 16.0];
+    let rab = vec![1.0; y.len()];
+
+    let got = simpson_rab(&y, &rab);
+    let expected = 64.0 / 3.0;
+    assert!((got - expected).abs() < 1.0e-12);
+}
+
+#[test]
+fn test_simpson_rab_even_count_uses_38_tail() {
+    // Integrate y = x^3 on [0, 5] with 6 points (dx = 1).
+    // Composite Simpson 1/3 + 3/8 should be exact for cubic polynomials.
+    let y = vec![0.0, 1.0, 8.0, 27.0, 64.0, 125.0];
+    let rab = vec![1.0; y.len()];
+
+    let got = simpson_rab(&y, &rab);
+    let expected = 625.0 / 4.0;
+    assert!((got - expected).abs() < 1.0e-12);
+}
+
+#[test]
+fn test_simpson_log_constant_in_log_space() {
+    // If y(r) = 1/r, then y(r)*r = 1 and the log-grid Simpson rule is exact.
+    let n = 5;
+    let r0 = 0.5f64;
+    let ratio = 2.0f64;
+    let r: Vec<f64> = (0..n).map(|i| r0 * ratio.powi(i as i32)).collect();
+    let y: Vec<f64> = r.iter().map(|ri| 1.0 / ri).collect();
+
+    let got = simpson_log(&y, &r);
+    let expected = (r[n - 1] / r[0]).ln();
+    assert!((got - expected).abs() < 1.0e-12);
+}
+
+#[test]
+#[should_panic]
+fn test_simpson_log_requires_odd_length() {
+    let y = vec![1.0, 2.0, 3.0, 4.0];
+    let r = vec![1.0, 2.0, 4.0, 8.0];
+    let _ = simpson_log(&y, &r);
 }

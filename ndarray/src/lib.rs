@@ -200,3 +200,80 @@ impl<T> IndexMut<[usize; 3]> for Array3<T> {
         &mut self.data[[idx[0], idx[1], idx[2]]]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_file(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        path.push(format!(
+            "dftworks_ndarray_{name}_{}_{}.bin",
+            std::process::id(),
+            ts
+        ));
+        path
+    }
+
+    #[test]
+    fn test_array3_indexing_and_shape_contract() {
+        let a = Array3::from_vec([2, 2, 2], vec![0i32, 1, 2, 3, 4, 5, 6, 7]);
+
+        // First-index-fastest memory order.
+        assert_eq!(a[[0, 0, 0]], 0);
+        assert_eq!(a[[1, 0, 0]], 1);
+        assert_eq!(a[[0, 1, 0]], 2);
+        assert_eq!(a[[1, 1, 0]], 3);
+        assert_eq!(a[[0, 0, 1]], 4);
+        assert_eq!(a[[1, 1, 1]], 7);
+        assert_eq!(a.shape(), [2, 2, 2]);
+        assert_eq!(a.len(), 8);
+        assert!(!a.is_empty());
+    }
+
+    #[test]
+    fn test_array3_arithmetic_helpers() {
+        let mut a = Array3::from_vec([2, 2, 1], vec![1.0f64, 2.0, 3.0, 4.0]);
+        let b = Array3::from_vec([2, 2, 1], vec![10.0f64, 20.0, 30.0, 40.0]);
+        let mut dst = Array3::new([2, 2, 1]);
+
+        Array3::hadamard_product(&a, &b, &mut dst);
+        assert_eq!(dst.as_slice(), &[10.0, 40.0, 90.0, 160.0]);
+
+        a.add_from(&b);
+        assert_eq!(a.as_slice(), &[11.0, 22.0, 33.0, 44.0]);
+
+        a.substract(&b);
+        assert_eq!(a.as_slice(), &[1.0, 2.0, 3.0, 4.0]);
+
+        let mut assigned = Array3::new([2, 2, 1]);
+        assigned.assign(&b);
+        assert_eq!(assigned.as_slice(), b.as_slice());
+
+        assigned.set_value(5.0);
+        assert_eq!(assigned.sum(), 20.0);
+    }
+
+    #[test]
+    fn test_array3_save_load_roundtrip() {
+        let original = Array3::from_vec([2, 1, 2], vec![1.5f64, -2.0, 3.25, 4.75]);
+        let filename = unique_temp_file("roundtrip");
+        let filename_str = filename.to_str().expect("non-utf8 temp path");
+
+        original.save(filename_str);
+
+        let mut restored = Array3::<f64>::default();
+        restored.load(filename_str);
+
+        std::fs::remove_file(&filename).expect("failed to remove temp file");
+
+        assert_eq!(restored.shape(), original.shape());
+        assert_eq!(restored.as_slice(), original.as_slice());
+    }
+}

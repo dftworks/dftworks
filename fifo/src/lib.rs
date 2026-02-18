@@ -49,6 +49,9 @@ impl<T> std::ops::Index<usize> for FIFO<T> {
 fn test_fifo() {
     let mut fq = FIFO::<f64>::new(5);
 
+    assert!(fq.is_empty());
+    assert_eq!(fq.len(), 0);
+
     fq.push(1.0);
     fq.push(2.0);
     fq.push(3.0);
@@ -56,12 +59,33 @@ fn test_fifo() {
     fq.push(5.0);
     fq.push(6.0);
 
-    println!("{:?}", fq.data);
-    println!("capacity = {}", fq.data.capacity());
-
-    let ntot = fq.len();
-    for i in 0..ntot {
-        println!("{}, {}", i, fq[i]);
-    }
+    assert_eq!(fq.len(), 5);
+    assert_eq!(fq[0], 2.0);
+    assert_eq!(fq[1], 3.0);
+    assert_eq!(fq[2], 4.0);
+    assert_eq!(fq[3], 5.0);
     assert_eq!(fq[4], 6.0);
+    assert_eq!(*fq.last(), 6.0);
+}
+
+#[test]
+fn test_fifo_rollover_preserves_order() {
+    let mut fq = FIFO::<i32>::new(3);
+
+    for v in 0..6 {
+        fq.push(v);
+    }
+
+    assert_eq!(fq.len(), 3);
+    assert_eq!(fq[0], 3);
+    assert_eq!(fq[1], 4);
+    assert_eq!(fq[2], 5);
+    assert_eq!(*fq.last(), 5);
+}
+
+#[test]
+#[should_panic]
+fn test_fifo_last_panics_when_empty() {
+    let fq = FIFO::<i32>::new(2);
+    let _ = fq.last();
 }
