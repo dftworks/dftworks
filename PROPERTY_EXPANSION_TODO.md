@@ -35,11 +35,11 @@ Deliverable:
 ## Level 3 - Symmetry operations and canonicalization (Medium)
 
 - [x] Add a dedicated `symops` crate with a shared symmetry-operation representation (`R`, `t`) and expose it through property workflows.
-- [ ] Integrate crystal-space-group detection and operation extraction (via existing symmetry/spglib path).
-- [ ] Add operation validation (group closure, inverse existence, determinant `+/-1`, lattice-consistency tolerance).
-- [ ] Add k-point little-group / star construction utilities for symmetry-aware postprocessing.
-- [ ] Export machine-readable symmetry metadata (`symmetry_ops.json`, crystal class, space group) with each run.
-- [ ] Add regression tests on high-symmetry and low-symmetry cells to verify operation counts and mappings.
+- [x] Integrate crystal-space-group detection and operation extraction via the internal symmetry stack.
+- [x] Add operation validation (group closure, inverse existence, determinant `+/-1`, lattice-consistency tolerance).
+- [x] Add k-point little-group / star construction utilities for symmetry-aware postprocessing.
+- [x] Export machine-readable symmetry metadata (`symmetry_ops.json`, crystal class, space group) with each run.
+- [x] Add regression tests on high-symmetry and low-symmetry cells to verify operation counts and mappings.
 
 Deliverable:
 - Validated `symmetry_ops.json` and reusable symmetry APIs consumed by downstream property modules.

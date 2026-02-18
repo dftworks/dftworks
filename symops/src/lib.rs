@@ -38,7 +38,7 @@ pub struct SymOp {
 }
 
 /// Errors returned by symmetry-operation construction and group checks.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SymOpError {
     /// Rotation has determinant different from `±1`.
     NonUnimodularRotation { det: i32 },
@@ -50,6 +50,8 @@ pub enum SymOpError {
     MissingInverse { index: usize },
     /// Group validation found `ops[left] * ops[right]` outside the set.
     NotClosed { left: usize, right: usize },
+    /// Operation rotation violates lattice metric invariance within tolerance.
+    LatticeInconsistent { index: usize, deviation: f64 },
 }
 
 impl fmt::Display for SymOpError {
@@ -68,11 +70,25 @@ impl fmt::Display for SymOpError {
                 "symmetry group is not closed: op {} composed with op {} is missing",
                 left, right
             ),
+            SymOpError::LatticeInconsistent { index, deviation } => write!(
+                f,
+                "symmetry op {} violates lattice consistency (max metric deviation = {:.3e})",
+                index, deviation
+            ),
         }
     }
 }
 
 impl Error for SymOpError {}
+
+/// One k-star representative and the operation indices that generate it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KStarPoint {
+    /// Star point representative in centered fractional coordinates.
+    pub k: Vector3,
+    /// Indices in the provided operation list that map to this point.
+    pub operation_indices: Vec<usize>,
+}
 
 impl SymOp {
     /// Constructs a symmetry operation and normalizes translation to `[0, 1)`.
@@ -219,18 +235,80 @@ pub fn little_group_indices(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<usize> {
 
 /// Computes k-star (`{Rk}`) with deduplication modulo lattice vectors.
 pub fn k_star(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<Vector3> {
-    let mut out = Vec::new();
-    for op in ops.iter() {
+    k_star_with_mappings(k, ops, tol)
+        .into_iter()
+        .map(|entry| entry.k)
+        .collect()
+}
+
+/// Computes k-star and records which operations map to each representative.
+pub fn k_star_with_mappings(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<KStarPoint> {
+    let mut out: Vec<KStarPoint> = Vec::new();
+    for (idx, op) in ops.iter().enumerate() {
         // Use centered wrapping for more interpretable representative values.
         let mapped = normalize_centered(op.apply_rotation(k));
-        if !out
-            .iter()
-            .any(|candidate| approx_eq_mod_lattice(*candidate, mapped, tol))
+        if let Some(existing) = out
+            .iter_mut()
+            .find(|candidate| approx_eq_mod_lattice(candidate.k, mapped, tol))
         {
-            out.push(mapped);
+            existing.operation_indices.push(idx);
+        } else {
+            out.push(KStarPoint {
+                k: mapped,
+                operation_indices: vec![idx],
+            });
         }
     }
     out
+}
+
+/// Computes lattice metric tensor `G = A * A^T` from direct lattice rows.
+pub fn lattice_metric(lattice: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let mut metric = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            metric[i][j] = lattice[i][0] * lattice[j][0]
+                + lattice[i][1] * lattice[j][1]
+                + lattice[i][2] * lattice[j][2];
+        }
+    }
+    metric
+}
+
+/// Validates operation lattice consistency using `R^T G R ≈ G` within `tol`.
+pub fn validate_lattice_consistency(
+    ops: &[SymOp],
+    lattice: [[f64; 3]; 3],
+    tol: f64,
+) -> Result<(), SymOpError> {
+    let metric = lattice_metric(lattice);
+    for (idx, op) in ops.iter().enumerate() {
+        let det = determinant(*op.rotation());
+        if det != 1 && det != -1 {
+            return Err(SymOpError::NonUnimodularRotation { det });
+        }
+        let deviation = rotation_metric_deviation(*op.rotation(), metric);
+        if deviation > tol {
+            return Err(SymOpError::LatticeInconsistent {
+                index: idx,
+                deviation,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Returns maximum `|R^T G R - G|` entry over all operations.
+pub fn max_lattice_deviation(ops: &[SymOp], lattice: [[f64; 3]; 3]) -> f64 {
+    let metric = lattice_metric(lattice);
+    let mut max_deviation = 0.0;
+    for op in ops.iter() {
+        let deviation = rotation_metric_deviation(*op.rotation(), metric);
+        if deviation > max_deviation {
+            max_deviation = deviation;
+        }
+    }
+    max_deviation
 }
 
 /// Approximate equality of two operations with translation compared modulo lattice.
@@ -274,6 +352,25 @@ fn mat_mul_i32(lhs: Rotation, rhs: Rotation) -> Rotation {
         }
     }
     out
+}
+
+fn rotation_metric_deviation(rotation: Rotation, metric: [[f64; 3]; 3]) -> f64 {
+    let mut max_deviation = 0.0;
+    for i in 0..3 {
+        for j in 0..3 {
+            let mut transformed = 0.0;
+            for a in 0..3 {
+                for b in 0..3 {
+                    transformed += rotation[a][i] as f64 * metric[a][b] * rotation[b][j] as f64;
+                }
+            }
+            let delta = (transformed - metric[i][j]).abs();
+            if delta > max_deviation {
+                max_deviation = delta;
+            }
+        }
+    }
+    max_deviation
 }
 
 fn inverse_unimodular(rotation: Rotation, det: i32) -> Rotation {
@@ -420,5 +517,51 @@ mod tests {
         assert_eq!(little_gamma, vec![0, 1]);
         let little_x = little_group_indices(k, &ops, TOL);
         assert_eq!(little_x, vec![0]);
+    }
+
+    #[test]
+    fn star_with_mappings_tracks_generating_operations() {
+        let ops = vec![SymOp::identity(), c2z()];
+        let mapped = k_star_with_mappings([0.25, 0.0, 0.0], &ops, TOL);
+        assert_eq!(mapped.len(), 2);
+        assert!(mapped.iter().any(
+            |entry| approx_eq_mod_lattice(entry.k, [0.25, 0.0, 0.0], TOL)
+                && entry.operation_indices == vec![0]
+        ));
+        assert!(mapped.iter().any(
+            |entry| approx_eq_mod_lattice(entry.k, [-0.25, 0.0, 0.0], TOL)
+                && entry.operation_indices == vec![1]
+        ));
+    }
+
+    #[test]
+    fn lattice_validation_rejects_non_metric_rotation() {
+        let shear = SymOp::new([[1, 1, 0], [0, 1, 0], [0, 0, 1]], [0.0, 0.0, 0.0]).unwrap();
+        let err = validate_lattice_consistency(
+            &[SymOp::identity(), shear],
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            1.0e-9,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            SymOpError::LatticeInconsistent {
+                index: 1,
+                deviation: _
+            }
+        ));
+    }
+
+    #[test]
+    fn lattice_validation_accepts_metric_preserving_group() {
+        let ops = vec![SymOp::identity(), c2z()];
+        assert_eq!(
+            validate_lattice_consistency(
+                &ops,
+                [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]],
+                1.0e-9
+            ),
+            Ok(())
+        );
     }
 }

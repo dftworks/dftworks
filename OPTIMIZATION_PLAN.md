@@ -8,7 +8,7 @@ This document captures prioritized software engineering improvements identified 
 - Problem:
   - `matrix/build.rs` and `symmetry/build.rs` hardcode local library paths.
 - Plan:
-  - Use environment-driven discovery (`LAPACK_DIR`, `SPGLIB_DIR`) or `pkg-config`.
+  - Use environment-driven discovery (`LAPACK_DIR`) or `pkg-config`.
   - Add explicit build-time diagnostics if libraries are not found.
   - Keep optional per-platform fallback logic gated behind env flags.
 - Expected impact:
@@ -107,7 +107,7 @@ This document captures prioritized software engineering improvements identified 
 - Problem:
   - Symmetry data is present in parts of the codebase, but end-to-end exploitation is incomplete/inconsistent.
 - Plan:
-  - Build a centralized symmetry context/service from spglib output (operations, mapping, irreducible sets).
+  - Build a centralized symmetry context/service from internal symmetry output (operations, mapping, irreducible sets).
   - Use symmetry to reduce k-point workloads (irreducible k-mesh generation + proper weights).
   - Apply symmetry operations consistently to:
     - charge density / potential

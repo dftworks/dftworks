@@ -9,7 +9,10 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use crystal::Crystal;
-use symops::{classify_symmetry, detect_symmetry, CrystalSystem, DetectOptions, Structure};
+use symops::{
+    classify_symmetry, detect_symmetry, max_lattice_deviation, standardize_operations,
+    validate_group, validate_lattice_consistency, CrystalSystem, DetectOptions, Structure, SymOp,
+};
 
 const STAGE_SCF: &str = "scf";
 const STAGE_NSCF: &str = "nscf";
@@ -2358,10 +2361,19 @@ fn export_symmetry_metadata(run_dir: &Path) -> CliResult<PathBuf> {
     }
 
     let structure = load_structure_for_symmetry(&crystal_path)?;
-    let detected = detect_symmetry(&structure, DetectOptions::default())
-        .map_err(|err| format!("symmetry detection failed: {}", err))?;
-    let class = classify_symmetry(&detected.operations)
+    let detect_options = DetectOptions::default();
+    let extracted = detect_preferred_symmetry(&structure, detect_options)?;
+    validate_group(&extracted.operations, detect_options.symprec)
+        .map_err(|err| format!("symmetry group validation failed: {}", err))?;
+    validate_lattice_consistency(
+        &extracted.operations,
+        structure.lattice,
+        detect_options.metric_tol,
+    )
+    .map_err(|err| format!("symmetry lattice validation failed: {}", err))?;
+    let class = classify_symmetry(&extracted.operations)
         .map_err(|err| format!("symmetry classification failed: {}", err))?;
+    let max_metric_deviation = max_lattice_deviation(&extracted.operations, structure.lattice);
 
     let properties_dir = run_dir.join("properties");
     fs::create_dir_all(&properties_dir).map_err(|err| {
@@ -2373,9 +2385,89 @@ fn export_symmetry_metadata(run_dir: &Path) -> CliResult<PathBuf> {
     })?;
 
     let out_path = properties_dir.join("symmetry_ops.json");
-    let content = format_symmetry_json(&detected, &class);
+    let content = format_symmetry_json(&extracted, &class, detect_options, max_metric_deviation);
     write_text(&out_path, &content)?;
     Ok(out_path)
+}
+
+#[derive(Clone, Debug)]
+struct ExtractedSymmetry {
+    source: &'static str,
+    operations: Vec<SymOp>,
+    candidate_rotations: Option<usize>,
+    driver_space_group_number: Option<i32>,
+    hall_number: Option<i32>,
+}
+
+fn detect_preferred_symmetry(
+    structure: &Structure,
+    options: DetectOptions,
+) -> CliResult<ExtractedSymmetry> {
+    if let Some(driver_result) = try_extract_symmetry_via_driver(structure, options) {
+        return Ok(driver_result);
+    }
+
+    let detected = detect_symmetry(structure, options)
+        .map_err(|err| format!("symmetry detection failed: {}", err))?;
+    Ok(ExtractedSymmetry {
+        source: "internal-detector",
+        operations: detected.operations,
+        candidate_rotations: Some(detected.candidate_rotations),
+        driver_space_group_number: None,
+        hall_number: None,
+    })
+}
+
+fn try_extract_symmetry_via_driver(
+    structure: &Structure,
+    options: DetectOptions,
+) -> Option<ExtractedSymmetry> {
+    let lattice = structure.lattice;
+    let positions = structure.positions.clone();
+    let atom_types = structure.atom_types.clone();
+
+    let extracted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dataset = symmetry::new(&lattice, &positions, &atom_types, options.symprec);
+        let n_ops = dataset.get_n_sym_ops();
+        if n_ops == 0 {
+            return None;
+        }
+
+        let mut ops = Vec::with_capacity(n_ops);
+        for idx in 0..n_ops {
+            let rotation = *dataset.get_rotation(idx);
+            let translation = dataset.get_translation(idx);
+            if translation.len() < 3 {
+                return None;
+            }
+            let op = SymOp::new(rotation, [translation[0], translation[1], translation[2]]).ok()?;
+            ops.push(op);
+        }
+
+        let operations = standardize_operations(&ops, options.symprec);
+        validate_group(&operations, options.symprec).ok()?;
+        validate_lattice_consistency(&operations, lattice, options.metric_tol).ok()?;
+
+        let space_group_number = dataset.get_spacegroup_number();
+        let hall_number = dataset.get_hall_number();
+        Some(ExtractedSymmetry {
+            source: "symmetry-driver",
+            operations,
+            candidate_rotations: None,
+            driver_space_group_number: if space_group_number > 0 {
+                Some(space_group_number)
+            } else {
+                None
+            },
+            hall_number: if hall_number > 0 {
+                Some(hall_number)
+            } else {
+                None
+            },
+        })
+    }));
+
+    extracted.ok().flatten()
 }
 
 fn load_structure_for_symmetry(crystal_path: &Path) -> CliResult<Structure> {
@@ -2407,18 +2499,40 @@ fn load_structure_for_symmetry(crystal_path: &Path) -> CliResult<Structure> {
 }
 
 fn format_symmetry_json(
-    detected: &symops::DetectedSymmetry,
+    extracted: &ExtractedSymmetry,
     class: &symops::SymmetryClassification,
+    detect_options: DetectOptions,
+    max_metric_deviation: f64,
 ) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "{{");
     let _ = writeln!(out, "  \"schema\": \"symmetry-ops-v1\",");
+    let _ = writeln!(out, "  \"detection_source\": \"{}\",", extracted.source);
+    match extracted.candidate_rotations {
+        Some(candidate_rotations) => {
+            let _ = writeln!(out, "  \"n_candidate_rotations\": {},", candidate_rotations);
+        }
+        None => {
+            let _ = writeln!(out, "  \"n_candidate_rotations\": null,");
+        }
+    }
+    let _ = writeln!(out, "  \"n_operations\": {},", extracted.operations.len());
+    let _ = writeln!(out, "  \"validation\": {{");
+    let _ = writeln!(out, "    \"group_closure\": true,");
+    let _ = writeln!(out, "    \"inverse_exists\": true,");
+    let _ = writeln!(out, "    \"determinant_pm_one\": true,");
+    let _ = writeln!(out, "    \"symprec\": {:.9e},", detect_options.symprec);
     let _ = writeln!(
         out,
-        "  \"n_candidate_rotations\": {},",
-        detected.candidate_rotations
+        "    \"lattice_consistency_tol\": {:.9e},",
+        detect_options.metric_tol
     );
-    let _ = writeln!(out, "  \"n_operations\": {},", detected.operations.len());
+    let _ = writeln!(
+        out,
+        "    \"max_metric_deviation\": {:.9e}",
+        max_metric_deviation
+    );
+    let _ = writeln!(out, "  }},");
     let _ = writeln!(out, "  \"classification\": {{");
     let _ = writeln!(
         out,
@@ -2441,18 +2555,45 @@ fn format_symmetry_json(
         "    \"max_rotation_order\": {},",
         class.max_rotation_order
     );
-    match class.space_group_number {
+    let resolved_space_group = extracted
+        .driver_space_group_number
+        .or_else(|| class.space_group_number.map(|x| x as i32));
+    match resolved_space_group {
         Some(number) => {
-            let _ = writeln!(out, "    \"space_group_number\": {}", number);
+            let _ = writeln!(out, "    \"space_group_number\": {},", number);
         }
         None => {
-            let _ = writeln!(out, "    \"space_group_number\": null");
+            let _ = writeln!(out, "    \"space_group_number\": null,");
+        }
+    }
+    match class.space_group_number {
+        Some(number) => {
+            let _ = writeln!(out, "    \"heuristic_space_group_number\": {},", number);
+        }
+        None => {
+            let _ = writeln!(out, "    \"heuristic_space_group_number\": null,");
+        }
+    }
+    match extracted.driver_space_group_number {
+        Some(number) => {
+            let _ = writeln!(out, "    \"driver_space_group_number\": {},", number);
+        }
+        None => {
+            let _ = writeln!(out, "    \"driver_space_group_number\": null,");
+        }
+    }
+    match extracted.hall_number {
+        Some(number) => {
+            let _ = writeln!(out, "    \"hall_number\": {}", number);
+        }
+        None => {
+            let _ = writeln!(out, "    \"hall_number\": null");
         }
     }
     let _ = writeln!(out, "  }},");
     let _ = writeln!(out, "  \"operations\": [");
 
-    for (idx, op) in detected.operations.iter().enumerate() {
+    for (idx, op) in extracted.operations.iter().enumerate() {
         let r = op.rotation();
         let t = op.translation();
         let _ = writeln!(out, "    {{");
@@ -2468,7 +2609,7 @@ fn format_symmetry_json(
             "      \"translation\": [{:.15}, {:.15}, {:.15}]",
             t[0], t[1], t[2]
         );
-        if idx + 1 == detected.operations.len() {
+        if idx + 1 == extracted.operations.len() {
             let _ = writeln!(out, "    }}");
         } else {
             let _ = writeln!(out, "    }},");

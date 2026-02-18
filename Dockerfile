@@ -26,20 +26,6 @@ RUN wget https://cmake.org/files/v3.25/cmake-3.25.0.tar.gz &&\
     ./bootstrap --prefix=/usr/local &&\
     make -j8 && make install && make clean
 
-
-# Install spglib from source
-RUN mkdir -p /opt/spglib && \
-    cd /opt/spglib && \
-    git clone https://github.com/spglib/spglib.git && \
-    cd spglib && \
-    mkdir build && \
-    cd build && \
-    cmake .. -DCMAKE_INSTALL_PREFIX=/opt/spglib && \
-    make && \
-    make install
-
-ENV LD_LIBRARY_PATH=/opt/spglib/lib:$LD_LIBRARY_PATH
-
 WORKDIR /usr/src/app
 # Command to run your application
 CMD ["bash"]

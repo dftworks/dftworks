@@ -26,9 +26,9 @@ pub trait KPTS {
 }
 
 // Factory for k-point generation modes.
-pub fn new(scheme: &str, crystal: &Crystal, _symmetry: bool) -> Box<dyn KPTS> {
+pub fn new(scheme: &str, crystal: &Crystal, symmetry: bool) -> Box<dyn KPTS> {
     match scheme {
-        "kmesh" => Box::new(KptsMesh::new(crystal)),
+        "kmesh" => Box::new(KptsMesh::new(crystal, symmetry)),
         "kline" => Box::new(KptsLine::new()),
         other => panic!("unsupported k-point scheme '{}'", other),
     }

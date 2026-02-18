@@ -1,0 +1,4 @@
+scf/out.*
+scf/*.hdf5
+relax/out.*
+relax/*.hdf5

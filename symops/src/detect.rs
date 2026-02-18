@@ -8,7 +8,7 @@
 //! 4. Verify full species-preserving atom mapping for each `(R, t)`.
 //! 5. Canonicalize, deduplicate, and optionally validate group properties.
 //!
-//! This is intentionally narrower than full spglib behavior. It is designed as
+//! This is intentionally narrower than full table-driven crystallographic behavior. It is designed as
 //! an internal bootstrap detector for dftworks workflows and can be expanded.
 
 use std::cmp::Ordering;
@@ -16,8 +16,8 @@ use std::error::Error;
 use std::fmt;
 
 use crate::{
-    approx_eq_mod_lattice, determinant, sym_op_approx_eq, validate_group, Rotation, SymOp,
-    SymOpError, Vector3,
+    approx_eq_mod_lattice, determinant, sym_op_approx_eq, validate_group,
+    validate_lattice_consistency, Rotation, SymOp, SymOpError, Vector3,
 };
 
 #[derive(Clone, Debug)]
@@ -70,7 +70,7 @@ pub struct DetectedSymmetry {
     pub candidate_rotations: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DetectionError {
     /// Input structure has no sites.
     EmptyStructure,
@@ -82,6 +82,8 @@ pub enum DetectionError {
     NoOperationsDetected,
     /// Construction of `SymOp` failed (typically non-unimodular rotation).
     InvalidOperation(SymOpError),
+    /// Operation set failed lattice-consistency checks (`R^T G R ≈ G`).
+    LatticeValidationFailed(SymOpError),
     /// Optional group validation failed.
     GroupValidationFailed(SymOpError),
 }
@@ -107,6 +109,9 @@ impl fmt::Display for DetectionError {
             ),
             DetectionError::InvalidOperation(err) => {
                 write!(f, "invalid symmetry operation: {}", err)
+            }
+            DetectionError::LatticeValidationFailed(err) => {
+                write!(f, "detected operations failed lattice validation: {}", err)
             }
             DetectionError::GroupValidationFailed(err) => {
                 write!(f, "detected operations failed group validation: {}", err)
@@ -195,6 +200,9 @@ pub fn detect_symmetry(
     }
 
     operations = standardize_operations(&operations, options.symprec);
+
+    validate_lattice_consistency(&operations, structure.lattice, options.metric_tol)
+        .map_err(DetectionError::LatticeValidationFailed)?;
 
     if options.validate_group {
         // Optional expensive check: useful for development and CI.
@@ -426,6 +434,17 @@ fn wrap_fractional(x: f64) -> f64 {
 mod tests {
     use super::*;
 
+    fn all_ops_map_atoms(
+        operations: &[SymOp],
+        positions: &[Vector3],
+        atom_types: &[i32],
+        tol: f64,
+    ) -> bool {
+        operations.iter().all(|op| {
+            is_valid_operation(*op.rotation(), op.translation(), positions, atom_types, tol)
+        })
+    }
+
     #[test]
     fn detect_cubic_single_atom() {
         let structure = Structure {
@@ -471,5 +490,44 @@ mod tests {
         assert!(standardized
             .iter()
             .any(|op| sym_op_approx_eq(op, &c2z, 1.0e-9)));
+    }
+
+    #[test]
+    fn detect_high_symmetry_structure_has_many_valid_mappings() {
+        let structure = Structure {
+            lattice: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            positions: vec![[0.0, 0.0, 0.0], [0.25, 0.25, 0.25]],
+            atom_types: vec![1, 1],
+        };
+        let detected = detect_symmetry(&structure, DetectOptions::default()).unwrap();
+        assert!(detected.operations.len() > 1);
+        assert!(all_ops_map_atoms(
+            &detected.operations,
+            &structure.positions,
+            &structure.atom_types,
+            1.0e-6
+        ));
+    }
+
+    #[test]
+    fn detect_low_symmetry_structure_is_identity_only() {
+        let structure = Structure {
+            lattice: [[1.0, 0.0, 0.0], [0.2, 1.1, 0.0], [0.3, 0.4, 0.9]],
+            positions: vec![[0.113, 0.271, 0.389], [0.457, 0.613, 0.791]],
+            atom_types: vec![1, 2],
+        };
+        let detected = detect_symmetry(&structure, DetectOptions::default()).unwrap();
+        assert_eq!(detected.operations.len(), 1);
+        assert!(sym_op_approx_eq(
+            &detected.operations[0],
+            &SymOp::identity(),
+            1.0e-9
+        ));
+        assert!(all_ops_map_atoms(
+            &detected.operations,
+            &structure.positions,
+            &structure.atom_types,
+            1.0e-6
+        ));
     }
 }

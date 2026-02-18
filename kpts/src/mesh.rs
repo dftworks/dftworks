@@ -14,10 +14,12 @@ pub struct KptsMesh {
     k_degeneracy: Vec<usize>,
     k_weight: Vec<f64>,
     k_mesh: [i32; 3],
+    nk_total: usize,
+    is_symmetry_reduced: bool,
 }
 
 impl KptsMesh {
-    pub fn new(crystal: &Crystal) -> KptsMesh {
+    pub fn new(crystal: &Crystal, use_symmetry: bool) -> KptsMesh {
         // Read Monkhorst-Pack mesh + shift from in.kmesh.
         let (k_mesh, is_shift) = read_k_mesh();
 
@@ -43,7 +45,7 @@ impl KptsMesh {
         }
 
         // Build irreducible reciprocal mesh using symmetry reduction.
-        let (kpts, _mapping, _k_unique, _nk_unique) = get_ir_reciprocal_mesh(
+        let (kpts, _mapping, k_unique, nk_unique) = get_ir_reciprocal_mesh(
             k_mesh,
             is_shift,
             &mut lattice,
@@ -52,26 +54,40 @@ impl KptsMesh {
             1.0E-05,
         );
 
-        let nk = kpts.len();
+        let nk_total = kpts.len();
+        let use_reduced = use_symmetry && !k_unique.is_empty() && k_unique.len() == nk_unique.len();
+        let nk = if use_reduced {
+            k_unique.len()
+        } else {
+            nk_total
+        };
 
         let mut k_frac = vec![Vector3f64::zeros(); nk];
-
         let mut k_weight = vec![0.0; nk];
-
         let mut k_degeneracy = vec![0; nk];
 
-        let nk_total = kpts.len();
-
-        for (ik, k) in kpts.iter().enumerate() {
-            k_frac[ik] = Vector3f64 {
-                x: k[0],
-                y: k[1],
-                z: k[2],
-            };
-
-            // Current path assigns uniform weights on the reduced list.
-            k_weight[ik] = 1.0 / nk_total as f64;
-            k_degeneracy[ik] = 1;
+        if use_reduced {
+            for ik in 0..nk {
+                let idx = k_unique[ik] as usize;
+                let k = kpts[idx];
+                k_frac[ik] = Vector3f64 {
+                    x: k[0],
+                    y: k[1],
+                    z: k[2],
+                };
+                k_degeneracy[ik] = nk_unique[ik];
+                k_weight[ik] = nk_unique[ik] as f64 / nk_total as f64;
+            }
+        } else {
+            for (ik, k) in kpts.iter().enumerate() {
+                k_frac[ik] = Vector3f64 {
+                    x: k[0],
+                    y: k[1],
+                    z: k[2],
+                };
+                k_weight[ik] = 1.0 / nk_total as f64;
+                k_degeneracy[ik] = 1;
+            }
         }
 
         KptsMesh {
@@ -79,6 +95,8 @@ impl KptsMesh {
             k_degeneracy,
             k_weight,
             k_mesh,
+            nk_total,
+            is_symmetry_reduced: use_reduced,
         }
     }
 }
@@ -121,29 +139,39 @@ impl KPTS for KptsMesh {
 
     fn display(&self) {
         println!();
-        println!("   {:-^88}", " k-points (fractional) ");
-        println!();
-
-        println!("{:12} {:^6} {}", "", "nkpt =", self.get_n_kpts());
+        if self.is_symmetry_reduced {
+            println!("   {:-^88}", " IR k-points (symmetry-reduced) ");
+            println!(
+                "   {:12} {} / {}",
+                "nkpt (IR/full) =",
+                self.get_n_kpts(),
+                self.nk_total
+            );
+        } else {
+            println!("   {:-^88}", " k-points (fractional) ");
+            println!("{:12} {:^6} {}", "", "nkpt =", self.get_n_kpts());
+        }
         println!();
 
         println!(
-            "{:12} {:^6} {:^16} {:^16} {:^16} {:^12}",
-            "", "index", "k1", "k2", "k3", "degeneracy"
+            "{:12} {:^6} {:^16} {:^16} {:^16} {:^12} {:^12}",
+            "", "index", "k1", "k2", "k3", "degeneracy", "weight"
         );
 
         for ik in 0..self.get_n_kpts() {
             let xk_frac = self.get_k_frac(ik);
             let xk_degeneracy = self.get_k_degeneracy(ik);
+            let xk_weight = self.get_k_weight(ik);
 
             println!(
-                "{:12} {:^6} {:16.12} {:16.12} {:16.12} {:^12}",
+                "{:12} {:^6} {:16.12} {:16.12} {:16.12} {:^12} {:12.8}",
                 "",
                 ik + 1,
                 xk_frac.x,
                 xk_frac.y,
                 xk_frac.z,
-                xk_degeneracy
+                xk_degeneracy,
+                xk_weight
             );
         }
     }

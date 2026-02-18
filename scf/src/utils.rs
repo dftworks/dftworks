@@ -12,6 +12,7 @@ use gvector::*;
 use itertools::multizip;
 use kpts::KPTS;
 use kscf::KSCF;
+use lattice::Lattice;
 use matrix::Matrix;
 use mixing::Mixing;
 use mpi_sys::MPI_COMM_WORLD;
@@ -242,6 +243,182 @@ pub fn print_k_point(ik: usize, xk_frac: Vector3f64, xk_cart: Vector3f64, npw_wf
     );
 }
 
+fn transpose_i32_3x3(m: &[[i32; 3]; 3]) -> [[i32; 3]; 3] {
+    let mut out = [[0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            out[i][j] = m[j][i];
+        }
+    }
+    out
+}
+
+fn transpose_f64_3x3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let mut out = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            out[i][j] = m[j][i];
+        }
+    }
+    out
+}
+
+fn matmul_3x3(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let mut out = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            for k in 0..3 {
+                out[i][j] += a[i][k] * b[k][j];
+            }
+        }
+    }
+    out
+}
+
+fn matvec_3x3(a: &[[f64; 3]; 3], v: &[f64; 3]) -> [f64; 3] {
+    let mut out = [0.0; 3];
+    for i in 0..3 {
+        out[i] = a[i][0] * v[0] + a[i][1] * v[1] + a[i][2] * v[2];
+    }
+    out
+}
+
+fn rotation_cart_from_fractional(latt: &Lattice, rotation_frac: &[[i32; 3]; 3]) -> [[f64; 3]; 3] {
+    let mut rot_cart = [[0.0; 3]; 3];
+
+    for col in 0..3 {
+        let mut e_cart = [0.0; 3];
+        e_cart[col] = 1.0;
+
+        let mut e_frac = [0.0; 3];
+        latt.cart_to_frac(&e_cart, &mut e_frac);
+
+        let mut e_frac_rot = [0.0; 3];
+        for i in 0..3 {
+            e_frac_rot[i] = rotation_frac[i][0] as f64 * e_frac[0]
+                + rotation_frac[i][1] as f64 * e_frac[1]
+                + rotation_frac[i][2] as f64 * e_frac[2];
+        }
+
+        let mut e_cart_rot = [0.0; 3];
+        latt.frac_to_cart(&e_frac_rot, &mut e_cart_rot);
+
+        for row in 0..3 {
+            rot_cart[row][col] = e_cart_rot[row];
+        }
+    }
+
+    rot_cart
+}
+
+fn matrix_to_array_3x3(m: &Matrix<f64>) -> [[f64; 3]; 3] {
+    let mut out = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            out[i][j] = m[[i, j]];
+        }
+    }
+    out
+}
+
+fn array_3x3_to_matrix(a: &[[f64; 3]; 3], m: &mut Matrix<f64>) {
+    for i in 0..3 {
+        for j in 0..3 {
+            m[[i, j]] = a[i][j];
+        }
+    }
+}
+
+fn project_force_by_symmetry(
+    crystal: &Crystal,
+    symdrv: &dyn SymmetryDriver,
+    force: &mut [Vector3f64],
+) {
+    let natoms = force.len();
+    let n_sym = symdrv.get_n_sym_ops();
+    if natoms == 0 || n_sym == 0 {
+        return;
+    }
+
+    let sym_atom = symdrv.get_sym_atom();
+    if sym_atom.len() != natoms || sym_atom.iter().any(|row| row.len() != n_sym) {
+        return;
+    }
+
+    let latt = crystal.get_latt();
+    let mut rot_inv_cart = Vec::<[[f64; 3]; 3]>::with_capacity(n_sym);
+    for isym in 0..n_sym {
+        let rot_inv_frac = transpose_i32_3x3(symdrv.get_rotation(isym));
+        rot_inv_cart.push(rotation_cart_from_fractional(latt, &rot_inv_frac));
+    }
+
+    let force_raw = force.to_vec();
+    for iat in 0..natoms {
+        let mut sum = [0.0; 3];
+        let mut n_accum = 0usize;
+
+        for isym in 0..n_sym {
+            let jat = sym_atom[iat][isym];
+            if jat >= natoms {
+                continue;
+            }
+
+            let fj = [force_raw[jat].x, force_raw[jat].y, force_raw[jat].z];
+            let fi = matvec_3x3(&rot_inv_cart[isym], &fj);
+
+            sum[0] += fi[0];
+            sum[1] += fi[1];
+            sum[2] += fi[2];
+            n_accum += 1;
+        }
+
+        if n_accum > 0 {
+            let inv = 1.0 / n_accum as f64;
+            force[iat].x = sum[0] * inv;
+            force[iat].y = sum[1] * inv;
+            force[iat].z = sum[2] * inv;
+        }
+    }
+}
+
+fn project_stress_by_symmetry(
+    crystal: &Crystal,
+    symdrv: &dyn SymmetryDriver,
+    stress: &mut Matrix<f64>,
+) {
+    let n_sym = symdrv.get_n_sym_ops();
+    if n_sym == 0 {
+        return;
+    }
+
+    let latt = crystal.get_latt();
+    let stress_raw = matrix_to_array_3x3(stress);
+    let mut stress_proj = [[0.0; 3]; 3];
+
+    for isym in 0..n_sym {
+        let rot_cart = rotation_cart_from_fractional(latt, symdrv.get_rotation(isym));
+        let rot_cart_t = transpose_f64_3x3(&rot_cart);
+        let tmp = matmul_3x3(&rot_cart, &stress_raw);
+        let s_rot = matmul_3x3(&tmp, &rot_cart_t);
+
+        for i in 0..3 {
+            for j in 0..3 {
+                stress_proj[i][j] += s_rot[i][j];
+            }
+        }
+    }
+
+    let inv = 1.0 / n_sym as f64;
+    for i in 0..3 {
+        for j in 0..3 {
+            stress_proj[i][j] *= inv;
+        }
+    }
+
+    array_3x3_to_matrix(&stress_proj, stress);
+    stress.symmetrize();
+}
+
 pub fn compute_force(
     control: &Control,
     crystal: &Crystal,
@@ -289,7 +466,7 @@ pub fn compute_force(
         MPI_COMM_WORLD,
     );
 
-    let force_ewald = ewald.get_force();
+    let mut force_ewald = ewald.get_force().to_vec();
 
     let mut force_nlcc = vec![Vector3f64::zeros(); natoms];
 
@@ -301,6 +478,13 @@ pub fn compute_force(
         vxcg.as_non_spin().unwrap(),
         &mut force_nlcc,
     );
+
+    if control.get_symmetry() {
+        project_force_by_symmetry(crystal, symdrv, &mut force_loc);
+        project_force_by_symmetry(crystal, symdrv, &mut force_vnl);
+        project_force_by_symmetry(crystal, symdrv, &mut force_nlcc);
+        project_force_by_symmetry(crystal, symdrv, &mut force_ewald);
+    }
 
     for iat in 0..natoms {
         force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat];
@@ -368,10 +552,10 @@ pub fn compute_stress(
 
     dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
 
-    let stress_hartree = stress::hartree(gvec, pwden, rhog.as_non_spin().unwrap());
-    let stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, rhog.as_non_spin().unwrap());
+    let mut stress_hartree = stress::hartree(gvec, pwden, rhog.as_non_spin().unwrap());
+    let mut stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, rhog.as_non_spin().unwrap());
 
-    let stress_xc = stress::xc(
+    let mut stress_xc = stress::xc(
         crystal.get_latt(),
         rho_3d.as_non_spin_mut().unwrap(),
         rhocore_3d,
@@ -379,9 +563,20 @@ pub fn compute_stress(
         &exc_3d,
     );
 
-    let stress_xc_nlcc = stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg.as_non_spin().unwrap());
+    let mut stress_xc_nlcc =
+        stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg.as_non_spin().unwrap());
 
-    let stress_ewald = ewald.get_stress();
+    let mut stress_ewald = ewald.get_stress().clone();
+
+    if control.get_symmetry() {
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_kin);
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_hartree);
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_xc);
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_xc_nlcc);
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_loc);
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_vnl);
+        project_stress_by_symmetry(crystal, symdrv, &mut stress_ewald);
+    }
 
     for i in 0..3 {
         for j in 0..3 {

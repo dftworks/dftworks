@@ -13,9 +13,67 @@ use num_traits::identities::Zero;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use pwdensity::*;
+use symmetry::SymmetryDriver;
 use types::*;
 use vector3::Vector3f64;
 use vnl::VNL;
+
+fn display_symmetry_equivalent_atoms(crystal: &Crystal, symdrv: &dyn SymmetryDriver) {
+    let sym_atom = symdrv.get_sym_atom();
+    let natoms = sym_atom.len();
+    let n_sym = symdrv.get_n_sym_ops();
+
+    println!();
+    println!("   {:-^88}", " symmetry-equivalent atoms ");
+    println!("   mapping convention: atom(i) --sym_op--> atom(j), 1-based atom index");
+    println!("   n_atoms = {}, n_sym_ops = {}", natoms, n_sym);
+
+    let atom_species = crystal.get_atom_species();
+    for (iat, mapping_row) in sym_atom.iter().enumerate() {
+        let mapped_one_based: Vec<usize> = mapping_row
+            .iter()
+            .map(|&jat| jat.saturating_add(1))
+            .collect();
+        let species = atom_species.get(iat).map(|s| s.as_str()).unwrap_or("?");
+        println!(
+            "   atom {:>4} {:<6} -> {:?}",
+            iat + 1,
+            format!("({})", species),
+            mapped_one_based
+        );
+    }
+
+    let mut visited = vec![false; natoms];
+    let mut classes: Vec<Vec<usize>> = Vec::new();
+
+    for iat in 0..natoms {
+        if visited[iat] {
+            continue;
+        }
+
+        let mut class = vec![iat];
+        if let Some(row) = sym_atom.get(iat) {
+            for &jat in row.iter() {
+                if jat < natoms {
+                    class.push(jat);
+                }
+            }
+        }
+        class.sort_unstable();
+        class.dedup();
+
+        for &jat in class.iter() {
+            visited[jat] = true;
+        }
+        classes.push(class);
+    }
+
+    println!("   equivalence classes ({} total)", classes.len());
+    for (iclass, class) in classes.iter().enumerate() {
+        let one_based: Vec<usize> = class.iter().map(|&iat| iat + 1).collect();
+        println!("   class {:>4} -> {:?}", iclass + 1, one_based);
+    }
+}
 
 fn main() {
     // Top-level program flow:
@@ -274,7 +332,38 @@ fn main() {
             EPS6,
         );
 
-        //symdrv.display();
+        if control.get_symmetry() && dwmpi::is_root() {
+            println!();
+            println!("   {:-^88}", " symmetry analysis ");
+            symdrv.display();
+
+            let n_sym = symdrv.get_n_sym_ops();
+            let fft_comm_ops =
+                symdrv.get_fft_commensurate_ops(fftgrid.get_size(), kpts.get_k_mesh(), EPS6);
+            println!(
+                "   commensurate_ops (fft+kmesh) = {} / {}",
+                fft_comm_ops.len(),
+                n_sym
+            );
+
+            let kmesh = kpts.get_k_mesh();
+            if kmesh[0] > 0 && kmesh[1] > 0 && kmesh[2] > 0 {
+                let nk_full = kmesh[0] as usize * kmesh[1] as usize * kmesh[2] as usize;
+                println!(
+                    "   ir_kpoints (symmetry-reduced) = {} / {}",
+                    kpts.get_n_kpts(),
+                    nk_full
+                );
+            }
+
+            println!(
+                "   sym_atom mapping dimensions   = {} atoms x {} ops",
+                symdrv.get_sym_atom().len(),
+                n_sym
+            );
+
+            display_symmetry_equivalent_atoms(&crystal, symdrv.as_ref());
+        }
 
         //
 

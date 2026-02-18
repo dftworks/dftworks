@@ -37,10 +37,9 @@ Running <code>source ~/.bash_profile</code> will update PATH.
 * blas
 * fftw
 
-## Symmetry analysis library
+## Symmetry analysis
 
-[Spglib](http://spglib.github.io/spglib/
-) is used for finding and handling crystal symmetries. It should be installed into the directory <code>/opt/spglib/lib</code>. If the library is installed in other directories, the library location specified in symmetry/build.rs should be updated.
+Symmetry detection and operations are implemented in-tree (self-contained) via the `symmetry` and `symops` crates. No external symmetry library installation is required.
 
 ## HDF5
 
@@ -194,6 +193,7 @@ End-to-end examples are provided in:
 * `test_example/si-oncv/wannier90-spin` (collinear spin: `up`/`dn` channels)
 * `test_example/si-oncv/wannier90-projected` (non-spin with explicit `sp3` projectors, `num_wann = 8`)
 * `test_example/si-oncv/workflow-pipeline-yaml` (full YAML pipeline with `scf -> nscf -> bands -> wannier`)
+* `test_example/si-oncv/symmetry-enabled` (SCF + relax with `symmetry = true` and k-mesh/force/stress symmetry checks)
 
 # Test the code
 
