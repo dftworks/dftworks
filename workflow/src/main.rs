@@ -170,7 +170,10 @@ fn run_stage_command(args: &[String]) -> CliResult<()> {
 
 fn run_properties_command(args: &[String]) -> CliResult<()> {
     if args.len() < 4 {
-        return Err("usage: dwf properties <run_dir> <scf|nscf|bands> [--log <path>]".to_string());
+        return Err(
+            "usage: dwf properties <run_dir> <scf|nscf|bands> [--log <path>] [--dos-sigma <eV>] [--dos-ne <N>] [--dos-emin <eV>] [--dos-emax <eV>] [--dos-format <dat|csv|json>] [--fermi-tol <eV>]"
+                .to_string(),
+        );
     }
 
     let run_dir = PathBuf::from(&args[2]);
@@ -190,6 +193,8 @@ fn run_properties_command(args: &[String]) -> CliResult<()> {
     }
 
     let mut log_path = run_dir.join("out.pw.log");
+    let mut options = property::PropertyExportOptions::default();
+
     let mut i = 4usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -205,6 +210,63 @@ fn run_properties_command(args: &[String]) -> CliResult<()> {
                     run_dir.join(provided)
                 };
             }
+            "--dos-sigma" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --dos-sigma".to_string());
+                }
+                let sigma = args[i].parse::<f64>().map_err(|err| {
+                    format!("invalid --dos-sigma '{}': {}", args[i], err)
+                })?;
+                options.dos_sigma_ev = Some(sigma);
+            }
+            "--dos-ne" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --dos-ne".to_string());
+                }
+                let ne = args[i]
+                    .parse::<usize>()
+                    .map_err(|err| format!("invalid --dos-ne '{}': {}", args[i], err))?;
+                options.dos_ne = Some(ne);
+            }
+            "--dos-emin" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --dos-emin".to_string());
+                }
+                let emin = args[i]
+                    .parse::<f64>()
+                    .map_err(|err| format!("invalid --dos-emin '{}': {}", args[i], err))?;
+                options.dos_emin_ev = Some(emin);
+            }
+            "--dos-emax" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --dos-emax".to_string());
+                }
+                let emax = args[i]
+                    .parse::<f64>()
+                    .map_err(|err| format!("invalid --dos-emax '{}': {}", args[i], err))?;
+                options.dos_emax_ev = Some(emax);
+            }
+            "--dos-format" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --dos-format".to_string());
+                }
+                options.dos_format = parse_dos_output_format(&args[i])?;
+            }
+            "--fermi-tol" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --fermi-tol".to_string());
+                }
+                let tol = args[i]
+                    .parse::<f64>()
+                    .map_err(|err| format!("invalid --fermi-tol '{}': {}", args[i], err))?;
+                options.fermi_tol_ev = tol;
+            }
             opt => return Err(format!("unknown option '{}'", opt)),
         }
         i += 1;
@@ -217,7 +279,7 @@ fn run_properties_command(args: &[String]) -> CliResult<()> {
         ));
     }
 
-    property::export_stage_properties(&run_dir, stage, &log_path, 0.0)
+    property::export_stage_properties_with_options(&run_dir, stage, &log_path, 0.0, &options)
         .map_err(|err| format!("failed to export properties: {}", err))?;
 
     println!(
@@ -225,6 +287,18 @@ fn run_properties_command(args: &[String]) -> CliResult<()> {
         run_dir.join("properties").display()
     );
     Ok(())
+}
+
+fn parse_dos_output_format(raw: &str) -> CliResult<property::DosOutputFormat> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "dat" => Ok(property::DosOutputFormat::Dat),
+        "csv" => Ok(property::DosOutputFormat::Csv),
+        "json" => Ok(property::DosOutputFormat::Json),
+        other => Err(format!(
+            "invalid --dos-format '{}'; expected one of: dat,csv,json",
+            other
+        )),
+    }
 }
 
 fn is_supported_stage(stage: &str) -> bool {
@@ -2343,7 +2417,7 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  dwf validate <case_dir> [--config <yaml>]");
     eprintln!("  dwf run <scf|nscf|bands|wannier|pipeline> <case_dir> [options]");
-    eprintln!("  dwf properties <run_dir> <scf|nscf|bands> [--log <path>]");
+    eprintln!("  dwf properties <run_dir> <scf|nscf|bands> [--log <path>] [--dos-sigma <eV>] [--dos-ne <N>] [--dos-emin <eV>] [--dos-emax <eV>] [--dos-format <dat|csv|json>] [--fermi-tol <eV>]");
     eprintln!("  dwf status <case_dir> [--config <yaml>]");
     eprintln!();
     eprintln!("Run options:");

@@ -23,11 +23,11 @@ Deliverable:
 
 ## Level 2 - Basic electronic properties (Simple -> Medium)
 
-- [ ] Implement total DOS from NSCF eigenvalues with configurable smearing/broadening.
-- [ ] Implement automatic band gap analysis (direct/indirect, VBM/CBM k-point indices).
-- [ ] Add Fermi-level consistency checks between SCF and postprocessing.
-- [ ] Add CLI options for DOS grids and output formats.
-- [ ] Add tests using a known semiconductor case (gap and DOS shape sanity checks).
+- [x] Implement total DOS from NSCF eigenvalues with configurable smearing/broadening.
+- [x] Implement automatic band gap analysis (direct/indirect, VBM/CBM k-point indices).
+- [x] Add Fermi-level consistency checks between SCF and postprocessing.
+- [x] Add CLI options for DOS grids and output formats.
+- [x] Add tests using a known semiconductor case (gap and DOS shape sanity checks).
 
 Deliverable:
 - Reproducible `dos.dat` and `band_gap.json` for a standard test case.

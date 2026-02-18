@@ -72,7 +72,7 @@ cargo run -p workflow --bin dwf -- run bands <case_dir> --from latest
 cargo run -p workflow --bin dwf -- run wannier <case_dir> --from latest
 cargo run -p workflow --bin dwf -- run pipeline <case_dir> [--stages scf,nscf,bands,wannier]
 cargo run -p workflow --bin dwf -- status <case_dir> [--config <yaml>]
-cargo run -p workflow --bin dwf -- properties <run_dir> <scf|nscf|bands> [--log out.pw.log]
+cargo run -p workflow --bin dwf -- properties <run_dir> <scf|nscf|bands> [--log out.pw.log] [--dos-sigma 0.1] [--dos-ne 500] [--dos-emin -10] [--dos-emax 20] [--dos-format dat|csv|json] [--fermi-tol 0.2]
 ```
 
 For `scf` / `nscf` / `bands`, `dwf run` now writes standardized machine-readable outputs under:
@@ -84,6 +84,9 @@ For `scf` / `nscf` / `bands`, `dwf run` now writes standardized machine-readable
   energy.csv      # when available
   force.csv       # when available
   stress.csv      # when available
+  dos.dat         # nscf: total DOS from NSCF eigenvalues
+  band_gap.json   # nscf: direct/indirect gap + VBM/CBM k-point indices
+  fermi_consistency.json   # nscf: SCF/NSCF/postprocess Fermi checks
 ```
 
 Recommended case layout:

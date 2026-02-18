@@ -1,8 +1,46 @@
+use std::collections::{BTreeMap, HashSet};
+use std::f64::consts::PI;
 use std::fs;
 use std::path::Path;
 
 pub const SCHEMA_VERSION: &str = "property-v1";
 pub const RY_TO_EV: f64 = 13.605_693_009;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DosOutputFormat {
+    Dat,
+    Csv,
+    Json,
+}
+
+impl Default for DosOutputFormat {
+    fn default() -> Self {
+        DosOutputFormat::Dat
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PropertyExportOptions {
+    pub dos_sigma_ev: Option<f64>,
+    pub dos_ne: Option<usize>,
+    pub dos_emin_ev: Option<f64>,
+    pub dos_emax_ev: Option<f64>,
+    pub dos_format: DosOutputFormat,
+    pub fermi_tol_ev: f64,
+}
+
+impl Default for PropertyExportOptions {
+    fn default() -> Self {
+        Self {
+            dos_sigma_ev: None,
+            dos_ne: None,
+            dos_emin_ev: None,
+            dos_emax_ev: None,
+            dos_format: DosOutputFormat::Dat,
+            fermi_tol_ev: 0.2,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct EnergySummary {
@@ -23,6 +61,7 @@ pub struct ForceEntry {
 #[derive(Clone, Debug, Default)]
 pub struct ParsedPwLog {
     pub energy: Option<EnergySummary>,
+    pub fermi_ev: Option<f64>,
     pub forces: Vec<ForceEntry>,
     pub stress_total_kbar: Option<[[f64; 3]; 3]>,
     pub pw_total_seconds: Option<f64>,
@@ -45,6 +84,7 @@ pub fn parse_pw_log(text: &str) -> ParsedPwLog {
             parsed.energy = Some(energy);
         }
     }
+    parsed.fermi_ev = parse_last_fermi_ev(&lines);
 
     parsed.forces = parse_total_force_block(&lines);
     parsed.stress_total_kbar = parse_total_stress_block(&lines);
@@ -63,6 +103,22 @@ pub fn export_stage_properties(
     stage: &str,
     log_path: &Path,
     workflow_wall_seconds: f64,
+) -> Result<(), String> {
+    export_stage_properties_with_options(
+        run_dir,
+        stage,
+        log_path,
+        workflow_wall_seconds,
+        &PropertyExportOptions::default(),
+    )
+}
+
+pub fn export_stage_properties_with_options(
+    run_dir: &Path,
+    stage: &str,
+    log_path: &Path,
+    workflow_wall_seconds: f64,
+    options: &PropertyExportOptions,
 ) -> Result<(), String> {
     let log = fs::read_to_string(log_path)
         .map_err(|err| format!("failed to read stage log '{}': {}", log_path.display(), err))?;
@@ -101,6 +157,10 @@ pub fn export_stage_properties(
 
     if let Some(stress) = parsed.stress_total_kbar.as_ref() {
         write_stress_csv(&properties_dir.join("stress.csv"), stress)?;
+    }
+
+    if stage == "nscf" {
+        export_level2_properties(run_dir, &properties_dir, &parsed, options)?;
     }
 
     Ok(())
@@ -318,6 +378,703 @@ fn parse_f64_list(text: &str) -> Vec<f64> {
 fn parse_first_u64(text: &str) -> Option<u64> {
     text.split_whitespace()
         .find_map(|token| token.parse::<u64>().ok())
+}
+
+#[derive(Clone, Debug)]
+struct EigChannel {
+    label: String,
+    energies_by_k: Vec<Vec<f64>>,
+}
+
+#[derive(Clone, Debug)]
+struct EigDataset {
+    seed: String,
+    spin_polarized: bool,
+    nkpt: usize,
+    channels: Vec<EigChannel>,
+}
+
+#[derive(Clone, Debug)]
+struct BandEdge {
+    energy_ev: f64,
+    k_index: usize,
+    channel: String,
+}
+
+#[derive(Clone, Debug)]
+struct BandGapSummary {
+    fermi_ev: f64,
+    is_metal: bool,
+    vbm: Option<BandEdge>,
+    cbm: Option<BandEdge>,
+    indirect_gap_ev: Option<f64>,
+    direct_gap_ev: Option<f64>,
+    direct_gap_k_index: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct FermiConsistencySummary {
+    scf_fermi_ev: Option<f64>,
+    nscf_fermi_ev: Option<f64>,
+    postprocess_fermi_ev: f64,
+    tolerance_ev: f64,
+    scf_vs_nscf_delta_ev: Option<f64>,
+    scf_vs_nscf_pass: Option<bool>,
+    postprocess_in_gap: Option<bool>,
+}
+
+fn export_level2_properties(
+    run_dir: &Path,
+    properties_dir: &Path,
+    parsed: &ParsedPwLog,
+    options: &PropertyExportOptions,
+) -> Result<(), String> {
+    let eig = discover_eig_dataset(run_dir)?;
+    let (ctrl_sigma_ev, ctrl_ne) = read_dos_defaults_from_ctrl(&run_dir.join("in.ctrl"));
+
+    let sigma_ev = options.dos_sigma_ev.or(ctrl_sigma_ev).unwrap_or(0.1);
+    if !(sigma_ev.is_finite() && sigma_ev > 0.0) {
+        return Err(format!(
+            "invalid DOS sigma: expected a positive finite eV value, got {}",
+            sigma_ev
+        ));
+    }
+
+    let ne = options.dos_ne.or(ctrl_ne).unwrap_or(500);
+    if ne < 2 {
+        return Err(format!(
+            "invalid DOS grid size: expected --dos-ne >= 2, got {}",
+            ne
+        ));
+    }
+
+    let dos_points = compute_total_dos(
+        &eig,
+        sigma_ev,
+        ne,
+        options.dos_emin_ev,
+        options.dos_emax_ev,
+    )?;
+
+    let dos_dat_path = properties_dir.join("dos.dat");
+    write_dos_dat(&dos_dat_path, &dos_points)?;
+
+    match options.dos_format {
+        DosOutputFormat::Dat => {}
+        DosOutputFormat::Csv => {
+            write_dos_csv(&properties_dir.join("dos.csv"), &dos_points)?;
+        }
+        DosOutputFormat::Json => {
+            write_dos_json(&properties_dir.join("dos.json"), &dos_points)?;
+        }
+    }
+
+    let nscf_fermi_ev = parsed.fermi_ev.ok_or_else(|| {
+        "failed to parse Fermi level from NSCF log; required for band-gap analysis".to_string()
+    })?;
+    let gap = analyze_band_gap(&eig, nscf_fermi_ev);
+    write_band_gap_json(&properties_dir.join("band_gap.json"), &eig, &gap)?;
+
+    let scf_fermi_ev = resolve_source_scf_fermi_ev(run_dir);
+    let fermi_consistency =
+        build_fermi_consistency_summary(scf_fermi_ev, Some(nscf_fermi_ev), &gap, options.fermi_tol_ev);
+    write_fermi_consistency_json(
+        &properties_dir.join("fermi_consistency.json"),
+        &fermi_consistency,
+    )?;
+
+    Ok(())
+}
+
+fn read_dos_defaults_from_ctrl(ctrl_path: &Path) -> (Option<f64>, Option<usize>) {
+    let Ok(text) = fs::read_to_string(ctrl_path) else {
+        return (None, None);
+    };
+
+    let mut sigma = None;
+    let mut ne = None;
+    for raw_line in text.lines() {
+        let line = strip_comments(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        match key.as_str() {
+            "dos_sigma" => sigma = parse_float_token(value),
+            "dos_ne" => ne = value.parse::<usize>().ok(),
+            _ => {}
+        }
+    }
+
+    (sigma, ne)
+}
+
+fn discover_eig_dataset(run_dir: &Path) -> Result<EigDataset, String> {
+    let entries = fs::read_dir(run_dir)
+        .map_err(|err| format!("failed to read '{}': {}", run_dir.display(), err))?;
+
+    let mut plain_seeds = Vec::<String>::new();
+    let mut up_seeds = HashSet::<String>::new();
+    let mut dn_seeds = HashSet::<String>::new();
+
+    for entry in entries {
+        let path = entry
+            .map_err(|err| format!("failed to inspect run artifact entry: {}", err))?
+            .path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|x| x.to_str()) else {
+            continue;
+        };
+        if let Some(seed) = name.strip_suffix(".up.eig") {
+            up_seeds.insert(seed.to_string());
+            continue;
+        }
+        if let Some(seed) = name.strip_suffix(".dn.eig") {
+            dn_seeds.insert(seed.to_string());
+            continue;
+        }
+        if let Some(seed) = name.strip_suffix(".eig") {
+            plain_seeds.push(seed.to_string());
+        }
+    }
+
+    if !up_seeds.is_empty() || !dn_seeds.is_empty() {
+        let mut spin_seeds: Vec<String> = up_seeds
+            .intersection(&dn_seeds)
+            .map(|s| s.to_string())
+            .collect();
+        spin_seeds.sort();
+
+        if spin_seeds.is_empty() {
+            return Err(format!(
+                "found spin-resolved eig files in '{}' but no matching '<seed>.up.eig' and '<seed>.dn.eig' pair",
+                run_dir.display()
+            ));
+        }
+        if spin_seeds.len() > 1 {
+            return Err(format!(
+                "multiple spin eig seeds found in '{}': {}; keep one seed per run",
+                run_dir.display(),
+                spin_seeds.join(",")
+            ));
+        }
+
+        let seed = spin_seeds[0].clone();
+        let up = parse_eig_file(&run_dir.join(format!("{}.up.eig", seed)))?;
+        let dn = parse_eig_file(&run_dir.join(format!("{}.dn.eig", seed)))?;
+        if up.len() != dn.len() {
+            return Err(format!(
+                "spin eig channel mismatch for seed '{}': up nkpt={} vs dn nkpt={}",
+                seed,
+                up.len(),
+                dn.len()
+            ));
+        }
+
+        return Ok(EigDataset {
+            seed,
+            spin_polarized: true,
+            nkpt: up.len(),
+            channels: vec![
+                EigChannel {
+                    label: "up".to_string(),
+                    energies_by_k: up,
+                },
+                EigChannel {
+                    label: "dn".to_string(),
+                    energies_by_k: dn,
+                },
+            ],
+        });
+    }
+
+    plain_seeds.sort();
+    plain_seeds.dedup();
+    if plain_seeds.is_empty() {
+        return Err(format!(
+            "no eig file found in '{}' (expected '<seed>.eig' from NSCF with wannier90_export=true)",
+            run_dir.display()
+        ));
+    }
+    if plain_seeds.len() > 1 {
+        return Err(format!(
+            "multiple eig seeds found in '{}': {}; keep one seed per run",
+            run_dir.display(),
+            plain_seeds.join(",")
+        ));
+    }
+
+    let seed = plain_seeds[0].clone();
+    let nonspin = parse_eig_file(&run_dir.join(format!("{}.eig", seed)))?;
+    let nkpt = nonspin.len();
+    Ok(EigDataset {
+        seed,
+        spin_polarized: false,
+        nkpt,
+        channels: vec![EigChannel {
+            label: "nonspin".to_string(),
+            energies_by_k: nonspin,
+        }],
+    })
+}
+
+fn parse_eig_file(path: &Path) -> Result<Vec<Vec<f64>>, String> {
+    let text =
+        fs::read_to_string(path).map_err(|err| format!("failed to read '{}': {}", path.display(), err))?;
+
+    let mut by_k: BTreeMap<usize, Vec<(usize, f64)>> = BTreeMap::new();
+    for (line_no, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 3 {
+            return Err(format!(
+                "invalid eig line {} in '{}': expected '<band> <k> <energy_eV>'",
+                line_no + 1,
+                path.display()
+            ));
+        }
+
+        let iband = fields[0].parse::<usize>().map_err(|err| {
+            format!(
+                "invalid band index at line {} in '{}': {}",
+                line_no + 1,
+                path.display(),
+                err
+            )
+        })?;
+        let ik = fields[1].parse::<usize>().map_err(|err| {
+            format!(
+                "invalid k-point index at line {} in '{}': {}",
+                line_no + 1,
+                path.display(),
+                err
+            )
+        })?;
+        let energy_ev = parse_float_token(fields[2]).ok_or_else(|| {
+            format!(
+                "invalid eigenvalue at line {} in '{}': '{}'",
+                line_no + 1,
+                path.display(),
+                fields[2]
+            )
+        })?;
+
+        by_k.entry(ik).or_default().push((iband, energy_ev));
+    }
+
+    if by_k.is_empty() {
+        return Err(format!("eig file '{}' is empty", path.display()));
+    }
+
+    let nkpt = by_k.keys().copied().max().unwrap_or(0);
+    let mut out = Vec::with_capacity(nkpt);
+    let mut expected_bands = None::<usize>;
+
+    for ik in 1..=nkpt {
+        let mut kbands = by_k.remove(&ik).ok_or_else(|| {
+            format!(
+                "missing k-point {} in eig file '{}'; expected contiguous 1..{}",
+                ik,
+                path.display(),
+                nkpt
+            )
+        })?;
+        kbands.sort_by_key(|(ib, _)| *ib);
+
+        for window in kbands.windows(2) {
+            if window[0].0 == window[1].0 {
+                return Err(format!(
+                    "duplicate band index {} at k-point {} in '{}'",
+                    window[0].0,
+                    ik,
+                    path.display()
+                ));
+            }
+        }
+
+        let energies: Vec<f64> = kbands.into_iter().map(|(_, e)| e).collect();
+        if let Some(nbands) = expected_bands {
+            if energies.len() != nbands {
+                return Err(format!(
+                    "inconsistent band count in '{}': k-point {} has {} bands, expected {}",
+                    path.display(),
+                    ik,
+                    energies.len(),
+                    nbands
+                ));
+            }
+        } else {
+            expected_bands = Some(energies.len());
+        }
+        out.push(energies);
+    }
+
+    Ok(out)
+}
+
+fn compute_total_dos(
+    eig: &EigDataset,
+    sigma_ev: f64,
+    ne: usize,
+    emin_override: Option<f64>,
+    emax_override: Option<f64>,
+) -> Result<Vec<(f64, f64)>, String> {
+    if eig.nkpt == 0 {
+        return Err("empty eig dataset: nkpt=0".to_string());
+    }
+
+    let k_weight = 1.0 / eig.nkpt as f64;
+    let channel_weight = if eig.spin_polarized { 1.0 } else { 2.0 };
+
+    let mut states = Vec::<(f64, f64)>::new();
+    for channel in eig.channels.iter() {
+        for bands in channel.energies_by_k.iter() {
+            for &energy_ev in bands.iter() {
+                states.push((energy_ev, channel_weight * k_weight));
+            }
+        }
+    }
+
+    if states.is_empty() {
+        return Err("empty eig dataset: no states available".to_string());
+    }
+
+    let mut min_e = f64::INFINITY;
+    let mut max_e = f64::NEG_INFINITY;
+    for (energy_ev, _) in states.iter() {
+        min_e = min_e.min(*energy_ev);
+        max_e = max_e.max(*energy_ev);
+    }
+
+    let default_padding = (5.0 * sigma_ev).max(0.5);
+    let emin = emin_override.unwrap_or(min_e - default_padding);
+    let emax = emax_override.unwrap_or(max_e + default_padding);
+    if !(emax.is_finite() && emin.is_finite() && emax > emin) {
+        return Err(format!(
+            "invalid DOS energy window: emin={}, emax={}",
+            emin, emax
+        ));
+    }
+
+    let norm = 1.0 / (sigma_ev * (2.0 * PI).sqrt());
+    let mut out = Vec::with_capacity(ne);
+    for i in 0..ne {
+        let t = i as f64 / (ne - 1) as f64;
+        let energy = emin + (emax - emin) * t;
+        let mut dos = 0.0;
+        for (state_energy, state_weight) in states.iter() {
+            let x = (energy - state_energy) / sigma_ev;
+            dos += state_weight * norm * (-0.5 * x * x).exp();
+        }
+        out.push((energy, dos));
+    }
+
+    Ok(out)
+}
+
+fn analyze_band_gap(eig: &EigDataset, fermi_ev: f64) -> BandGapSummary {
+    const EPS: f64 = 1.0e-9;
+
+    let mut global_vbm: Option<BandEdge> = None;
+    let mut global_cbm: Option<BandEdge> = None;
+    let mut direct_gap_ev: Option<f64> = None;
+    let mut direct_gap_k_index: Option<usize> = None;
+
+    for ik in 0..eig.nkpt {
+        let mut vbm_k: Option<BandEdge> = None;
+        let mut cbm_k: Option<BandEdge> = None;
+
+        for channel in eig.channels.iter() {
+            if ik >= channel.energies_by_k.len() {
+                continue;
+            }
+            for &energy_ev in channel.energies_by_k[ik].iter() {
+                if energy_ev <= fermi_ev + EPS {
+                    let edge = BandEdge {
+                        energy_ev,
+                        k_index: ik + 1,
+                        channel: channel.label.clone(),
+                    };
+                    if global_vbm
+                        .as_ref()
+                        .map(|current| edge.energy_ev > current.energy_ev)
+                        .unwrap_or(true)
+                    {
+                        global_vbm = Some(edge.clone());
+                    }
+                    if vbm_k
+                        .as_ref()
+                        .map(|current| edge.energy_ev > current.energy_ev)
+                        .unwrap_or(true)
+                    {
+                        vbm_k = Some(edge);
+                    }
+                } else {
+                    let edge = BandEdge {
+                        energy_ev,
+                        k_index: ik + 1,
+                        channel: channel.label.clone(),
+                    };
+                    if global_cbm
+                        .as_ref()
+                        .map(|current| edge.energy_ev < current.energy_ev)
+                        .unwrap_or(true)
+                    {
+                        global_cbm = Some(edge.clone());
+                    }
+                    if cbm_k
+                        .as_ref()
+                        .map(|current| edge.energy_ev < current.energy_ev)
+                        .unwrap_or(true)
+                    {
+                        cbm_k = Some(edge);
+                    }
+                }
+            }
+        }
+
+        if let (Some(vbm), Some(cbm)) = (vbm_k.as_ref(), cbm_k.as_ref()) {
+            let gap = cbm.energy_ev - vbm.energy_ev;
+            if direct_gap_ev.map(|current| gap < current).unwrap_or(true) {
+                direct_gap_ev = Some(gap);
+                direct_gap_k_index = Some(ik + 1);
+            }
+        }
+    }
+
+    let indirect_gap_ev = match (global_vbm.as_ref(), global_cbm.as_ref()) {
+        (Some(vbm), Some(cbm)) => Some(cbm.energy_ev - vbm.energy_ev),
+        _ => None,
+    };
+    let is_metal = indirect_gap_ev.map(|gap| gap <= 1.0e-6).unwrap_or(true);
+
+    BandGapSummary {
+        fermi_ev,
+        is_metal,
+        vbm: global_vbm,
+        cbm: global_cbm,
+        indirect_gap_ev,
+        direct_gap_ev,
+        direct_gap_k_index,
+    }
+}
+
+fn resolve_source_scf_fermi_ev(run_dir: &Path) -> Option<f64> {
+    for marker in ["from_scf_run.txt", "from_source_run.txt"] {
+        let marker_path = run_dir.join(marker);
+        if !marker_path.is_file() {
+            continue;
+        }
+
+        let source_dir = fs::read_to_string(&marker_path).ok()?;
+        let source_dir = source_dir.trim();
+        if source_dir.is_empty() {
+            continue;
+        }
+
+        let source_log = Path::new(source_dir).join("out.pw.log");
+        let source_text = fs::read_to_string(&source_log).ok()?;
+        let source_lines: Vec<&str> = source_text.lines().collect();
+        if let Some(fermi) = parse_last_fermi_ev(&source_lines) {
+            return Some(fermi);
+        }
+    }
+
+    None
+}
+
+fn build_fermi_consistency_summary(
+    scf_fermi_ev: Option<f64>,
+    nscf_fermi_ev: Option<f64>,
+    gap: &BandGapSummary,
+    tolerance_ev: f64,
+) -> FermiConsistencySummary {
+    let scf_vs_nscf_delta_ev = match (scf_fermi_ev, nscf_fermi_ev) {
+        (Some(scf), Some(nscf)) => Some((nscf - scf).abs()),
+        _ => None,
+    };
+    let scf_vs_nscf_pass = scf_vs_nscf_delta_ev.map(|delta| delta <= tolerance_ev);
+    let postprocess_in_gap = match (gap.vbm.as_ref(), gap.cbm.as_ref()) {
+        (Some(vbm), Some(cbm)) => Some(gap.fermi_ev >= vbm.energy_ev && gap.fermi_ev <= cbm.energy_ev),
+        _ => None,
+    };
+
+    FermiConsistencySummary {
+        scf_fermi_ev,
+        nscf_fermi_ev,
+        postprocess_fermi_ev: gap.fermi_ev,
+        tolerance_ev,
+        scf_vs_nscf_delta_ev,
+        scf_vs_nscf_pass,
+        postprocess_in_gap,
+    }
+}
+
+fn write_dos_dat(path: &Path, points: &[(f64, f64)]) -> Result<(), String> {
+    let mut content = String::new();
+    content.push_str("# energy_eV dos_states_per_eV\n");
+    for (energy_ev, dos) in points.iter() {
+        content.push_str(&format!("{:.10} {:.10}\n", energy_ev, dos));
+    }
+    fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
+}
+
+fn write_dos_csv(path: &Path, points: &[(f64, f64)]) -> Result<(), String> {
+    let mut content = String::new();
+    content.push_str("energy_ev,dos_states_per_ev\n");
+    for (energy_ev, dos) in points.iter() {
+        content.push_str(&format!("{:.10},{:.10}\n", energy_ev, dos));
+    }
+    fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
+}
+
+fn write_dos_json(path: &Path, points: &[(f64, f64)]) -> Result<(), String> {
+    let mut content = String::new();
+    content.push_str("{\n");
+    content.push_str(&format!("  \"schema_version\": \"{}\",\n", SCHEMA_VERSION));
+    content.push_str("  \"dos\": [\n");
+    for (idx, (energy_ev, dos)) in points.iter().enumerate() {
+        let comma = if idx + 1 == points.len() { "" } else { "," };
+        content.push_str(&format!(
+            "    {{\"energy_ev\": {:.10}, \"dos_states_per_ev\": {:.10}}}{}\n",
+            energy_ev, dos, comma
+        ));
+    }
+    content.push_str("  ]\n");
+    content.push_str("}\n");
+    fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
+}
+
+fn write_band_gap_json(path: &Path, eig: &EigDataset, gap: &BandGapSummary) -> Result<(), String> {
+    let content = format!(
+        "{{\n  \"schema_version\": \"{}\",\n  \"seed\": \"{}\",\n  \"spin_polarized\": {},\n  \"nkpt\": {},\n  \"fermi_ev\": {:.10},\n  \"is_metal\": {},\n  \"indirect_gap_ev\": {},\n  \"direct_gap_ev\": {},\n  \"direct_gap_k_index\": {},\n  \"vbm\": {},\n  \"cbm\": {}\n}}\n",
+        SCHEMA_VERSION,
+        escape_json_string(&eig.seed),
+        if eig.spin_polarized { "true" } else { "false" },
+        eig.nkpt,
+        gap.fermi_ev,
+        if gap.is_metal { "true" } else { "false" },
+        json_opt_f64(gap.indirect_gap_ev),
+        json_opt_f64(gap.direct_gap_ev),
+        json_opt_usize(gap.direct_gap_k_index),
+        json_band_edge(gap.vbm.as_ref()),
+        json_band_edge(gap.cbm.as_ref()),
+    );
+
+    fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
+}
+
+fn write_fermi_consistency_json(path: &Path, summary: &FermiConsistencySummary) -> Result<(), String> {
+    let content = format!(
+        "{{\n  \"schema_version\": \"{}\",\n  \"scf_fermi_ev\": {},\n  \"nscf_fermi_ev\": {},\n  \"postprocess_fermi_ev\": {:.10},\n  \"tolerance_ev\": {:.10},\n  \"scf_vs_nscf_delta_ev\": {},\n  \"scf_vs_nscf_pass\": {},\n  \"postprocess_in_gap\": {}\n}}\n",
+        SCHEMA_VERSION,
+        json_opt_f64(summary.scf_fermi_ev),
+        json_opt_f64(summary.nscf_fermi_ev),
+        summary.postprocess_fermi_ev,
+        summary.tolerance_ev,
+        json_opt_f64(summary.scf_vs_nscf_delta_ev),
+        json_opt_bool(summary.scf_vs_nscf_pass),
+        json_opt_bool(summary.postprocess_in_gap),
+    );
+    fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
+}
+
+fn json_opt_bool(v: Option<bool>) -> String {
+    match v {
+        Some(true) => "true".to_string(),
+        Some(false) => "false".to_string(),
+        None => "null".to_string(),
+    }
+}
+
+fn json_opt_usize(v: Option<usize>) -> String {
+    match v {
+        Some(x) => x.to_string(),
+        None => "null".to_string(),
+    }
+}
+
+fn json_band_edge(edge: Option<&BandEdge>) -> String {
+    match edge {
+        Some(edge) => format!(
+            "{{\"energy_ev\": {:.10}, \"k_index\": {}, \"channel\": \"{}\"}}",
+            edge.energy_ev,
+            edge.k_index,
+            escape_json_string(&edge.channel)
+        ),
+        None => "null".to_string(),
+    }
+}
+
+fn parse_last_fermi_ev(lines: &[&str]) -> Option<f64> {
+    let mut last = None;
+    for line in lines.iter() {
+        if let Some(v) = parse_fermi_from_line(line) {
+            last = Some(v);
+        }
+    }
+    last
+}
+
+fn parse_fermi_from_line(line: &str) -> Option<f64> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.contains("Fermi_level") {
+        return trimmed
+            .split(|c: char| c.is_whitespace() || c == '=')
+            .filter(|token| !token.is_empty())
+            .rev()
+            .find_map(parse_float_token);
+    }
+
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.len() >= 3 && tokens[0].ends_with(':') {
+        let iter = &tokens[0][..tokens[0].len().saturating_sub(1)];
+        if iter.parse::<usize>().is_ok() {
+            return parse_float_token(tokens[2]);
+        }
+    }
+
+    None
+}
+
+fn parse_float_token(token: &str) -> Option<f64> {
+    let cleaned = token
+        .trim()
+        .trim_matches(|c: char| c == ',' || c == ';' || c == '(' || c == ')');
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    cleaned
+        .replace('D', "E")
+        .replace('d', "e")
+        .parse::<f64>()
+        .ok()
+}
+
+fn strip_comments(line: &str) -> &str {
+    let mut out = line;
+    if let Some((head, _)) = out.split_once('!') {
+        out = head;
+    }
+    if let Some((head, _)) = out.split_once('#') {
+        out = head;
+    }
+    out.trim()
 }
 
 fn write_summary_json(
@@ -550,6 +1307,91 @@ mod tests {
             .expect("read generated summary");
         assert!(summary.contains("\"schema_version\": \"property-v1\""));
         assert!(summary.contains("\"stage\": \"scf\""));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn exports_level2_nscf_dos_gap_and_fermi_checks() {
+        let base = std::env::temp_dir().join(format!(
+            "property-level2-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock drift")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&base).expect("create temp nscf run dir");
+
+        let scf_source = base.join("scf-source");
+        fs::create_dir_all(&scf_source).expect("create source scf dir");
+        let scf_log = "\
+   eps(eV)  Fermi(eV)           charge               Eharris(Ry)                  Escf(Ry)       dE(eV)\n\
+  1:   1.000E-6    1.900E-1       8.000000E0         -1.000000000000E1         -1.000000000001E1      1.000E-6\n";
+        fs::write(scf_source.join("out.pw.log"), scf_log).expect("write source scf log");
+
+        let nscf_log = "\
+   eps(eV)  Fermi(eV)           charge               Eharris(Ry)                  Escf(Ry)       dE(eV)\n\
+  1:   1.000E-6    2.000E-1       8.000000E0         -1.000000000000E1         -1.000000000001E1      1.000E-6\n\
+   Total           :               1.00 seconds             0.00 hours\n";
+        let log_path = base.join("out.pw.log");
+        fs::write(&log_path, nscf_log).expect("write nscf log");
+
+        fs::write(
+            base.join("in.ctrl"),
+            "dos_sigma = 0.20\ndos_ne = 11\nwannier90_seedname = si\n",
+        )
+        .expect("write in.ctrl");
+        fs::write(
+            base.join("si.eig"),
+            "\
+1 1 -1.200000\n\
+2 1 -0.400000\n\
+3 1 1.200000\n\
+1 2 -1.100000\n\
+2 2 -0.100000\n\
+3 2 0.800000\n",
+        )
+        .expect("write si.eig");
+        fs::write(base.join("from_scf_run.txt"), format!("{}\n", scf_source.display()))
+            .expect("write source metadata");
+
+        let mut options = PropertyExportOptions::default();
+        options.dos_format = DosOutputFormat::Csv;
+        options.fermi_tol_ev = 0.05;
+
+        export_stage_properties_with_options(&base, "nscf", &log_path, 5.0, &options)
+            .expect("nscf level2 export should succeed");
+
+        let properties_dir = base.join("properties");
+        assert!(properties_dir.join("dos.dat").is_file());
+        assert!(properties_dir.join("dos.csv").is_file());
+        assert!(properties_dir.join("band_gap.json").is_file());
+        assert!(properties_dir.join("fermi_consistency.json").is_file());
+
+        let dos_dat = fs::read_to_string(properties_dir.join("dos.dat")).expect("read dos.dat");
+        let dos_lines: Vec<&str> = dos_dat.lines().collect();
+        assert_eq!(dos_lines.len(), 12);
+        for line in dos_lines.iter().skip(1) {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            assert_eq!(cols.len(), 2);
+            let dos = cols[1]
+                .parse::<f64>()
+                .expect("dos value should be parseable");
+            assert!(dos.is_finite());
+            assert!(dos >= 0.0);
+        }
+
+        let band_gap = fs::read_to_string(properties_dir.join("band_gap.json"))
+            .expect("read band_gap.json");
+        assert!(band_gap.contains("\"indirect_gap_ev\": 0.900000000000"));
+        assert!(band_gap.contains("\"direct_gap_ev\": 0.900000000000"));
+        assert!(band_gap.contains("\"vbm\": {\"energy_ev\": -0.1000000000"));
+        assert!(band_gap.contains("\"cbm\": {\"energy_ev\": 0.8000000000"));
+
+        let fermi = fs::read_to_string(properties_dir.join("fermi_consistency.json"))
+            .expect("read fermi_consistency.json");
+        assert!(fermi.contains("\"scf_vs_nscf_pass\": true"));
 
         let _ = fs::remove_dir_all(&base);
     }
