@@ -679,7 +679,7 @@ impl Control {
         const OUT_WIDTH1: usize = 28;
         const OUT_WIDTH2: usize = 18;
 
-        println!("   {:-^80}", " control parameters ");
+        println!("   {:-^88}", " control parameters ");
         println!();
 
         println!(

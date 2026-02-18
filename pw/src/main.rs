@@ -18,6 +18,18 @@ use types::*;
 use vector3::Vector3f64;
 use vnl::VNL;
 
+fn display_program_header() {
+    println!();
+    println!("   {:=^88}", "");
+    println!("   {:^88}", "DFTWorks");
+    println!(
+        "   {:^88}",
+        "Self-Consistent Plane-Wave Density Functional Theory"
+    );
+    println!("   {:=^88}", "");
+    println!();
+}
+
 fn display_symmetry_equivalent_atoms(crystal: &Crystal, symdrv: &dyn SymmetryDriver) {
     let sym_atom = symdrv.get_sym_atom();
     let natoms = sym_atom.len();
@@ -95,6 +107,7 @@ fn main() {
     control.read_file("in.ctrl");
 
     if dwmpi::is_root() {
+        display_program_header();
         control.display();
     }
     // dwfft3d
