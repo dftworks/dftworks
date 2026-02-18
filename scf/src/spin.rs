@@ -206,6 +206,9 @@ impl SCF for SCFSpin {
 
         let npw_wfc_max = get_n_plane_waves_max(&vpwwfc);
 
+        // Reuse one Fermi-level driver across SCF iterations to avoid repeated allocations.
+        let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
+
         let mut scf_iter = 1;
 
         loop {
@@ -316,8 +319,6 @@ impl SCF for SCFSpin {
                 }
             }
             // calculate Fermi level; vkscf has to be &mut since occ will be modified
-
-            let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
 

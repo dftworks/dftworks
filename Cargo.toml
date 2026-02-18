@@ -35,6 +35,7 @@ members = [
 	"ewald",
 	"linalg",
 	"optimization",
+	"property",
 	"mixing",
 	"fhkl",
 	"kgylm",

@@ -8,3 +8,4 @@ name = "dwf"
 path = "src/main.rs"
 
 [dependencies]
+property = { path = "../property" }

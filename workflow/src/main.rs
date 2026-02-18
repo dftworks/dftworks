@@ -4,7 +4,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const STAGE_SCF: &str = "scf";
 const STAGE_NSCF: &str = "nscf";
@@ -119,6 +119,7 @@ fn run_cli() -> CliResult<()> {
             validate_case(&config)
         }
         "run" => run_stage_command(&args),
+        "properties" => run_properties_command(&args),
         "status" => {
             if args.len() < 3 {
                 return Err("usage: dwf status <case_dir> [--config <yaml>]".to_string());
@@ -165,6 +166,65 @@ fn run_stage_command(args: &[String]) -> CliResult<()> {
         STAGE_PIPELINE => run_pipeline(&config, opts),
         _ => Err(format!("unsupported stage '{}'", stage)),
     }
+}
+
+fn run_properties_command(args: &[String]) -> CliResult<()> {
+    if args.len() < 4 {
+        return Err("usage: dwf properties <run_dir> <scf|nscf|bands> [--log <path>]".to_string());
+    }
+
+    let run_dir = PathBuf::from(&args[2]);
+    if !run_dir.is_dir() {
+        return Err(format!(
+            "run directory '{}' does not exist",
+            run_dir.display()
+        ));
+    }
+
+    let stage = args[3].as_str();
+    if !matches!(stage, STAGE_SCF | STAGE_NSCF | STAGE_BANDS) {
+        return Err(format!(
+            "unsupported stage '{}' for property export; allowed: {},{},{}",
+            stage, STAGE_SCF, STAGE_NSCF, STAGE_BANDS
+        ));
+    }
+
+    let mut log_path = run_dir.join("out.pw.log");
+    let mut i = 4usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--log" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("missing value after --log".to_string());
+                }
+                let provided = PathBuf::from(&args[i]);
+                log_path = if provided.is_absolute() {
+                    provided
+                } else {
+                    run_dir.join(provided)
+                };
+            }
+            opt => return Err(format!("unknown option '{}'", opt)),
+        }
+        i += 1;
+    }
+
+    if !log_path.is_file() {
+        return Err(format!(
+            "stage log '{}' does not exist; pass --log <path> if needed",
+            log_path.display()
+        ));
+    }
+
+    property::export_stage_properties(&run_dir, stage, &log_path, 0.0)
+        .map_err(|err| format!("failed to export properties: {}", err))?;
+
+    println!(
+        "Exported properties to '{}'",
+        run_dir.join("properties").display()
+    );
+    Ok(())
 }
 
 fn is_supported_stage(stage: &str) -> bool {
@@ -951,13 +1011,14 @@ fn run_stage(
         return Err(err);
     }
 
-    let command_line = format!("{} (cwd={})", pw_bin.display(), run_dir.display());
+    let log_path = run_dir.join("out.pw.log");
+    let (exec_bin, exec_args, command_display) = build_stage_pw_command(stage, &pw_bin);
+    let command_line = format!("{} (cwd={})", command_display, run_dir.display());
     write_text(&run_dir.join("command.txt"), &format!("{}\n", command_line))?;
 
     println!("Running stage '{}' in {}", stage, run_dir.display());
-    println!("Command: {}", pw_bin.display());
+    println!("Command: {}", command_display);
 
-    let log_path = run_dir.join("out.pw.log");
     let log_file = File::create(&log_path).map_err(|err| {
         format!(
             "failed to create log file '{}': {}",
@@ -969,11 +1030,14 @@ fn run_stage(
         .try_clone()
         .map_err(|err| format!("failed to clone log file handle: {}", err))?;
 
-    let status = Command::new(&pw_bin)
+    let stopwatch = Instant::now();
+    let status = Command::new(&exec_bin)
         .current_dir(&run_dir)
+        .args(exec_args)
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_err))
         .status();
+    let elapsed_wall_seconds = stopwatch.elapsed().as_secs_f64();
 
     let status = match status {
         Ok(status) => status,
@@ -982,7 +1046,7 @@ fn run_stage(
             let _ = write_text(&run_dir.join("exit_code.txt"), "spawn-error\n");
             return Err(format!(
                 "failed to start '{}' for stage '{}': {}",
-                pw_bin.display(),
+                exec_bin.display(),
                 stage,
                 err
             ));
@@ -996,10 +1060,19 @@ fn run_stage(
     write_text(&run_dir.join("exit_code.txt"), &format!("{}\n", exit_text))?;
 
     if status.success() {
+        if let Err(err) =
+            property::export_stage_properties(&run_dir, stage, &log_path, elapsed_wall_seconds)
+        {
+            eprintln!(
+                "warning: failed to export stage properties for '{}': {}",
+                stage, err
+            );
+        }
         write_text(&run_dir.join("status.txt"), "success\n")?;
         println!("Stage '{}' completed successfully.", stage);
         println!("Run directory: {}", run_dir.display());
         println!("Log file: {}", log_path.display());
+        println!("Properties: {}", run_dir.join("properties").display());
         Ok(run_dir)
     } else {
         write_text(&run_dir.join("status.txt"), "failed\n")?;
@@ -1246,6 +1319,46 @@ fn resolve_pipeline_stages(
     }
 
     Ok(config.pipeline_stages.clone())
+}
+
+fn build_stage_pw_command(stage: &str, pw_bin: &Path) -> (PathBuf, Vec<String>, String) {
+    if stage_uses_resource_metrics(stage) {
+        if let Some((time_bin, time_flag)) = resolve_time_wrapper() {
+            let command_display = format!("{} {} {}", time_bin, time_flag, pw_bin.display());
+            return (
+                PathBuf::from(time_bin),
+                vec![time_flag.to_string(), pw_bin.display().to_string()],
+                command_display,
+            );
+        }
+    }
+
+    (
+        pw_bin.to_path_buf(),
+        Vec::new(),
+        pw_bin.display().to_string(),
+    )
+}
+
+fn stage_uses_resource_metrics(stage: &str) -> bool {
+    matches!(stage, STAGE_SCF | STAGE_NSCF)
+}
+
+fn resolve_time_wrapper() -> Option<(&'static str, &'static str)> {
+    let time_bin = "/usr/bin/time";
+    if !Path::new(time_bin).is_file() {
+        return None;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Some((time_bin, "-l"))
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Some((time_bin, "-v"))
+    }
 }
 
 fn discover_seednames_from_win(run_dir: &Path) -> CliResult<Vec<String>> {
@@ -2230,6 +2343,7 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  dwf validate <case_dir> [--config <yaml>]");
     eprintln!("  dwf run <scf|nscf|bands|wannier|pipeline> <case_dir> [options]");
+    eprintln!("  dwf properties <run_dir> <scf|nscf|bands> [--log <path>]");
     eprintln!("  dwf status <case_dir> [--config <yaml>]");
     eprintln!();
     eprintln!("Run options:");

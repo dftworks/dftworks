@@ -72,6 +72,18 @@ cargo run -p workflow --bin dwf -- run bands <case_dir> --from latest
 cargo run -p workflow --bin dwf -- run wannier <case_dir> --from latest
 cargo run -p workflow --bin dwf -- run pipeline <case_dir> [--stages scf,nscf,bands,wannier]
 cargo run -p workflow --bin dwf -- status <case_dir> [--config <yaml>]
+cargo run -p workflow --bin dwf -- properties <run_dir> <scf|nscf|bands> [--log out.pw.log]
+```
+
+For `scf` / `nscf` / `bands`, `dwf run` now writes standardized machine-readable outputs under:
+
+```text
+<run_dir>/properties/
+  summary.json
+  timings.csv
+  energy.csv      # when available
+  force.csv       # when available
+  stress.csv      # when available
 ```
 
 Recommended case layout:
