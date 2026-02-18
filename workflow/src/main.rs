@@ -6,6 +6,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use clap::{Args, Parser, Subcommand, ValueEnum};
+
 const STAGE_SCF: &str = "scf";
 const STAGE_NSCF: &str = "nscf";
 const STAGE_BANDS: &str = "bands";
@@ -14,6 +16,138 @@ const STAGE_PIPELINE: &str = "pipeline";
 const CANONICAL_STAGES: [&str; 4] = [STAGE_SCF, STAGE_NSCF, STAGE_BANDS, STAGE_WANNIER];
 
 type CliResult<T> = Result<T, String>;
+
+#[derive(Clone, Debug, Parser)]
+#[command(name = "dwf")]
+struct Cli {
+    #[command(subcommand)]
+    command: DwfCommand,
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum DwfCommand {
+    Validate(ValidateArgs),
+    Run(RunArgs),
+    Properties(PropertiesArgs),
+    Status(StatusArgs),
+}
+
+#[derive(Clone, Debug, Args)]
+struct ValidateArgs {
+    case_dir: PathBuf,
+    #[arg(long, value_name = "yaml")]
+    config: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Args)]
+struct StatusArgs {
+    case_dir: PathBuf,
+    #[arg(long, value_name = "yaml")]
+    config: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Args)]
+struct RunArgs {
+    stage: RunStageArg,
+    case_dir: PathBuf,
+    #[arg(long, value_name = "stage:latest|run_dir|latest")]
+    from: Option<String>,
+    #[arg(long, value_name = "path")]
+    pw_bin: Option<PathBuf>,
+    #[arg(long, value_name = "path")]
+    w90_win_bin: Option<PathBuf>,
+    #[arg(long, value_name = "path")]
+    w90_amn_bin: Option<PathBuf>,
+    #[arg(long, value_name = "path")]
+    wannier90_x_bin: Option<PathBuf>,
+    #[arg(long, value_delimiter = ',', value_parser = parse_stage_list_item)]
+    stages: Option<Vec<String>>,
+    #[arg(long, value_name = "yaml")]
+    config: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Args)]
+struct PropertiesArgs {
+    run_dir: PathBuf,
+    stage: PropertiesStageArg,
+    #[arg(long, value_name = "path")]
+    log: Option<PathBuf>,
+    #[arg(long = "dos-sigma")]
+    dos_sigma: Option<f64>,
+    #[arg(long = "dos-ne")]
+    dos_ne: Option<usize>,
+    #[arg(long = "dos-emin")]
+    dos_emin: Option<f64>,
+    #[arg(long = "dos-emax")]
+    dos_emax: Option<f64>,
+    #[arg(long = "dos-format")]
+    dos_format: Option<DosFormatArg>,
+    #[arg(long = "fermi-tol")]
+    fermi_tol: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum RunStageArg {
+    Scf,
+    Nscf,
+    Bands,
+    Wannier,
+    Pipeline,
+}
+
+impl RunStageArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Scf => STAGE_SCF,
+            Self::Nscf => STAGE_NSCF,
+            Self::Bands => STAGE_BANDS,
+            Self::Wannier => STAGE_WANNIER,
+            Self::Pipeline => STAGE_PIPELINE,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum PropertiesStageArg {
+    Scf,
+    Nscf,
+    Bands,
+}
+
+impl PropertiesStageArg {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Scf => STAGE_SCF,
+            Self::Nscf => STAGE_NSCF,
+            Self::Bands => STAGE_BANDS,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum DosFormatArg {
+    Dat,
+    Csv,
+    Json,
+}
+
+impl DosFormatArg {
+    fn as_output_format(self) -> property::DosOutputFormat {
+        match self {
+            Self::Dat => property::DosOutputFormat::Dat,
+            Self::Csv => property::DosOutputFormat::Csv,
+            Self::Json => property::DosOutputFormat::Json,
+        }
+    }
+}
+
+fn parse_stage_list_item(raw: &str) -> Result<String, String> {
+    let stage = raw.trim();
+    if stage.is_empty() {
+        return Err("empty stage in --stages list".to_string());
+    }
+    Ok(stage.to_string())
+}
 
 #[derive(Clone, Debug)]
 struct StageInputs {
@@ -92,67 +226,44 @@ struct SourceCopyOptions {
 }
 
 fn main() {
-    if let Err(err) = run_cli() {
+    let cli = Cli::parse();
+    if let Err(err) = run_cli(cli) {
         eprintln!("error: {}", err);
-        if should_print_usage(&err) {
-            eprintln!();
-            print_usage();
-        }
         std::process::exit(1);
     }
 }
 
-fn run_cli() -> CliResult<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        return Err("missing command".to_string());
-    }
-
-    match args[1].as_str() {
-        "validate" => {
-            if args.len() < 3 {
-                return Err("usage: dwf validate <case_dir> [--config <yaml>]".to_string());
-            }
-            let case_dir = PathBuf::from(&args[2]);
-            let opts = parse_run_options(&args, 3)?;
-            let config = load_case_config(&case_dir, opts.config_path.as_deref())?;
-            validate_case(&config)
-        }
-        "run" => run_stage_command(&args),
-        "properties" => run_properties_command(&args),
-        "status" => {
-            if args.len() < 3 {
-                return Err("usage: dwf status <case_dir> [--config <yaml>]".to_string());
-            }
-            let case_dir = PathBuf::from(&args[2]);
-            let opts = parse_run_options(&args, 3)?;
-            let config = load_case_config(&case_dir, opts.config_path.as_deref())?;
-            print_status(&config)
-        }
-        "help" | "--help" | "-h" => {
-            print_usage();
-            Ok(())
-        }
-        cmd => Err(format!("unknown command '{}'", cmd)),
+fn run_cli(cli: Cli) -> CliResult<()> {
+    match cli.command {
+        DwfCommand::Validate(args) => run_validate_command(args),
+        DwfCommand::Run(args) => run_stage_command(args),
+        DwfCommand::Properties(args) => run_properties_command(args),
+        DwfCommand::Status(args) => run_status_command(args),
     }
 }
 
-fn run_stage_command(args: &[String]) -> CliResult<()> {
-    if args.len() < 4 {
-        return Err(
-            "usage: dwf run <scf|nscf|bands|wannier|pipeline> <case_dir> [--from <stage:latest|run_dir|latest>] [--pw-bin <path>] [--w90-win-bin <path>] [--w90-amn-bin <path>] [--wannier90-x-bin <path>] [--stages <comma_list>] [--config <yaml>]"
-                .to_string(),
-        );
-    }
+fn run_validate_command(args: ValidateArgs) -> CliResult<()> {
+    let config = load_case_config(&args.case_dir, args.config.as_deref())?;
+    validate_case(&config)
+}
 
-    let stage = args[2].as_str();
-    if !is_supported_stage(stage) {
-        return Err(format!("unsupported stage '{}'", stage));
-    }
+fn run_status_command(args: StatusArgs) -> CliResult<()> {
+    let config = load_case_config(&args.case_dir, args.config.as_deref())?;
+    print_status(&config)
+}
 
-    let case_dir = PathBuf::from(&args[3]);
-    let opts = parse_run_options(args, 4)?;
-    let config = load_case_config(&case_dir, opts.config_path.as_deref())?;
+fn run_stage_command(args: RunArgs) -> CliResult<()> {
+    let opts = RunOptions {
+        from_scf: args.from,
+        pw_bin: args.pw_bin,
+        w90_win_bin: args.w90_win_bin,
+        w90_amn_bin: args.w90_amn_bin,
+        wannier90_x_bin: args.wannier90_x_bin,
+        stages: args.stages,
+        config_path: args.config,
+    };
+    let stage = args.stage.as_str();
+    let config = load_case_config(&args.case_dir, opts.config_path.as_deref())?;
 
     match stage {
         STAGE_SCF | STAGE_NSCF | STAGE_BANDS => {
@@ -168,15 +279,8 @@ fn run_stage_command(args: &[String]) -> CliResult<()> {
     }
 }
 
-fn run_properties_command(args: &[String]) -> CliResult<()> {
-    if args.len() < 4 {
-        return Err(
-            "usage: dwf properties <run_dir> <scf|nscf|bands> [--log <path>] [--dos-sigma <eV>] [--dos-ne <N>] [--dos-emin <eV>] [--dos-emax <eV>] [--dos-format <dat|csv|json>] [--fermi-tol <eV>]"
-                .to_string(),
-        );
-    }
-
-    let run_dir = PathBuf::from(&args[2]);
+fn run_properties_command(args: PropertiesArgs) -> CliResult<()> {
+    let run_dir = args.run_dir;
     if !run_dir.is_dir() {
         return Err(format!(
             "run directory '{}' does not exist",
@@ -184,92 +288,25 @@ fn run_properties_command(args: &[String]) -> CliResult<()> {
         ));
     }
 
-    let stage = args[3].as_str();
-    if !matches!(stage, STAGE_SCF | STAGE_NSCF | STAGE_BANDS) {
-        return Err(format!(
-            "unsupported stage '{}' for property export; allowed: {},{},{}",
-            stage, STAGE_SCF, STAGE_NSCF, STAGE_BANDS
-        ));
-    }
-
+    let stage = args.stage.as_str();
     let mut log_path = run_dir.join("out.pw.log");
     let mut options = property::PropertyExportOptions::default();
-
-    let mut i = 4usize;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--log" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --log".to_string());
-                }
-                let provided = PathBuf::from(&args[i]);
-                log_path = if provided.is_absolute() {
-                    provided
-                } else {
-                    run_dir.join(provided)
-                };
-            }
-            "--dos-sigma" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --dos-sigma".to_string());
-                }
-                let sigma = args[i].parse::<f64>().map_err(|err| {
-                    format!("invalid --dos-sigma '{}': {}", args[i], err)
-                })?;
-                options.dos_sigma_ev = Some(sigma);
-            }
-            "--dos-ne" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --dos-ne".to_string());
-                }
-                let ne = args[i]
-                    .parse::<usize>()
-                    .map_err(|err| format!("invalid --dos-ne '{}': {}", args[i], err))?;
-                options.dos_ne = Some(ne);
-            }
-            "--dos-emin" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --dos-emin".to_string());
-                }
-                let emin = args[i]
-                    .parse::<f64>()
-                    .map_err(|err| format!("invalid --dos-emin '{}': {}", args[i], err))?;
-                options.dos_emin_ev = Some(emin);
-            }
-            "--dos-emax" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --dos-emax".to_string());
-                }
-                let emax = args[i]
-                    .parse::<f64>()
-                    .map_err(|err| format!("invalid --dos-emax '{}': {}", args[i], err))?;
-                options.dos_emax_ev = Some(emax);
-            }
-            "--dos-format" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --dos-format".to_string());
-                }
-                options.dos_format = parse_dos_output_format(&args[i])?;
-            }
-            "--fermi-tol" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --fermi-tol".to_string());
-                }
-                let tol = args[i]
-                    .parse::<f64>()
-                    .map_err(|err| format!("invalid --fermi-tol '{}': {}", args[i], err))?;
-                options.fermi_tol_ev = tol;
-            }
-            opt => return Err(format!("unknown option '{}'", opt)),
-        }
-        i += 1;
+    if let Some(log) = args.log {
+        log_path = if log.is_absolute() {
+            log
+        } else {
+            run_dir.join(log)
+        };
+    }
+    options.dos_sigma_ev = args.dos_sigma;
+    options.dos_ne = args.dos_ne;
+    options.dos_emin_ev = args.dos_emin;
+    options.dos_emax_ev = args.dos_emax;
+    if let Some(dos_format) = args.dos_format {
+        options.dos_format = dos_format.as_output_format();
+    }
+    if let Some(fermi_tol) = args.fermi_tol {
+        options.fermi_tol_ev = fermi_tol;
     }
 
     if !log_path.is_file() {
@@ -289,94 +326,8 @@ fn run_properties_command(args: &[String]) -> CliResult<()> {
     Ok(())
 }
 
-fn parse_dos_output_format(raw: &str) -> CliResult<property::DosOutputFormat> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "dat" => Ok(property::DosOutputFormat::Dat),
-        "csv" => Ok(property::DosOutputFormat::Csv),
-        "json" => Ok(property::DosOutputFormat::Json),
-        other => Err(format!(
-            "invalid --dos-format '{}'; expected one of: dat,csv,json",
-            other
-        )),
-    }
-}
-
-fn is_supported_stage(stage: &str) -> bool {
-    is_run_stage(stage) || stage == STAGE_PIPELINE
-}
-
 fn is_run_stage(stage: &str) -> bool {
     matches!(stage, STAGE_SCF | STAGE_NSCF | STAGE_BANDS | STAGE_WANNIER)
-}
-
-fn parse_run_options(args: &[String], mut i: usize) -> CliResult<RunOptions> {
-    let mut opts = RunOptions::default();
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--from" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --from".to_string());
-                }
-                opts.from_scf = Some(args[i].clone());
-            }
-            "--pw-bin" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --pw-bin".to_string());
-                }
-                opts.pw_bin = Some(PathBuf::from(&args[i]));
-            }
-            "--w90-win-bin" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --w90-win-bin".to_string());
-                }
-                opts.w90_win_bin = Some(PathBuf::from(&args[i]));
-            }
-            "--w90-amn-bin" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --w90-amn-bin".to_string());
-                }
-                opts.w90_amn_bin = Some(PathBuf::from(&args[i]));
-            }
-            "--wannier90-x-bin" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --wannier90-x-bin".to_string());
-                }
-                opts.wannier90_x_bin = Some(PathBuf::from(&args[i]));
-            }
-            "--stages" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --stages".to_string());
-                }
-                let values = args[i]
-                    .split(',')
-                    .map(|x| x.trim().to_string())
-                    .filter(|x| !x.is_empty())
-                    .collect::<Vec<_>>();
-                if values.is_empty() {
-                    return Err("empty --stages value".to_string());
-                }
-                opts.stages = Some(values);
-            }
-            "--config" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err("missing value after --config".to_string());
-                }
-                opts.config_path = Some(PathBuf::from(&args[i]));
-            }
-            opt => return Err(format!("unknown option '{}'", opt)),
-        }
-        i += 1;
-    }
-
-    Ok(opts)
 }
 
 fn load_case_config(case_dir: &Path, config_path: Option<&Path>) -> CliResult<CaseConfig> {
@@ -2411,46 +2362,4 @@ fn write_text(path: &Path, content: &str) -> CliResult<()> {
     file.write_all(content.as_bytes())
         .map_err(|err| format!("failed to write '{}': {}", path.display(), err))?;
     Ok(())
-}
-
-fn print_usage() {
-    eprintln!("Usage:");
-    eprintln!("  dwf validate <case_dir> [--config <yaml>]");
-    eprintln!("  dwf run <scf|nscf|bands|wannier|pipeline> <case_dir> [options]");
-    eprintln!("  dwf properties <run_dir> <scf|nscf|bands> [--log <path>] [--dos-sigma <eV>] [--dos-ne <N>] [--dos-emin <eV>] [--dos-emax <eV>] [--dos-format <dat|csv|json>] [--fermi-tol <eV>]");
-    eprintln!("  dwf status <case_dir> [--config <yaml>]");
-    eprintln!();
-    eprintln!("Run options:");
-    eprintln!("  --from <stage:latest|run_dir|latest>");
-    eprintln!("  --pw-bin <path>");
-    eprintln!("  --w90-win-bin <path>");
-    eprintln!("  --w90-amn-bin <path>");
-    eprintln!("  --wannier90-x-bin <path>");
-    eprintln!("  --stages <scf,nscf,bands,wannier>   # pipeline only");
-    eprintln!("  --config <yaml>");
-    eprintln!();
-    eprintln!("YAML config auto-discovery: <case_dir>/dwf.yaml (or workflow.yaml)");
-    eprintln!();
-    eprintln!("Case layout (recommended):");
-    eprintln!("  <case_dir>/dwf.yaml                 # optional");
-    eprintln!("  <case_dir>/common/in.crystal");
-    eprintln!("  <case_dir>/common/in.pot");
-    eprintln!("  <case_dir>/common/in.spin          # for spin runs");
-    eprintln!("  <case_dir>/scf/in.ctrl");
-    eprintln!("  <case_dir>/scf/in.kmesh");
-    eprintln!("  <case_dir>/nscf/in.ctrl");
-    eprintln!("  <case_dir>/nscf/in.kmesh");
-    eprintln!("  <case_dir>/bands/in.ctrl");
-    eprintln!("  <case_dir>/bands/in.kline");
-    eprintln!("  <case_dir>/wannier/in.ctrl");
-    eprintln!("  <case_dir>/wannier/in.kmesh");
-}
-
-fn should_print_usage(err: &str) -> bool {
-    err.starts_with("usage:")
-        || err.starts_with("missing command")
-        || err.starts_with("unknown command")
-        || err.starts_with("unsupported stage")
-        || err.starts_with("unknown option")
-        || err.starts_with("missing value")
 }

@@ -50,6 +50,7 @@ members = [
 	"nlcc",
 	"force",
 	"symmetry",
+	"symops",
 	"stress",
 	"scf",
 	"magmom",

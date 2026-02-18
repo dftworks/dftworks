@@ -32,7 +32,19 @@ Deliverable:
 Deliverable:
 - Reproducible `dos.dat` and `band_gap.json` for a standard test case.
 
-## Level 3 - Projected properties (Medium)
+## Level 3 - Symmetry operations and canonicalization (Medium)
+
+- [x] Add a dedicated `symops` crate with a shared symmetry-operation representation (`R`, `t`) and expose it through property workflows.
+- [ ] Integrate crystal-space-group detection and operation extraction (via existing symmetry/spglib path).
+- [ ] Add operation validation (group closure, inverse existence, determinant `+/-1`, lattice-consistency tolerance).
+- [ ] Add k-point little-group / star construction utilities for symmetry-aware postprocessing.
+- [ ] Export machine-readable symmetry metadata (`symmetry_ops.json`, crystal class, space group) with each run.
+- [ ] Add regression tests on high-symmetry and low-symmetry cells to verify operation counts and mappings.
+
+Deliverable:
+- Validated `symmetry_ops.json` and reusable symmetry APIs consumed by downstream property modules.
+
+## Level 4 - Projected properties (Medium)
 
 - [x] Implement PDOS (atom/orbital projected DOS) using projection weights.
 - [x] Implement fat-band output (band structure with projection weights per band/k-point).
@@ -43,7 +55,7 @@ Deliverable:
 Deliverable:
 - `pdos_*.dat` and `fatband_*.dat` with validation report.
 
-## Level 4 - Equation-of-state and thermodynamic basics (Medium)
+## Level 5 - Equation-of-state and thermodynamic basics (Medium)
 
 - [ ] Add automated volume-scan workflow (e.g., `-6%` to `+6%`).
 - [ ] Fit Birch-Murnaghan EOS and report `V0`, `B0`, `B0'`, `E0`.
@@ -54,7 +66,7 @@ Deliverable:
 Deliverable:
 - `eos_fit.json` + plot-ready table for energy-volume and pressure-volume curves.
 
-## Level 5 - Elastic properties (Medium -> Hard)
+## Level 6 - Elastic properties (Medium -> Hard)
 
 - [ ] Implement finite-strain generation and stress collection.
 - [ ] Fit elastic tensor `Cij` (symmetry-aware where available).
@@ -65,7 +77,7 @@ Deliverable:
 Deliverable:
 - `elastic_tensor.json` and `elastic_summary.md`.
 
-## Level 6 - Vibrational properties via finite displacement (Hard)
+## Level 7 - Vibrational properties via finite displacement (Hard)
 
 - [ ] Implement supercell builder and displacement patterns.
 - [ ] Compute force constants and dynamical matrices.
@@ -76,7 +88,7 @@ Deliverable:
 Deliverable:
 - `phonon_bands.dat`, `phonon_dos.dat`, and stability summary.
 
-## Level 7 - Electric/optical response (Hard)
+## Level 8 - Electric/optical response (Hard)
 
 - [ ] Implement Berry-phase polarization (non-metal cases first).
 - [ ] Implement dielectric tensor (start with finite-field or finite-difference strategy).
@@ -87,7 +99,7 @@ Deliverable:
 Deliverable:
 - `polarization.json`, `dielectric_tensor.json`, `born_charges.json`.
 
-## Level 8 - Advanced transport and topological responses (Very Hard)
+## Level 9 - Advanced transport and topological responses (Very Hard)
 
 - [ ] Add band interpolation path (Wannier-based) for dense k-space properties.
 - [ ] Implement Boltzmann transport (conductivity/Seebeck vs temperature and chemical potential).

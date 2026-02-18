@@ -1,8 +1,36 @@
-use std::env;
+use clap::Parser;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use wannier90::{run_projected_analysis, ProjectedConfig};
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "w90-proj",
+    about = "Projected property analysis from Wannier90 files (<seed>.amn/.eig/.nnkp)"
+)]
+struct Cli {
+    #[arg(long, value_name = "name")]
+    seed: Option<String>,
+    #[arg(long, value_name = "eV")]
+    sigma: Option<f64>,
+    #[arg(long, value_name = "N")]
+    ne: Option<usize>,
+    #[arg(long, value_name = "eV")]
+    emin: Option<f64>,
+    #[arg(long, value_name = "eV")]
+    emax: Option<f64>,
+    #[arg(long = "input-dir", value_name = "dir")]
+    input_dir: Option<PathBuf>,
+    #[arg(long = "out-dir", value_name = "dir")]
+    out_dir: Option<PathBuf>,
+    #[arg(long, value_name = "file")]
+    cache: Option<PathBuf>,
+    #[arg(long = "validation-tol", value_name = "x")]
+    validation_tol: Option<f64>,
+    #[arg(long = "strict-validation")]
+    strict_validation: bool,
+}
 
 fn main() {
     if let Err(err) = run() {
@@ -12,6 +40,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let cli = Cli::parse();
     let mut config = ProjectedConfig::default();
     if let Some(defaults) = read_in_ctrl_defaults(Path::new("in.ctrl")) {
         if let Some(seed) = defaults.seedname {
@@ -25,81 +54,32 @@ fn run() -> Result<(), String> {
         }
     }
 
-    let mut strict_validation = false;
-    let args: Vec<String> = env::args().skip(1).collect();
-    let mut i = 0usize;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--help" | "-h" => {
-                print_help();
-                return Ok(());
-            }
-            "--seed" => {
-                i += 1;
-                config.seedname = get_arg_value(&args, i, "--seed")?;
-            }
-            "--sigma" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--sigma")?;
-                config.sigma_ev = value
-                    .parse::<f64>()
-                    .map_err(|_| format!("invalid --sigma '{}'", value))?;
-            }
-            "--ne" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--ne")?;
-                config.ne = value
-                    .parse::<usize>()
-                    .map_err(|_| format!("invalid --ne '{}'", value))?;
-            }
-            "--emin" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--emin")?;
-                config.emin_ev = Some(
-                    value
-                        .parse::<f64>()
-                        .map_err(|_| format!("invalid --emin '{}'", value))?,
-                );
-            }
-            "--emax" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--emax")?;
-                config.emax_ev = Some(
-                    value
-                        .parse::<f64>()
-                        .map_err(|_| format!("invalid --emax '{}'", value))?,
-                );
-            }
-            "--input-dir" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--input-dir")?;
-                config.input_dir = PathBuf::from(value);
-            }
-            "--out-dir" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--out-dir")?;
-                config.out_dir = PathBuf::from(value);
-            }
-            "--cache" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--cache")?;
-                config.cache_path = Some(PathBuf::from(value));
-            }
-            "--validation-tol" => {
-                i += 1;
-                let value = get_arg_value(&args, i, "--validation-tol")?;
-                config.validation_tol = value
-                    .parse::<f64>()
-                    .map_err(|_| format!("invalid --validation-tol '{}'", value))?;
-            }
-            "--strict-validation" => {
-                strict_validation = true;
-            }
-            unknown => {
-                return Err(format!("unknown argument '{}'", unknown));
-            }
-        }
-        i += 1;
+    if let Some(seed) = cli.seed {
+        config.seedname = seed;
+    }
+    if let Some(sigma) = cli.sigma {
+        config.sigma_ev = sigma;
+    }
+    if let Some(ne) = cli.ne {
+        config.ne = ne;
+    }
+    if let Some(emin) = cli.emin {
+        config.emin_ev = Some(emin);
+    }
+    if let Some(emax) = cli.emax {
+        config.emax_ev = Some(emax);
+    }
+    if let Some(input_dir) = cli.input_dir {
+        config.input_dir = input_dir;
+    }
+    if let Some(out_dir) = cli.out_dir {
+        config.out_dir = out_dir;
+    }
+    if let Some(cache_path) = cli.cache {
+        config.cache_path = Some(cache_path);
+    }
+    if let Some(validation_tol) = cli.validation_tol {
+        config.validation_tol = validation_tol;
     }
 
     if config.seedname.trim().is_empty() {
@@ -134,17 +114,11 @@ fn run() -> Result<(), String> {
         println!("wrote {}", filename);
     }
 
-    if strict_validation && !summary.validation_passed {
+    if cli.strict_validation && !summary.validation_passed {
         return Err("validation failed (strict mode enabled)".to_string());
     }
 
     Ok(())
-}
-
-fn get_arg_value(args: &[String], idx: usize, flag: &str) -> Result<String, String> {
-    args.get(idx)
-        .cloned()
-        .ok_or_else(|| format!("missing value for {}", flag))
 }
 
 fn detect_seed_from_amn(input_dir: &Path) -> Result<Option<String>, String> {
@@ -229,23 +203,4 @@ fn read_in_ctrl_defaults(path: &Path) -> Option<InCtrlDefaults> {
     }
 
     Some(defaults)
-}
-
-fn print_help() {
-    println!("Usage: w90-proj [options]");
-    println!();
-    println!("Projected property analysis from Wannier90 files (<seed>.amn/.eig/.nnkp)");
-    println!();
-    println!("Options:");
-    println!("  --seed <name>            Input seed (default: in.ctrl, then auto-detect)");
-    println!("  --sigma <eV>             Gaussian broadening sigma in eV");
-    println!("  --ne <N>                 Number of DOS energy points");
-    println!("  --emin <eV>              Lower DOS energy bound");
-    println!("  --emax <eV>              Upper DOS energy bound");
-    println!("  --input-dir <dir>        Directory containing .amn/.eig/.nnkp inputs");
-    println!("  --out-dir <dir>          Directory for pdos/fatband outputs");
-    println!("  --cache <file>           Projection-weight cache file path");
-    println!("  --validation-tol <x>     Max relative tolerance for sum(PDOS) validation");
-    println!("  --strict-validation      Exit with failure when validation fails");
-    println!("  -h, --help               Show this message");
 }
