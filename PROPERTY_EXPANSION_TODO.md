@@ -34,11 +34,11 @@ Deliverable:
 
 ## Level 3 - Projected properties (Medium)
 
-- [ ] Implement PDOS (atom/orbital projected DOS) using projection weights.
-- [ ] Implement fat-band output (band structure with projection weights per band/k-point).
-- [ ] Reuse/cached projection matrices across repeated analyses to avoid recomputation.
-- [ ] Add validation that sum(PDOS) approximately matches total DOS within tolerance.
-- [ ] Add examples for `sp`, `sp2`, `sp3`, and `d` projector sets.
+- [x] Implement PDOS (atom/orbital projected DOS) using projection weights.
+- [x] Implement fat-band output (band structure with projection weights per band/k-point).
+- [x] Reuse/cached projection matrices across repeated analyses to avoid recomputation.
+- [x] Add validation that sum(PDOS) approximately matches total DOS within tolerance.
+- [x] Add examples for `sp`, `sp2`, `sp3`, and `d` projector sets.
 
 Deliverable:
 - `pdos_*.dat` and `fatband_*.dat` with validation report.

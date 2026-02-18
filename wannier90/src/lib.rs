@@ -4,6 +4,7 @@ mod eig;
 mod mesh;
 mod mmn;
 mod nnkp;
+mod projected;
 mod types;
 mod win;
 
@@ -14,6 +15,7 @@ use dfttypes::VKEigenValue;
 use eig::{merge_rank_parts, write_local_eig_part_files};
 use mesh::validate_k_mesh;
 use mpi_sys::MPI_COMM_WORLD;
+pub use projected::{run_projected_analysis, ProjectedConfig, ProjectedSummary};
 use pspot::PSPot;
 use std::io;
 pub use types::ExportSummary;

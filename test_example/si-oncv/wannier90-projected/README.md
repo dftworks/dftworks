@@ -40,6 +40,35 @@ perl -0777 -i -pe 's/begin projections.*?end projections/begin projections\nSi1:
 wannier90.x si
 ```
 
+## Generate projected properties (Level 3)
+
+From this directory:
+
+```bash
+../../../target/release/w90-proj --seed si --sigma 0.15 --ne 1200
+```
+
+This writes:
+
+- `pdos_*.dat` (atom/orbital projected DOS)
+- `pdos_projected_sum.dat` (sum over projector channels)
+- `fatband_*.dat` (projection weights per band/k-point)
+- `pdos_validation_report.txt` (checks `sum(PDOS)` against total DOS)
+
+## Projector-set examples (`sp`, `sp2`, `sp3`, `d`)
+
+Use these in the `begin projections ... end projections` block:
+
+```text
+Si1:sp
+Si1:sp2
+Si1:sp3
+Si1:d
+```
+
+For this Si test case, `sp3` is the default demonstrated setup.
+`w90-proj` can analyze all four sets when corresponding `.amn/.nnkp` files are available.
+
 Notes:
 
 - This example is configured with `wannier90_num_wann = 8` in `in.ctrl`.

@@ -47,6 +47,14 @@ si-w90-test-amn:
     rust-dev \
     bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p wannier90 --bin w90-amn'
 
+si-w90-test-proj:
+  docker run --rm \
+    -v {{justfile_directory()}}:/usr/src/app \
+    -v {{si_w90_case}}:/work \
+    -w /work \
+    rust-dev \
+    bash -lc 'source $HOME/.cargo/env && CARGO_TARGET_DIR=/usr/src/app/target-docker-linux cargo run --manifest-path /usr/src/app/Cargo.toml -p wannier90 --bin w90-proj -- --seed si'
+
 si-w90-test-wannier:
   docker run --rm \
     -v {{si_w90_case}}:/work \
@@ -58,7 +66,7 @@ si-w90-test-summary:
   ls -l {{si_w90_case}}/si.win {{si_w90_case}}/si.eig {{si_w90_case}}/si.nnkp {{si_w90_case}}/si.mmn {{si_w90_case}}/si.amn {{si_w90_case}}/si.wout {{si_w90_case}}/si.chk
   tail -n 40 {{si_w90_case}}/si.wout
 
-si-w90-test-all: si-w90-test-prepare si-w90-test-build si-w90-test-scf si-w90-test-win si-w90-test-set-sp3 si-w90-test-amn si-w90-test-wannier si-w90-test-summary
+si-w90-test-all: si-w90-test-prepare si-w90-test-build si-w90-test-scf si-w90-test-win si-w90-test-set-sp3 si-w90-test-amn si-w90-test-proj si-w90-test-wannier si-w90-test-summary
 
 # ---- Silicon dwf YAML pipeline test (scf -> nscf -> bands -> wannier) ----
 
