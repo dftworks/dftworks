@@ -165,39 +165,184 @@ impl Array3<c64> {
     }
 }
 
-#[test]
-fn test_array3_c64() {
-    let mut m: Array3<c64> = Array3::<c64>::new([4, 3, 2]);
-    for i in 0..2 {
-        for j in 0..3 {
-            for k in 0..4 {
-                m[[k, j, i]] = c64 {
-                    re: (i * j * k) as f64,
-                    im: 0.0,
-                };
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_close_f64(lhs: f64, rhs: f64, tol: f64) {
+        assert!(
+            (lhs - rhs).abs() <= tol,
+            "lhs = {lhs}, rhs = {rhs}, |diff| = {}",
+            (lhs - rhs).abs()
+        );
+    }
+
+    fn assert_close_c64(lhs: c64, rhs: c64, tol: f64) {
+        assert!(
+            (lhs - rhs).norm() <= tol,
+            "lhs = {lhs}, rhs = {rhs}, |diff| = {}",
+            (lhs - rhs).norm()
+        );
+    }
+
+    fn assert_close_array(lhs: &Array3<c64>, rhs: &Array3<c64>, tol: f64) {
+        assert_eq!(lhs.shape(), rhs.shape());
+        for (&l, &r) in lhs.as_slice().iter().zip(rhs.as_slice().iter()) {
+            assert_close_c64(l, r, tol);
         }
     }
 
-    for i in 0..2 {
-        for j in 0..3 {
-            for k in 0..4 {
-                // check if memory is contiguous and value is correct
+    #[test]
+    fn test_c64_scaled_assign_scale_and_norm() {
+        let shape = [2, 2, 1];
+        let rhs = Array3::from_vec(
+            shape,
+            vec![
+                c64::new(1.0, -1.0),
+                c64::new(2.0, 0.5),
+                c64::new(-3.0, 2.0),
+                c64::new(0.25, -0.75),
+            ],
+        );
 
-                println!("{:p} {} {}", &m[[k, j, i]], m[[k, j, i]], i * j * k);
-            }
-        }
+        let mut lhs = Array3::<c64>::new(shape);
+        lhs.scaled_assign(&rhs, 0.5);
+
+        let expected_half = Array3::from_vec(
+            shape,
+            rhs.as_slice().iter().map(|&x| x * 0.5).collect::<Vec<_>>(),
+        );
+        assert_close_array(&lhs, &expected_half, 1.0e-12);
+
+        lhs.scale(2.0);
+        assert_close_array(&lhs, &rhs, 1.0e-12);
+
+        let expected_norm = rhs.as_slice().iter().map(|z| z.norm_sqr()).sum::<f64>().sqrt();
+        assert_close_f64(lhs.norm2(), expected_norm, 1.0e-12);
     }
 
-    println!("sum of m = {}", m.sum());
+    #[test]
+    fn test_c64_diff_norm_sum() {
+        let shape = [2, 2, 1];
+        let lhs = Array3::from_vec(
+            shape,
+            vec![
+                c64::new(1.0, 0.0),
+                c64::new(2.0, 1.0),
+                c64::new(-1.0, 2.0),
+                c64::new(0.5, -0.5),
+            ],
+        );
+        let mut rhs = lhs.clone();
+        rhs.as_mut_slice()[0] += c64::new(1.0, -2.0);
 
-    m.save("a3.dat");
+        assert_close_f64(lhs.diff_norm_sum(&rhs), 5.0f64.sqrt(), 1.0e-12);
+    }
 
-    let mut m_reload = Array3::<c64>::new([4, 3, 2]);
-    m_reload.load("a3.dat");
-    println!("{:?}", m_reload);
+    #[test]
+    fn test_c64_sqr_add_and_scaled_sqr_add() {
+        let shape = [2, 2, 1];
+        let rhs = Array3::from_vec(
+            shape,
+            vec![
+                c64::new(1.0, 2.0),
+                c64::new(-0.5, 1.5),
+                c64::new(3.0, -1.0),
+                c64::new(0.0, -2.0),
+            ],
+        );
+        let base = Array3::from_vec(
+            shape,
+            vec![
+                c64::new(0.0, 1.0),
+                c64::new(1.0, -1.0),
+                c64::new(-2.0, 0.5),
+                c64::new(0.25, -0.25),
+            ],
+        );
 
-    m_reload.add_from(&m);
+        let mut sqr_added = base.clone();
+        sqr_added.sqr_add(&rhs);
+        let expected_sqr = Array3::from_vec(
+            shape,
+            base.as_slice()
+                .iter()
+                .zip(rhs.as_slice().iter())
+                .map(|(&b, &r)| b + c64::new(r.norm_sqr(), 0.0))
+                .collect::<Vec<_>>(),
+        );
+        assert_close_array(&sqr_added, &expected_sqr, 1.0e-12);
 
-    println!("sum of m_reload = {}", m_reload.sum());
+        let mut scaled_sqr_added = base.clone();
+        scaled_sqr_added.scaled_sqr_add(&rhs, 0.25);
+        let expected_scaled_sqr = Array3::from_vec(
+            shape,
+            base.as_slice()
+                .iter()
+                .zip(rhs.as_slice().iter())
+                .map(|(&b, &r)| b + c64::new(r.norm_sqr() * 0.25, 0.0))
+                .collect::<Vec<_>>(),
+        );
+        assert_close_array(&scaled_sqr_added, &expected_scaled_sqr, 1.0e-12);
+    }
+
+    #[test]
+    fn test_c64_scaled_add_mix_and_add() {
+        let shape = [2, 2, 1];
+        let rhs = Array3::from_vec(
+            shape,
+            vec![
+                c64::new(1.0, -1.0),
+                c64::new(2.0, 0.5),
+                c64::new(-3.0, 2.0),
+                c64::new(0.25, -0.75),
+            ],
+        );
+        let mut dst = Array3::from_vec(
+            shape,
+            vec![
+                c64::new(-1.0, 1.0),
+                c64::new(0.5, -2.0),
+                c64::new(4.0, 0.0),
+                c64::new(-0.5, 0.25),
+            ],
+        );
+        let original = dst.clone();
+
+        dst.scaled_add(&rhs, -0.5);
+        let expected_scaled_add = Array3::from_vec(
+            shape,
+            original
+                .as_slice()
+                .iter()
+                .zip(rhs.as_slice().iter())
+                .map(|(&d, &r)| d + r * -0.5)
+                .collect::<Vec<_>>(),
+        );
+        assert_close_array(&dst, &expected_scaled_add, 1.0e-12);
+
+        let mut mixed = original.clone();
+        mixed.mix(&rhs, 0.2);
+        let expected_mix = Array3::from_vec(
+            shape,
+            original
+                .as_slice()
+                .iter()
+                .zip(rhs.as_slice().iter())
+                .map(|(&d, &r)| d * 0.2 + r * 0.8)
+                .collect::<Vec<_>>(),
+        );
+        assert_close_array(&mixed, &expected_mix, 1.0e-12);
+
+        mixed.add(0.5);
+        let expected_plus_real = Array3::from_vec(
+            shape,
+            expected_mix
+                .as_slice()
+                .iter()
+                .map(|&z| z + c64::new(0.5, 0.0))
+                .collect::<Vec<_>>(),
+        );
+        assert_close_array(&mixed, &expected_plus_real, 1.0e-12);
+    }
 }

@@ -1,0 +1,36 @@
+name: Core Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libhdf5-dev \
+            libfftw3-dev \
+            liblapack-dev \
+            libblas-dev \
+            mpich
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: core-tests-v1
+
+      - name: Run core crate tests
+        run: cargo test --locked -p fifo -p integral -p ndarray@0.1.0 -p utility
