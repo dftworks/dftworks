@@ -1645,7 +1645,9 @@ name = "workflow"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "crystal",
  "property",
+ "symops",
 ]
 
 [[package]]

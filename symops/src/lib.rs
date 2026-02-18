@@ -1,23 +1,54 @@
+//! Core symmetry-operation algebra for crystal and k-space workflows.
+//!
+//! This module intentionally focuses on:
+//! - robust operation math (`R`, `t`, composition, inverse),
+//! - tolerance-aware equality modulo lattice translations,
+//! - lightweight group checks and k-space helpers.
+//!
+//! It does **not** attempt full space-group detection/classification parity with
+//! external libraries. Detection/classification scaffolding lives in sibling
+//! modules (`detect`, `classify`) and can evolve independently.
+
 use std::error::Error;
 use std::fmt;
 
+/// Integer 3x3 rotation matrix in fractional-coordinate basis.
+///
+/// For crystallographic operations this should be unimodular with
+/// determinant `+1` (proper) or `-1` (improper).
 pub type Rotation = [[i32; 3]; 3];
+
+/// 3-vector used for fractional coordinates and translations.
 pub type Vector3 = [f64; 3];
+
+pub mod classify;
+pub mod detect;
+
+pub use classify::*;
+pub use detect::*;
 
 const WRAP_EPS: f64 = 1.0e-12;
 
+/// A single affine symmetry operation in fractional coordinates:
+/// `x' = R * x + t (mod 1)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SymOp {
     rotation: Rotation,
     translation: Vector3,
 }
 
+/// Errors returned by symmetry-operation construction and group checks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SymOpError {
+    /// Rotation has determinant different from `±1`.
     NonUnimodularRotation { det: i32 },
+    /// Group validation was requested on an empty set.
     EmptyGroup,
+    /// Group validation could not find the identity element.
     MissingIdentity,
+    /// Group validation found an element without inverse in the set.
     MissingInverse { index: usize },
+    /// Group validation found `ops[left] * ops[right]` outside the set.
     NotClosed { left: usize, right: usize },
 }
 
@@ -44,6 +75,10 @@ impl fmt::Display for SymOpError {
 impl Error for SymOpError {}
 
 impl SymOp {
+    /// Constructs a symmetry operation and normalizes translation to `[0, 1)`.
+    ///
+    /// The rotation must be unimodular (`det = ±1`), otherwise the operation
+    /// is not invertible over the integer lattice.
     pub fn new(rotation: Rotation, translation: Vector3) -> Result<Self, SymOpError> {
         let det = determinant(rotation);
         if det != 1 && det != -1 {
@@ -56,6 +91,7 @@ impl SymOp {
         })
     }
 
+    /// Returns identity operation (`R = I`, `t = 0`).
     pub fn identity() -> Self {
         Self {
             rotation: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
@@ -63,24 +99,31 @@ impl SymOp {
         }
     }
 
+    /// Returns the integer rotation part.
     pub fn rotation(&self) -> &Rotation {
         &self.rotation
     }
 
+    /// Returns normalized translation in `[0, 1)`.
     pub fn translation(&self) -> Vector3 {
         self.translation
     }
 
+    /// Applies full affine operation and wraps result to fractional cell.
     pub fn apply_fractional(&self, vector: Vector3) -> Vector3 {
         normalize_fractional(add(mat_vec_i32(self.rotation, vector), self.translation))
     }
 
+    /// Applies only rotation part (used frequently for k-space mapping).
     pub fn apply_rotation(&self, vector: Vector3) -> Vector3 {
         mat_vec_i32(self.rotation, vector)
     }
 
+    /// Group composition `self ∘ rhs`:
+    /// `(R1, t1) * (R2, t2) = (R1*R2, R1*t2 + t1)`.
     pub fn compose(&self, rhs: &SymOp) -> SymOp {
         let rotation = mat_mul_i32(self.rotation, rhs.rotation);
+        // Translation is wrapped to keep canonical representative in [0,1).
         let translation = normalize_fractional(add(
             mat_vec_i32(self.rotation, rhs.translation),
             self.translation,
@@ -91,6 +134,8 @@ impl SymOp {
         }
     }
 
+    /// Computes inverse operation:
+    /// `(R, t)^-1 = (R^-1, -R^-1*t)`.
     pub fn inverse(&self) -> Result<SymOp, SymOpError> {
         let det = determinant(self.rotation);
         if det != 1 && det != -1 {
@@ -98,6 +143,7 @@ impl SymOp {
         }
 
         let inv_rotation = inverse_unimodular(self.rotation, det);
+        // Fractional wrap keeps inverse translation numerically stable.
         let inv_translation =
             normalize_fractional(scale(mat_vec_i32(inv_rotation, self.translation), -1.0));
         Ok(SymOp {
@@ -107,12 +153,22 @@ impl SymOp {
     }
 }
 
+/// Determinant of 3x3 integer rotation matrix.
 pub fn determinant(rotation: Rotation) -> i32 {
     rotation[0][0] * (rotation[1][1] * rotation[2][2] - rotation[1][2] * rotation[2][1])
         - rotation[0][1] * (rotation[1][0] * rotation[2][2] - rotation[1][2] * rotation[2][0])
         + rotation[0][2] * (rotation[1][0] * rotation[2][1] - rotation[1][1] * rotation[2][0])
 }
 
+/// Validates that `ops` behaves like a finite symmetry group under composition.
+///
+/// Checks:
+/// - non-empty set,
+/// - identity exists,
+/// - each element has inverse,
+/// - closure under composition.
+///
+/// Translation comparison uses `tol` modulo lattice vectors.
 pub fn validate_group(ops: &[SymOp], tol: f64) -> Result<(), SymOpError> {
     if ops.is_empty() {
         return Err(SymOpError::EmptyGroup);
@@ -149,6 +205,7 @@ pub fn validate_group(ops: &[SymOp], tol: f64) -> Result<(), SymOpError> {
     Ok(())
 }
 
+/// Returns indices of operations that leave `k` invariant modulo reciprocal lattice.
 pub fn little_group_indices(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<usize> {
     let mut out = Vec::new();
     for (idx, op) in ops.iter().enumerate() {
@@ -160,9 +217,11 @@ pub fn little_group_indices(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<usize> {
     out
 }
 
+/// Computes k-star (`{Rk}`) with deduplication modulo lattice vectors.
 pub fn k_star(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<Vector3> {
     let mut out = Vec::new();
     for op in ops.iter() {
+        // Use centered wrapping for more interpretable representative values.
         let mapped = normalize_centered(op.apply_rotation(k));
         if !out
             .iter()
@@ -174,10 +233,12 @@ pub fn k_star(k: Vector3, ops: &[SymOp], tol: f64) -> Vec<Vector3> {
     out
 }
 
+/// Approximate equality of two operations with translation compared modulo lattice.
 pub fn sym_op_approx_eq(lhs: &SymOp, rhs: &SymOp, tol: f64) -> bool {
     lhs.rotation == rhs.rotation && approx_eq_mod_lattice(lhs.translation, rhs.translation, tol)
 }
 
+/// Compares vectors modulo integer lattice shifts using centered wrapping.
 pub fn approx_eq_mod_lattice(lhs: Vector3, rhs: Vector3, tol: f64) -> bool {
     for i in 0..3 {
         if wrap_centered(lhs[i] - rhs[i]).abs() > tol {
@@ -270,6 +331,7 @@ fn normalize_centered(vector: Vector3) -> Vector3 {
 }
 
 fn wrap_fractional(x: f64) -> f64 {
+    // Canonical fractional representative in [0,1).
     let mut wrapped = x - x.floor();
     if wrapped >= 1.0 {
         wrapped -= 1.0;
@@ -277,6 +339,7 @@ fn wrap_fractional(x: f64) -> f64 {
     if wrapped < 0.0 {
         wrapped += 1.0;
     }
+    // Clamp values that are numerically at 0/1 boundary.
     if wrapped.abs() < WRAP_EPS || (1.0 - wrapped).abs() < WRAP_EPS {
         0.0
     } else {
@@ -285,6 +348,7 @@ fn wrap_fractional(x: f64) -> f64 {
 }
 
 fn wrap_centered(x: f64) -> f64 {
+    // Representative in [-0.5, 0.5), useful for nearest-image comparisons.
     let mut wrapped = x - x.round();
     if wrapped >= 0.5 {
         wrapped -= 1.0;

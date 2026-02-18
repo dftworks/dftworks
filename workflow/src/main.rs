@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -7,6 +8,8 @@ use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use crystal::Crystal;
+use symops::{classify_symmetry, detect_symmetry, CrystalSystem, DetectOptions, Structure};
 
 const STAGE_SCF: &str = "scf";
 const STAGE_NSCF: &str = "nscf";
@@ -1093,6 +1096,17 @@ fn run_stage(
                 stage, err
             );
         }
+        match export_symmetry_metadata(&run_dir) {
+            Ok(path) => {
+                println!("Symmetry: {}", path.display());
+            }
+            Err(err) => {
+                eprintln!(
+                    "warning: failed to export symmetry metadata for '{}': {}",
+                    stage, err
+                );
+            }
+        }
         write_text(&run_dir.join("status.txt"), "success\n")?;
         println!("Stage '{}' completed successfully.", stage);
         println!("Run directory: {}", run_dir.display());
@@ -1238,6 +1252,18 @@ fn run_wannier_stage(config: &CaseConfig, opts: RunOptions) -> CliResult<PathBuf
             let _ = write_text(&run_dir.join("status.txt"), "failed\n");
             let _ = write_text(&run_dir.join("exit_code.txt"), "wannier90-x-failed\n");
             return Err(err);
+        }
+    }
+
+    match export_symmetry_metadata(&run_dir) {
+        Ok(path) => {
+            println!("Symmetry: {}", path.display());
+        }
+        Err(err) => {
+            eprintln!(
+                "warning: failed to export symmetry metadata for '{}': {}",
+                STAGE_WANNIER, err
+            );
         }
     }
 
@@ -2320,6 +2346,150 @@ fn find_workspace_root(start: &Path) -> Option<PathBuf> {
         current = path.parent();
     }
     None
+}
+
+fn export_symmetry_metadata(run_dir: &Path) -> CliResult<PathBuf> {
+    let crystal_path = run_dir.join("in.crystal");
+    if !crystal_path.is_file() {
+        return Err(format!(
+            "missing required input '{}' for symmetry export",
+            crystal_path.display()
+        ));
+    }
+
+    let structure = load_structure_for_symmetry(&crystal_path)?;
+    let detected = detect_symmetry(&structure, DetectOptions::default())
+        .map_err(|err| format!("symmetry detection failed: {}", err))?;
+    let class = classify_symmetry(&detected.operations)
+        .map_err(|err| format!("symmetry classification failed: {}", err))?;
+
+    let properties_dir = run_dir.join("properties");
+    fs::create_dir_all(&properties_dir).map_err(|err| {
+        format!(
+            "failed to create properties directory '{}': {}",
+            properties_dir.display(),
+            err
+        )
+    })?;
+
+    let out_path = properties_dir.join("symmetry_ops.json");
+    let content = format_symmetry_json(&detected, &class);
+    write_text(&out_path, &content)?;
+    Ok(out_path)
+}
+
+fn load_structure_for_symmetry(crystal_path: &Path) -> CliResult<Structure> {
+    let crystal_path_str = crystal_path.to_string_lossy().to_string();
+    let mut crystal = Crystal::new();
+    let parse_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crystal.read_file(&crystal_path_str);
+    }));
+    if parse_result.is_err() {
+        return Err(format!(
+            "failed to parse crystal structure '{}'",
+            crystal_path.display()
+        ));
+    }
+
+    let lattice = crystal.get_latt().as_2d_array_col_major();
+    let positions = crystal
+        .get_atom_positions()
+        .iter()
+        .map(|v| [v.x, v.y, v.z])
+        .collect::<Vec<_>>();
+    let atom_types = crystal.get_atom_types();
+
+    Ok(Structure {
+        lattice,
+        positions,
+        atom_types,
+    })
+}
+
+fn format_symmetry_json(
+    detected: &symops::DetectedSymmetry,
+    class: &symops::SymmetryClassification,
+) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "{{");
+    let _ = writeln!(out, "  \"schema\": \"symmetry-ops-v1\",");
+    let _ = writeln!(
+        out,
+        "  \"n_candidate_rotations\": {},",
+        detected.candidate_rotations
+    );
+    let _ = writeln!(out, "  \"n_operations\": {},", detected.operations.len());
+    let _ = writeln!(out, "  \"classification\": {{");
+    let _ = writeln!(
+        out,
+        "    \"crystal_system\": \"{}\",",
+        crystal_system_name(class.crystal_system)
+    );
+    let _ = writeln!(
+        out,
+        "    \"point_group_hint\": \"{}\",",
+        class.point_group_hint
+    );
+    let _ = writeln!(out, "    \"has_inversion\": {},", class.has_inversion);
+    let _ = writeln!(
+        out,
+        "    \"n_proper_rotations\": {},",
+        class.n_proper_rotations
+    );
+    let _ = writeln!(
+        out,
+        "    \"max_rotation_order\": {},",
+        class.max_rotation_order
+    );
+    match class.space_group_number {
+        Some(number) => {
+            let _ = writeln!(out, "    \"space_group_number\": {}", number);
+        }
+        None => {
+            let _ = writeln!(out, "    \"space_group_number\": null");
+        }
+    }
+    let _ = writeln!(out, "  }},");
+    let _ = writeln!(out, "  \"operations\": [");
+
+    for (idx, op) in detected.operations.iter().enumerate() {
+        let r = op.rotation();
+        let t = op.translation();
+        let _ = writeln!(out, "    {{");
+        let _ = writeln!(out, "      \"index\": {},", idx);
+        let _ = writeln!(out, "      \"determinant\": {},", symops::determinant(*r));
+        let _ = writeln!(out, "      \"rotation\": [");
+        let _ = writeln!(out, "        [{}, {}, {}],", r[0][0], r[0][1], r[0][2]);
+        let _ = writeln!(out, "        [{}, {}, {}],", r[1][0], r[1][1], r[1][2]);
+        let _ = writeln!(out, "        [{}, {}, {}]", r[2][0], r[2][1], r[2][2]);
+        let _ = writeln!(out, "      ],");
+        let _ = writeln!(
+            out,
+            "      \"translation\": [{:.15}, {:.15}, {:.15}]",
+            t[0], t[1], t[2]
+        );
+        if idx + 1 == detected.operations.len() {
+            let _ = writeln!(out, "    }}");
+        } else {
+            let _ = writeln!(out, "    }},");
+        }
+    }
+
+    let _ = writeln!(out, "  ]");
+    let _ = writeln!(out, "}}");
+    out
+}
+
+fn crystal_system_name(system: CrystalSystem) -> &'static str {
+    match system {
+        CrystalSystem::Triclinic => "triclinic",
+        CrystalSystem::Monoclinic => "monoclinic",
+        CrystalSystem::Orthorhombic => "orthorhombic",
+        CrystalSystem::Tetragonal => "tetragonal",
+        CrystalSystem::Trigonal => "trigonal",
+        CrystalSystem::Hexagonal => "hexagonal",
+        CrystalSystem::Cubic => "cubic",
+    }
 }
 
 fn latest_run_dir(case_dir: &Path, stage: &str) -> CliResult<Option<PathBuf>> {
