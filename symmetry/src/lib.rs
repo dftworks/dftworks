@@ -131,25 +131,25 @@ impl SymmetryDriver for SymmetryDriverInternal {
 
     fn display(&self) {
         println!();
-        println!("Symmetry (self-contained)");
-        println!("spacegroup_number : {}", self.spacegroup_number);
-        println!("hall_number       : {}", self.hall_number);
-        println!("point_group_hint  : {}", self.point_group_hint);
-        println!("n_operations      : {}", self.rotations.len());
+        println!("   Symmetry (self-contained)");
+        println!("   spacegroup_number : {}", self.spacegroup_number);
+        println!("   hall_number       : {}", self.hall_number);
+        println!("   point_group_hint  : {}", self.point_group_hint);
+        println!("   n_operations      : {}", self.rotations.len());
         for i in 0..self.rotations.len() {
-            println!("symmetry operation {}", i);
-            println!("rotations    : {:?}", self.rotations[i]);
-            println!("translations : {:?}", self.translations[i]);
+            println!("   symmetry operation {}", i);
+            println!("   rotations    : {:?}", self.rotations[i]);
+            println!("   translations : {:?}", self.translations[i]);
         }
     }
 
     fn display_brief(&self) {
         println!();
-        println!("Symmetry (self-contained)");
-        println!("spacegroup_number : {}", self.spacegroup_number);
-        println!("hall_number       : {}", self.hall_number);
-        println!("point_group_hint  : {}", self.point_group_hint);
-        println!("n_operations      : {}", self.rotations.len());
+        println!("   Symmetry (self-contained)");
+        println!("   spacegroup_number : {}", self.spacegroup_number);
+        println!("   hall_number       : {}", self.hall_number);
+        println!("   point_group_hint  : {}", self.point_group_hint);
+        println!("   n_operations      : {}", self.rotations.len());
     }
 
     fn get_fft_commensurate_ops(
