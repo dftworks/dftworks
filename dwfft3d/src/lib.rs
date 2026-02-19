@@ -36,11 +36,15 @@ pub struct DWFFT3D {
 use cfg_if::cfg_if;
 
 pub fn init_backend() {
+    // Backend selection is compile-time. Initialization is currently a no-op.
+}
+
+pub fn backend_name() -> &'static str {
     cfg_if! {
         if #[cfg(feature = "gpu")] {
-            println!("Using GPU");
+            "GPU"
         } else if #[cfg(feature = "cpu")] {
-            println!("Using CPU");
+            "CPU"
         } else {
             compile_error!("No backend feature enabled. Enable either 'cpu' or 'gpu'.");
         }

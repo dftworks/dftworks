@@ -38,6 +38,7 @@ linalg = { path = "../linalg" }
 dfttypes = { path = "../dfttypes" }
 wannier90 = { path = "../wannier90" }
 num-traits = "*"
+rayon = "*"
 dwmpi = { path = "../dwmpi" }
 mpi_sys = { path = "../mpi_sys" }
 kpts_distribution = { path = "../kpts_distribution" }

@@ -60,7 +60,6 @@ impl SCF for SCFNonspin {
     ) {
         //println!("");
         //println!("   {:*^120}", " self-consistent field ");
-        utils::display_parallel_runtime_info();
 
         // Density helper chosen from spin scheme; this resolves to non-spin here.
         let density_driver = density::new(control.get_spin_scheme_enum());
