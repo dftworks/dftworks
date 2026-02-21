@@ -23,7 +23,9 @@ use vnl::VNL;
 
 use itertools::multizip;
 
+mod hubbard;
 mod subspace;
+use hubbard::HubbardPotential;
 
 // Cached non-local data for one species at one k-point.
 // Keeping structure factors + projector tables together avoids repeated
@@ -58,6 +60,7 @@ pub struct KSCF<'a> {
     fft_shape: [usize; 3],
     fft_linear_index: Vec<usize>,
     vnl_terms: Vec<NonLocalTerm<'a>>,
+    hubbard: HubbardPotential,
 
     k_weight: f64,
 }
@@ -117,6 +120,7 @@ impl<'a> KSCF<'a> {
         );
         // Precompute non-local projector terms by species.
         let vnl_terms = build_nonlocal_terms(crystal, gvec, pspot, pwwfc, vnl);
+        let hubbard = HubbardPotential::new(control, crystal, gvec, pspot, pwwfc, &kgylm);
 
         KSCF {
             control,
@@ -133,6 +137,7 @@ impl<'a> KSCF<'a> {
             fft_shape,
             fft_linear_index,
             vnl_terms,
+            hubbard,
             k_weight,
         }
     }
@@ -168,6 +173,40 @@ impl<'a> KSCF<'a> {
 
     pub fn get_total_occ(&self) -> f64 {
         self.occ.iter().sum()
+    }
+
+    pub fn hubbard_is_enabled(&self) -> bool {
+        self.hubbard.is_enabled()
+    }
+
+    pub fn hubbard_u_eff(&self) -> f64 {
+        self.hubbard.u_eff()
+    }
+
+    pub fn hubbard_n_m(&self) -> usize {
+        self.hubbard.n_m()
+    }
+
+    pub fn hubbard_n_atoms(&self) -> usize {
+        self.hubbard.n_atoms()
+    }
+
+    pub fn hubbard_occ_len(&self) -> usize {
+        self.hubbard.occ_len()
+    }
+
+    pub fn hubbard_set_global_occupation(&mut self, occ_global: &[c64]) {
+        self.hubbard.set_global_occupation(occ_global);
+    }
+
+    pub fn hubbard_accumulate_occupation(&self, evecs: &Matrix<c64>, out: &mut [c64]) {
+        self.hubbard.accumulate_occupation(
+            &self.occ,
+            self.k_weight,
+            self.control.is_spin(),
+            evecs,
+            out,
+        );
     }
 
     pub fn get_total_valence_occ_below(&self, evals: &[f64], energy_level: f64) -> f64 {
@@ -264,6 +303,8 @@ impl<'a> KSCF<'a> {
         let mut vunkg_3d = Array3::<c64>::new(self.fft_shape);
         let mut unk_3d = Array3::<c64>::new(self.fft_shape);
         let mut fft_workspace = Array3::<c64>::new(self.fft_shape);
+        let mut hubbard_beta = vec![c64::new(0.0, 0.0); self.hubbard.n_m()];
+        let mut hubbard_coeff = vec![c64::new(0.0, 0.0); self.hubbard.n_m()];
 
         //
 
@@ -299,6 +340,10 @@ impl<'a> KSCF<'a> {
                     vout,
                 );
             }
+
+            // Hubbard (+U) contribution hook.
+            self.hubbard
+                .apply_on_psi(vin, vout, &mut hubbard_beta, &mut hubbard_coeff);
 
             // Kinetic contribution (diagonal in PW basis).
 

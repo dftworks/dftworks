@@ -1,4 +1,5 @@
 mod hartree;
+mod hubbard;
 mod utils;
 
 mod nonspin;

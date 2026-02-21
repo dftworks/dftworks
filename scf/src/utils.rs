@@ -719,6 +719,7 @@ pub fn compute_total_energy(
     exc_3d: &Array3<c64>,
     vxc_3d: &Array3<c64>,
     ew_total: f64,
+    hubbard_energy: f64,
 ) -> f64 {
     let latt = crystal.get_latt();
 
@@ -745,7 +746,7 @@ pub fn compute_total_energy(
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
-    let etot = etot_one + etot_xc + etot_hartree + ew_total;
+    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy;
 
     etot
 }

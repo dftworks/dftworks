@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 use super::hartree;
+use super::hubbard;
 use super::utils;
 use crate::SCF;
 use control::Control;
@@ -320,6 +321,7 @@ impl SCF for SCFSpin {
             // calculate Fermi level; vkscf has to be &mut since occ will be modified
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
+            let hubbard_energy = hubbard::update_hubbard_spin(control, vkscf, &*vkevecs);
 
             println!(
                 "     {:<width1$} = {:>width2$.5}",
@@ -342,6 +344,7 @@ impl SCF for SCFSpin {
                 &exc_3d,
                 &vxc_3d,
                 ewald.get_energy(),
+                hubbard_energy,
             );
 
             // build the density based on the new wavefunctions
@@ -422,6 +425,7 @@ impl SCF for SCFSpin {
                 &exc_3d,
                 &vxc_3d,
                 ewald.get_energy(),
+                hubbard_energy,
             );
 
             println!(
@@ -746,6 +750,7 @@ pub fn compute_total_energy(
     exc_3d: &Array3<c64>,
     vxc_3d: &VXCR,
     ew_total: f64,
+    hubbard_energy: f64,
 ) -> f64 {
     let npw_rho = pwden.get_n_plane_waves();
 
@@ -778,7 +783,7 @@ pub fn compute_total_energy(
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
-    let etot = etot_one + etot_xc + etot_hartree + ew_total;
+    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy;
 
     etot
 }

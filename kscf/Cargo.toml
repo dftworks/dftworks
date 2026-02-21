@@ -31,3 +31,5 @@ itertools = "*"
 hpsi = { path = "../hpsi" }
 linalg = { path = "../linalg" }
 num-traits = "*"
+integral = { path = "../integral" }
+special = { path = "../special" }

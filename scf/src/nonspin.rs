@@ -1,5 +1,6 @@
 //#![allow(warnings)]
 
+use super::hubbard;
 use super::utils;
 use crate::SCF;
 use control::Control;
@@ -174,6 +175,7 @@ impl SCF for SCFNonspin {
             // vkscf is mutable because occupations are stored inside.
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, vkevals);
+            let hubbard_energy = hubbard::update_hubbard_nonspin(control, vkscf, &*vkevecs);
 
             // recalculate the occ
 
@@ -198,6 +200,7 @@ impl SCF for SCFNonspin {
                 &exc_3d,
                 vxc_3d.as_non_spin().unwrap(),
                 ewald.get_energy(),
+                hubbard_energy,
             );
 
             // Step 4: rebuild rho(r) from occupied states.
@@ -258,6 +261,7 @@ impl SCF for SCFNonspin {
                 &exc_3d,
                 vxc_3d.as_non_spin().unwrap(),
                 ewald.get_energy(),
+                hubbard_energy,
             );
 
             energy_diff = (energy_scf - energy_harris).abs();

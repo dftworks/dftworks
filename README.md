@@ -195,6 +195,34 @@ End-to-end examples are provided in:
 * `test_example/si-oncv/workflow-pipeline-yaml` (full YAML pipeline with `scf -> nscf -> bands -> wannier`)
 * `test_example/si-oncv/symmetry-enabled` (SCF + relax with `symmetry = true` and k-mesh/force/stress symmetry checks)
 
+# DFT+U (Dudarev MVP)
+
+DFT+U is available as a collinear-spin/non-spin MVP using pseudo-atomic
+`PP_CHI` channels from the pseudopotential as local projectors.
+
+Add these keys in `in.ctrl`:
+
+```ini
+hubbard_u_enabled = true
+hubbard_species = Si1
+hubbard_l = 1
+hubbard_u = 4.0
+hubbard_j = 0.0
+```
+
+Notes:
+
+* `hubbard_u_eff = hubbard_u - hubbard_j` (Dudarev form).
+* `hubbard_species` must match the species label used in `in.crystal`/`in.pot`.
+* The pseudopotential must provide `PP_CHI` for the requested `hubbard_l`.
+* Noncollinear (`spin_scheme = ncl`) is not supported for +U.
+
+Regression check (convergence + non-zero energy shift):
+
+```bash
+bash scripts/run_hubbard_u_regression.sh
+```
+
 # Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.

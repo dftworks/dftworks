@@ -101,6 +101,12 @@ pub struct Control {
     wannier90_seedname: String,
     wannier90_num_wann: usize,
     wannier90_num_iter: usize,
+
+    hubbard_u_enabled: bool,
+    hubbard_species: String,
+    hubbard_l: i32,
+    hubbard_u: f64, // eV in input, stored in Ha
+    hubbard_j: f64, // eV in input, stored in Ha
 }
 
 impl Control {
@@ -340,6 +346,30 @@ impl Control {
         self.wannier90_num_iter
     }
 
+    pub fn get_hubbard_u_enabled(&self) -> bool {
+        self.hubbard_u_enabled
+    }
+
+    pub fn get_hubbard_species(&self) -> &str {
+        &self.hubbard_species
+    }
+
+    pub fn get_hubbard_l(&self) -> i32 {
+        self.hubbard_l
+    }
+
+    pub fn get_hubbard_u(&self) -> f64 {
+        self.hubbard_u
+    }
+
+    pub fn get_hubbard_j(&self) -> f64 {
+        self.hubbard_j
+    }
+
+    pub fn get_hubbard_u_eff(&self) -> f64 {
+        self.hubbard_u - self.hubbard_j
+    }
+
     pub fn read_file(&mut self, inpfile: &str) {
         // Initialize defaults first; user file selectively overrides values.
         self.task = "scf".to_string();
@@ -396,6 +426,12 @@ impl Control {
         self.wannier90_seedname = "dftworks".to_string();
         self.wannier90_num_wann = 0;
         self.wannier90_num_iter = 200;
+
+        self.hubbard_u_enabled = false;
+        self.hubbard_species = String::new();
+        self.hubbard_l = -1;
+        self.hubbard_u = 0.0;
+        self.hubbard_j = 0.0;
 
         let mut b_has_invalid_parameter = false;
 
@@ -605,6 +641,26 @@ impl Control {
                     self.wannier90_num_iter = s[1].parse().unwrap();
                 }
 
+                "hubbard_u_enabled" => {
+                    self.hubbard_u_enabled = s[1].parse().unwrap();
+                }
+
+                "hubbard_species" => {
+                    self.hubbard_species = s[1].trim().to_string();
+                }
+
+                "hubbard_l" => {
+                    self.hubbard_l = s[1].parse().unwrap();
+                }
+
+                "hubbard_u" => {
+                    self.hubbard_u = s[1].parse::<f64>().unwrap() * EV_TO_HA;
+                }
+
+                "hubbard_j" => {
+                    self.hubbard_j = s[1].parse::<f64>().unwrap() * EV_TO_HA;
+                }
+
                 "symmetry" => {
                     self.symmetry = s[1].parse().unwrap();
                     //println!(" symmetry = {}", self.get_symmetry());
@@ -659,6 +715,38 @@ impl Control {
                     "invalid wannier90_num_wann: {} > nband ({})",
                     self.wannier90_num_wann, self.nband
                 );
+                std::process::exit(-1);
+            }
+        }
+
+        if self.hubbard_u_enabled {
+            if self.hubbard_species.trim().is_empty() {
+                println!("invalid hubbard_species: must not be empty when hubbard_u_enabled=true");
+                std::process::exit(-1);
+            }
+
+            if self.hubbard_l < 0 {
+                println!("invalid hubbard_l: must be >= 0 when hubbard_u_enabled=true");
+                std::process::exit(-1);
+            }
+
+            if self.hubbard_u < 0.0 {
+                println!("invalid hubbard_u: must be >= 0 eV when hubbard_u_enabled=true");
+                std::process::exit(-1);
+            }
+
+            if self.hubbard_j < 0.0 {
+                println!("invalid hubbard_j: must be >= 0 eV when hubbard_u_enabled=true");
+                std::process::exit(-1);
+            }
+
+            if self.hubbard_u < self.hubbard_j {
+                println!("invalid hubbard_u/hubbard_j: require hubbard_u >= hubbard_j");
+                std::process::exit(-1);
+            }
+
+            if self.is_noncollinear() {
+                println!("invalid spin_scheme: hubbard_u_enabled=true currently supports only nonspin/spin");
                 std::process::exit(-1);
             }
         }
@@ -817,6 +905,54 @@ impl Control {
             "   {:<width1$} = {:>width2$}",
             "wannier90_num_iter",
             self.get_wannier90_num_iter(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "hubbard_u_enabled",
+            self.get_hubbard_u_enabled(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "hubbard_species",
+            self.get_hubbard_species(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "hubbard_l",
+            self.get_hubbard_l(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$.6} eV",
+            "hubbard_u",
+            self.get_hubbard_u() * HA_TO_EV,
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$.6} eV",
+            "hubbard_j",
+            self.get_hubbard_j() * HA_TO_EV,
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$.6} eV",
+            "hubbard_u_eff",
+            self.get_hubbard_u_eff() * HA_TO_EV,
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );
