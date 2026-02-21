@@ -20,11 +20,11 @@ scf_rho_mix_beta = 0.01
 scf_rho_mix_history_steps = 4
 scf_harris = false
 scf_min_iter = 1
-scf_max_iter = 2
+scf_max_iter = 80
 scf_max_iter_wfc = 20
 scf_max_iter_rand_wfc = 1
 eigval_epsilon = 1E-6
-energy_epsilon = 1E-6
+energy_epsilon = 1E-5
 
 eigen_solver = pcg
 davidson_ndim = 6

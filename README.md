@@ -239,6 +239,12 @@ Notes:
 * Local XC part uses PBE; screened exact exchange is added in the SCF Hamiltonian.
 * Force/stress currently do not include the hybrid exchange contribution.
 
+Regression check (converged SCF):
+
+```bash
+bash scripts/run_hse06_regression.sh
+```
+
 # Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.
