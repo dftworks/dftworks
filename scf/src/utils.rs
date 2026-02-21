@@ -65,6 +65,29 @@ pub fn display_parallel_runtime_info() {
     );
 }
 
+pub fn validate_hse06_runtime_constraints(control: &Control, kpts: &dyn KPTS) {
+    if control.get_xc_scheme() != "hse06" {
+        return;
+    }
+
+    if kpts.get_n_kpts() != 1 {
+        panic!("xc_scheme='hse06' currently supports only a single Gamma k-point");
+    }
+
+    let k0 = kpts.get_k_frac(0);
+    if k0.norm2() > 1.0E-10 {
+        panic!(
+            "xc_scheme='hse06' currently supports only Gamma point (in.kmesh must map to k=(0,0,0))"
+        );
+    }
+
+    if dwmpi::is_root() {
+        println!(
+            "     NOTE: hse06 currently includes screened exact-exchange in the SCF Hamiltonian; force/stress do not include the hybrid exchange term yet."
+        );
+    }
+}
+
 // v_xc in r space first and then transform to G space; this will change with the density
 
 pub fn compute_v_e_xc_of_r(
@@ -743,10 +766,13 @@ pub fn compute_total_energy(
         rhocore_3d.as_slice(),
         vxc_3d.as_slice(),
     );
+    let hybrid_exchange = get_hybrid_exchange_energy(vkscf);
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
-    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy;
+    // `etot_bands` already contains <Vx_hybrid>; subtract E_x^hybrid once to
+    // remove the double counting and keep one copy in total energy.
+    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy - hybrid_exchange;
 
     etot
 }
@@ -759,4 +785,17 @@ fn get_bands_energy(vkscf: &[KSCF], vevals: &[Vec<f64>]) -> f64 {
     let etot_bands = energy::band_structure(vkscf, vevals);
 
     etot_bands
+}
+
+fn get_hybrid_exchange_energy(vkscf: &[KSCF]) -> f64 {
+    let local = vkscf
+        .iter()
+        .map(|kscf| kscf.get_hybrid_exchange_energy() * kscf.get_k_weight())
+        .sum::<f64>();
+
+    let mut total = 0.0;
+    dwmpi::reduce_scalar_sum(&local, &mut total, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut total, MPI_COMM_WORLD);
+
+    total
 }

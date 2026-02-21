@@ -63,6 +63,7 @@ impl SCF for SCFSpin {
         println!("   {:*^60}", " self-consistent field ");
 
         let density_driver = density::new(control.get_spin_scheme_enum());
+        utils::validate_hse06_runtime_constraints(control, kpts);
 
         let blatt = crystal.get_latt().reciprocal();
 
@@ -780,10 +781,15 @@ pub fn compute_total_energy(
     let etot_vxc = energy::vxc_spin(latt, rho_3d, rhocore_3d.as_slice(), vxc_3d);
 
     let etot_xc = energy::exc_spin(latt, &rho_3d, &rhocore_3d, &exc_3d);
+    let mut hybrid_exchange = 0.0;
+    if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
+        hybrid_exchange =
+            get_hybrid_exchange_energy(vkscf_up) + get_hybrid_exchange_energy(vkscf_dn);
+    }
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
-    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy;
+    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy - hybrid_exchange;
 
     etot
 }
@@ -798,6 +804,13 @@ pub fn get_bands_energy(vkscf: &[KSCF], vevals: &Vec<Vec<f64>>) -> f64 {
     //mpi::bcast_scalar(&etot_bands, MPI_COMM_WORLD);
 
     etot_bands
+}
+
+pub fn get_hybrid_exchange_energy(vkscf: &[KSCF]) -> f64 {
+    vkscf
+        .iter()
+        .map(|kscf| kscf.get_hybrid_exchange_energy() * kscf.get_k_weight())
+        .sum::<f64>()
 }
 
 pub fn get_eigvalue_epsilon(

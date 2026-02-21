@@ -107,6 +107,9 @@ pub struct Control {
     hubbard_l: i32,
     hubbard_u: f64, // eV in input, stored in Ha
     hubbard_j: f64, // eV in input, stored in Ha
+
+    hse06_alpha: f64,
+    hse06_omega: f64, // bohr^-1
 }
 
 impl Control {
@@ -184,6 +187,14 @@ impl Control {
 
     pub fn get_xc_scheme(&self) -> &str {
         &self.xc_scheme
+    }
+
+    pub fn get_hse06_alpha(&self) -> f64 {
+        self.hse06_alpha
+    }
+
+    pub fn get_hse06_omega(&self) -> f64 {
+        self.hse06_omega
     }
 
     pub fn get_geom_optim_cell(&self) -> bool {
@@ -433,6 +444,9 @@ impl Control {
         self.hubbard_u = 0.0;
         self.hubbard_j = 0.0;
 
+        self.hse06_alpha = 0.25;
+        self.hse06_omega = 0.11;
+
         let mut b_has_invalid_parameter = false;
 
         let mut b_ecut_rho_set = false;
@@ -470,7 +484,12 @@ impl Control {
                 }
 
                 "xc_scheme" => {
-                    self.xc_scheme = s[1].parse().unwrap();
+                    self.xc_scheme = s[1]
+                        .parse::<String>()
+                        .unwrap()
+                        .trim()
+                        .to_lowercase()
+                        .to_string();
                 }
 
                 "geom_optim_cell" => {
@@ -661,6 +680,14 @@ impl Control {
                     self.hubbard_j = s[1].parse::<f64>().unwrap() * EV_TO_HA;
                 }
 
+                "hse06_alpha" => {
+                    self.hse06_alpha = s[1].parse().unwrap();
+                }
+
+                "hse06_omega" => {
+                    self.hse06_omega = s[1].parse().unwrap();
+                }
+
                 "symmetry" => {
                     self.symmetry = s[1].parse().unwrap();
                     //println!(" symmetry = {}", self.get_symmetry());
@@ -747,6 +774,25 @@ impl Control {
 
             if self.is_noncollinear() {
                 println!("invalid spin_scheme: hubbard_u_enabled=true currently supports only nonspin/spin");
+                std::process::exit(-1);
+            }
+        }
+
+        if self.xc_scheme == "hse06" {
+            if self.hse06_alpha < 0.0 || self.hse06_alpha > 1.0 {
+                println!("invalid hse06_alpha: must be within [0, 1]");
+                std::process::exit(-1);
+            }
+
+            if self.hse06_omega <= 0.0 {
+                println!("invalid hse06_omega: must be > 0 (bohr^-1)");
+                std::process::exit(-1);
+            }
+
+            if self.is_noncollinear() {
+                println!(
+                    "invalid spin_scheme: xc_scheme='hse06' currently supports only nonspin/spin"
+                );
                 std::process::exit(-1);
             }
         }
@@ -953,6 +999,22 @@ impl Control {
             "   {:<width1$} = {:>width2$.6} eV",
             "hubbard_u_eff",
             self.get_hubbard_u_eff() * HA_TO_EV,
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "hse06_alpha",
+            self.get_hse06_alpha(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+
+        println!(
+            "   {:<width1$} = {:>width2$} bohr^-1",
+            "hse06_omega",
+            self.get_hse06_omega(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );

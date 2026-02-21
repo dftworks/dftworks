@@ -64,6 +64,7 @@ impl SCF for SCFNonspin {
 
         // Density helper chosen from spin scheme; this resolves to non-spin here.
         let density_driver = density::new(control.get_spin_scheme_enum());
+        utils::validate_hse06_runtime_constraints(control, kpts);
 
         //
 

@@ -582,6 +582,7 @@ fn main() {
                             let kscf = KSCF::new(
                                 &control,
                                 &gvec,
+                                &pwden,
                                 &crystal,
                                 &pots,
                                 &vpwwfc[ik - ik_first],
@@ -609,6 +610,7 @@ fn main() {
                             let kscf = KSCF::new(
                                 &control,
                                 &gvec,
+                                &pwden,
                                 &crystal,
                                 &pots,
                                 &vpwwfc[ik - ik_first],
@@ -630,6 +632,7 @@ fn main() {
                             let kscf = KSCF::new(
                                 &control,
                                 &gvec,
+                                &pwden,
                                 &crystal,
                                 &pots,
                                 &vpwwfc[ik - ik_first],

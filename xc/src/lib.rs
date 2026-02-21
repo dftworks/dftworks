@@ -49,6 +49,12 @@ pub fn new(xc_scheme: &str) -> Box<dyn XC> {
             xc = Box::new(XCPBE::new());
         }
 
+        // Local (semi-local) HSE06 component currently reuses PBE.
+        // The screened exact-exchange operator is applied in KSCF.
+        "hse06" => {
+            xc = Box::new(XCPBE::new());
+        }
+
         &_ => {
             println!("{} not implemented", xc_scheme);
             panic!();

@@ -21,6 +21,7 @@ matrix = { path = "../matrix" }
 ndarray = { path = "../ndarray" }
 pspot = { path = "../pspot" }
 pwbasis = { path = "../pwbasis" }
+pwdensity = { path = "../pwdensity" }
 rgtransform = { path = "../rgtransform" }
 smearing = { path = "../smearing" }
 eigensolver = { path = "../eigensolver" }

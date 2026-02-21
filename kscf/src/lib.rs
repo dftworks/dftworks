@@ -13,6 +13,7 @@ use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
 use pwbasis::PWBasis;
+use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use smearing;
 use smearing::Smearing;
@@ -22,10 +23,13 @@ use vector3::*;
 use vnl::VNL;
 
 use itertools::multizip;
+use std::cell::Cell;
 
 mod hubbard;
+mod hybrid;
 mod subspace;
 use hubbard::HubbardPotential;
+use hybrid::HybridPotential;
 
 // Cached non-local data for one species at one k-point.
 // Keeping structure factors + projector tables together avoids repeated
@@ -47,6 +51,7 @@ struct NonLocalTerm<'a> {
 pub struct KSCF<'a> {
     control: &'a Control,
     gvec: &'a GVector,
+    pwden: &'a PWDensity,
     pspot: &'a PSPot,
     vnl: &'a VNL,
     pwwfc: &'a PWBasis,
@@ -60,7 +65,9 @@ pub struct KSCF<'a> {
     fft_shape: [usize; 3],
     fft_linear_index: Vec<usize>,
     vnl_terms: Vec<NonLocalTerm<'a>>,
+    hybrid: HybridPotential,
     hubbard: HubbardPotential,
+    hybrid_exchange_energy: Cell<f64>,
 
     k_weight: f64,
 }
@@ -89,6 +96,7 @@ impl<'a> KSCF<'a> {
     pub fn new(
         control: &'a Control,
         gvec: &'a GVector,
+        pwden: &'a PWDensity,
         crystal: &'a Crystal,
         pspot: &'a PSPot,
         pwwfc: &'a PWBasis,
@@ -120,11 +128,13 @@ impl<'a> KSCF<'a> {
         );
         // Precompute non-local projector terms by species.
         let vnl_terms = build_nonlocal_terms(crystal, gvec, pspot, pwwfc, vnl);
+        let hybrid = HybridPotential::new(control, pwwfc, pwden);
         let hubbard = HubbardPotential::new(control, crystal, gvec, pspot, pwwfc, &kgylm);
 
         KSCF {
             control,
             gvec,
+            pwden,
             pspot,
             vnl,
             pwwfc,
@@ -137,7 +147,9 @@ impl<'a> KSCF<'a> {
             fft_shape,
             fft_linear_index,
             vnl_terms,
+            hybrid,
             hubbard,
+            hybrid_exchange_energy: Cell::new(0.0),
             k_weight,
         }
     }
@@ -173,6 +185,14 @@ impl<'a> KSCF<'a> {
 
     pub fn get_total_occ(&self) -> f64 {
         self.occ.iter().sum()
+    }
+
+    pub fn hybrid_is_enabled(&self) -> bool {
+        self.hybrid.is_enabled()
+    }
+
+    pub fn get_hybrid_exchange_energy(&self) -> f64 {
+        self.hybrid_exchange_energy.get()
     }
 
     pub fn hubbard_is_enabled(&self) -> bool {
@@ -305,6 +325,22 @@ impl<'a> KSCF<'a> {
         let mut fft_workspace = Array3::<c64>::new(self.fft_shape);
         let mut hubbard_beta = vec![c64::new(0.0, 0.0); self.hubbard.n_m()];
         let mut hubbard_coeff = vec![c64::new(0.0, 0.0); self.hubbard.n_m()];
+        let hybrid_prepared = self.hybrid.prepare(
+            rgtrans,
+            self.gvec,
+            self.pwden,
+            self.volume,
+            self.fft_shape,
+            &self.fft_linear_index,
+            evecs,
+            &self.occ,
+            self.control.is_spin(),
+        );
+        self.hybrid_exchange_energy
+            .set(hybrid_prepared.exchange_energy());
+        let mut hybrid_workspace = self
+            .hybrid
+            .make_workspace(self.fft_shape, self.pwden.get_n_plane_waves());
 
         //
 
@@ -340,6 +376,19 @@ impl<'a> KSCF<'a> {
                     vout,
                 );
             }
+
+            // Screened exact-exchange (HSE06 short-range) contribution.
+            self.hybrid.apply_on_psi(
+                rgtrans,
+                self.gvec,
+                self.pwden,
+                self.volume,
+                &self.fft_linear_index,
+                &hybrid_prepared,
+                &mut hybrid_workspace,
+                vin,
+                vout,
+            );
 
             // Hubbard (+U) contribution hook.
             self.hubbard
