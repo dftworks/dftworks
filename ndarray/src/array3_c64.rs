@@ -146,22 +146,61 @@ impl Array3<c64> {
             .unwrap();
     }
 
-    /// Load the array from a HDF5 group as saved by the save_hdf5 function.
-    pub fn load_hdf5(group: &hdf5::Group) -> Self {
-        // Read shape
-        let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
-        let shape: [usize; 3] = shape.try_into().unwrap();
+    /// Fallible HDF5 loader used by restart/checkpoint paths.
+    pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
+        let shape_vec: Vec<usize> = group
+            .dataset("shape")
+            .map_err(|e| format!("failed to open dataset 'shape': {}", e))?
+            .read()
+            .map_err(|e| format!("failed to read dataset 'shape': {}", e))?
+            .to_vec();
+        let shape: [usize; 3] = shape_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| format!("invalid array shape length: expected 3, got {}", shape_vec.len()))?;
 
-        // Read data
-        let real_data: Vec<f64> = group.dataset("real").unwrap().read().unwrap().to_vec();
-        let imag_data: Vec<f64> = group.dataset("imag").unwrap().read().unwrap().to_vec();
+        let real_data: Vec<f64> = group
+            .dataset("real")
+            .map_err(|e| format!("failed to open dataset 'real': {}", e))?
+            .read()
+            .map_err(|e| format!("failed to read dataset 'real': {}", e))?
+            .to_vec();
+        let imag_data: Vec<f64> = group
+            .dataset("imag")
+            .map_err(|e| format!("failed to open dataset 'imag': {}", e))?
+            .read()
+            .map_err(|e| format!("failed to read dataset 'imag': {}", e))?
+            .to_vec();
+
+        if real_data.len() != imag_data.len() {
+            return Err(format!(
+                "invalid array payload: real_len={} imag_len={}",
+                real_data.len(),
+                imag_data.len()
+            ));
+        }
+
+        let expected_len = shape[0] * shape[1] * shape[2];
+        if real_data.len() != expected_len {
+            return Err(format!(
+                "invalid array payload length: expected {}, got {}",
+                expected_len,
+                real_data.len()
+            ));
+        }
+
         let data: Vec<c64> = real_data
             .iter()
             .zip(imag_data)
             .map(|(&r, i)| c64::new(r, i))
             .collect();
 
-        Self::from_vec(shape, data)
+        Ok(Self::from_vec(shape, data))
+    }
+
+    /// Load the array from HDF5 and panic on malformed input.
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        Self::try_load_hdf5(group).expect("failed to load Array3<c64> from HDF5")
     }
 }
 

@@ -14,11 +14,15 @@ use pspot::PSPot;
 use pwbasis::PWBasis;
 use pwdensity::*;
 use rayon;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use symmetry::SymmetryDriver;
 use types::*;
 use vector3::Vector3f64;
 use vnl::VNL;
+
+const RESTART_LATTICE_TOL: f64 = 1.0e-8;
+const RESTART_META_TOL: f64 = 1.0e-12;
 
 fn display_program_header() {
     println!();
@@ -344,6 +348,7 @@ fn main() {
 
         let pwden = PWDensity::new(control.get_ecutrho(), &gvec);
         let npw_rho = pwden.get_n_plane_waves();
+        let blatt = crystal.get_latt().reciprocal();
 
         if dwmpi::is_root() {
             display_grid_information(&fftgrid, &pwden);
@@ -390,17 +395,33 @@ fn main() {
         // Initialize density either from previous converged file (restart) or
         // from atomic superposition.
 
+        let expected_checkpoint_meta =
+            checkpoint_meta_for_run(&control, spin_scheme, kpts.get_k_mesh());
+
         if dwmpi::is_root() {
-            if geom_iter == 1 && std::path::Path::new("out.scf.rho.hdf5").exists() {
-                if let RHOG::NonSpin(ref mut rhog) = &mut rhog {
-                    rho_3d = RHOR::load_hdf5(matches!(spin_scheme, SpinScheme::Spin)).1;
-                    if let RHOR::NonSpin(data) = &mut rho_3d {
-                        rgtrans.r3d_to_g1d(&gvec, &pwden, data.as_slice(), rhog);
+            let mut loaded_from_restart = false;
+            if geom_iter == 1 && control.get_restart() {
+                match try_load_density_checkpoint(
+                    spin_scheme,
+                    &expected_checkpoint_meta,
+                    &blatt,
+                    &rgtrans,
+                    &gvec,
+                    &pwden,
+                    &mut rhog,
+                    &mut rho_3d,
+                ) {
+                    Ok(message) => {
+                        println!("   {}", message);
+                        loaded_from_restart = true;
+                    }
+                    Err(err) => {
+                        panic!("{}", err);
                     }
                 }
+            }
 
-                println!("   load charge density from out.scf.rho.hdf5");
-            } else {
+            if !loaded_from_restart {
                 density_driver.from_atomic_super_position(
                     &pots,
                     &crystal,
@@ -411,8 +432,15 @@ fn main() {
                     &mut rho_3d,
                 );
 
-                println!();
-                println!("   construct charge density from constituent atoms");
+                if geom_iter == 1 && !control.get_restart() && restart_density_files_exist(spin_scheme)
+                {
+                    println!(
+                        "   restart=false: ignore existing checkpoint files and build atomic initial density"
+                    );
+                } else {
+                    println!();
+                    println!("   construct charge density from constituent atoms");
+                }
             }
         }
 
@@ -530,8 +558,6 @@ fn main() {
 
         let nband = control.get_nband();
         let nkpt = kpts.get_n_kpts();
-
-        let blatt = crystal.get_latt().reciprocal();
 
         // vpwwfc
 
@@ -686,6 +712,32 @@ fn main() {
             SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
         }
 
+        if geom_iter == 1 && control.get_restart() {
+            if let Some((ik_first_local, ik_last_local)) = ik_range {
+                match try_load_wavefunction_checkpoint(
+                    spin_scheme,
+                    ik_first_local,
+                    ik_last_local,
+                    &blatt,
+                    &expected_checkpoint_meta,
+                    &vpwwfc,
+                    &mut vkevecs,
+                ) {
+                    Ok(message) => {
+                        if dwmpi::is_root() {
+                            println!("   {}", message);
+                        }
+                    }
+                    Err(err) => {
+                        if dwmpi::is_root() {
+                            println!("   NOTE: {}", err);
+                            println!("   NOTE: continue with default wavefunction initialization");
+                        }
+                    }
+                }
+            }
+        }
+
         // ions optimization
 
         if dwmpi::is_root() {
@@ -719,7 +771,7 @@ fn main() {
 
         if dwmpi::is_root() {
             if control.get_save_rho() {
-                rho_3d.save_hdf5(&blatt);
+                rho_3d.save_hdf5_with_meta(&blatt, Some(&expected_checkpoint_meta));
             }
 
             crystal.output();
@@ -727,7 +779,12 @@ fn main() {
 
         // save wavefunction
         if control.get_save_wfc() || control.get_wannier90_export() {
-            vkevecs.save_hdf5(ik_first, &vpwwfc, &blatt);
+            vkevecs.save_hdf5_with_meta(
+                ik_first,
+                &vpwwfc,
+                &blatt,
+                Some(&expected_checkpoint_meta),
+            );
         }
 
         // if converged, then exit
@@ -842,6 +899,333 @@ fn main() {
     dwmpi::barrier(MPI_COMM_WORLD);
 
     dwmpi::finalize();
+}
+
+fn restart_density_files_exist(spin_scheme: SpinScheme) -> bool {
+    match spin_scheme {
+        SpinScheme::NonSpin => Path::new("out.scf.rho.hdf5").exists(),
+        SpinScheme::Spin => {
+            Path::new("out.scf.rho.up.hdf5").exists() && Path::new("out.scf.rho.dn.hdf5").exists()
+        }
+        SpinScheme::Ncl => false,
+    }
+}
+
+fn try_load_density_checkpoint(
+    spin_scheme: SpinScheme,
+    expected_meta: &CheckpointMeta,
+    expected_blatt: &lattice::Lattice,
+    rgtrans: &rgtransform::RGTransform,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    rhog: &mut RHOG,
+    rho_3d: &mut RHOR,
+) -> Result<String, String> {
+    if !restart_density_files_exist(spin_scheme) {
+        return Err(match spin_scheme {
+            SpinScheme::NonSpin => "restart requested but 'out.scf.rho.hdf5' is missing".to_string(),
+            SpinScheme::Spin => {
+                "restart requested but spin density checkpoints ('out.scf.rho.up.hdf5' and/or 'out.scf.rho.dn.hdf5') are missing".to_string()
+            }
+            SpinScheme::Ncl => "restart requested for unsupported spin_scheme='ncl'".to_string(),
+        });
+    }
+
+    let (checkpoint_blatt, loaded_rho, checkpoint_meta_opt) =
+        RHOR::try_load_hdf5(matches!(spin_scheme, SpinScheme::Spin))?;
+
+    let checkpoint_meta = checkpoint_meta_opt.ok_or_else(|| {
+        "checkpoint metadata is missing; regenerate checkpoints with the current schema".to_string()
+    })?;
+
+    checkpoint_meta.validate_against(expected_meta, RESTART_META_TOL)?;
+
+    validate_checkpoint_lattice(
+        expected_blatt,
+        &checkpoint_blatt,
+        RESTART_LATTICE_TOL,
+        "density",
+    )?;
+
+    *rho_3d = loaded_rho;
+
+    match (spin_scheme, rhog, rho_3d) {
+        (SpinScheme::NonSpin, RHOG::NonSpin(rhog_ns), RHOR::NonSpin(rho_ns)) => {
+            rgtrans.r3d_to_g1d(gvec, pwden, rho_ns.as_slice(), rhog_ns);
+            Ok("loaded restart density from out.scf.rho.hdf5".to_string())
+        }
+        (SpinScheme::Spin, RHOG::Spin(rhog_up, rhog_dn), RHOR::Spin(rho_up, rho_dn)) => {
+            rgtrans.r3d_to_g1d(gvec, pwden, rho_up.as_slice(), rhog_up);
+            rgtrans.r3d_to_g1d(gvec, pwden, rho_dn.as_slice(), rhog_dn);
+            Ok("loaded restart density from out.scf.rho.up.hdf5/out.scf.rho.dn.hdf5".to_string())
+        }
+        _ => Err("restart density spin-scheme mismatch while loading checkpoint".to_string()),
+    }
+}
+
+fn try_load_wavefunction_checkpoint(
+    spin_scheme: SpinScheme,
+    ik_first: usize,
+    ik_last: usize,
+    expected_blatt: &lattice::Lattice,
+    expected_meta: &CheckpointMeta,
+    vpwwfc: &[PWBasis],
+    vkevecs: &mut VKEigenVector,
+) -> Result<String, String> {
+    if ik_last < ik_first || vpwwfc.is_empty() {
+        return Err("skip wavefunction restart: no local k-points on this rank".to_string());
+    }
+
+    let local_nk = ik_last - ik_first + 1;
+    if local_nk != vpwwfc.len() {
+        return Err(format!(
+            "wavefunction restart mismatch: local_nk={} but local basis count={}",
+            local_nk,
+            vpwwfc.len()
+        ));
+    }
+
+    for ik in ik_first..=ik_last {
+        let ready = match spin_scheme {
+            SpinScheme::NonSpin => Path::new(&format!("out.wfc.k.{}.hdf5", ik)).exists(),
+            SpinScheme::Spin => {
+                Path::new(&format!("out.wfc.up.k.{}.hdf5", ik)).exists()
+                    && Path::new(&format!("out.wfc.dn.k.{}.hdf5", ik)).exists()
+            }
+            SpinScheme::Ncl => false,
+        };
+        if !ready {
+            return Err(format!(
+                "wavefunction restart files are incomplete for local k-index {}",
+                ik
+            ));
+        }
+    }
+
+    validate_wavefunction_checkpoint_metadata(spin_scheme, ik_first, ik_last, expected_meta)?;
+
+    let (loaded_pwbasis, checkpoint_blatt, loaded_evecs) =
+        VKEigenVector::try_load_hdf5(matches!(spin_scheme, SpinScheme::Spin), ik_first, ik_last)?;
+
+    validate_checkpoint_lattice(
+        expected_blatt,
+        &checkpoint_blatt,
+        RESTART_LATTICE_TOL,
+        "wavefunction",
+    )?;
+
+    if loaded_pwbasis.len() != vpwwfc.len() {
+        return Err(format!(
+            "wavefunction restart mismatch: loaded basis count={} but expected {}",
+            loaded_pwbasis.len(),
+            vpwwfc.len()
+        ));
+    }
+
+    for (i, (loaded, expected)) in loaded_pwbasis.iter().zip(vpwwfc.iter()).enumerate() {
+        if loaded.get_k_index() != expected.get_k_index() {
+            return Err(format!(
+                "wavefunction restart mismatch at local k-slot {}: loaded k_index={} expected={}",
+                i,
+                loaded.get_k_index(),
+                expected.get_k_index()
+            ));
+        }
+        if loaded.get_n_plane_waves() != expected.get_n_plane_waves() {
+            return Err(format!(
+                "wavefunction restart mismatch at k_index {}: loaded npw={} expected={}",
+                expected.get_k_index(),
+                loaded.get_n_plane_waves(),
+                expected.get_n_plane_waves()
+            ));
+        }
+    }
+
+    validate_loaded_wavefunction_shapes(&loaded_evecs, vkevecs, ik_first)?;
+
+    *vkevecs = loaded_evecs;
+
+    Ok(format!(
+        "loaded restart wavefunctions for local k-range [{}..={}]",
+        ik_first, ik_last
+    ))
+}
+
+fn validate_wavefunction_checkpoint_metadata(
+    spin_scheme: SpinScheme,
+    ik_first: usize,
+    ik_last: usize,
+    expected_meta: &CheckpointMeta,
+) -> Result<(), String> {
+    for ik in ik_first..=ik_last {
+        match spin_scheme {
+            SpinScheme::NonSpin => {
+                let filename = format!("out.wfc.k.{}.hdf5", ik);
+                let checkpoint_meta = read_checkpoint_meta_required(&filename)?;
+                checkpoint_meta.validate_against(expected_meta, RESTART_META_TOL)?;
+            }
+            SpinScheme::Spin => {
+                let filename_up = format!("out.wfc.up.k.{}.hdf5", ik);
+                let filename_dn = format!("out.wfc.dn.k.{}.hdf5", ik);
+                let checkpoint_meta_up = read_checkpoint_meta_required(&filename_up)?;
+                let checkpoint_meta_dn = read_checkpoint_meta_required(&filename_dn)?;
+                checkpoint_meta_up.validate_against(expected_meta, RESTART_META_TOL)?;
+                checkpoint_meta_dn.validate_against(expected_meta, RESTART_META_TOL)?;
+            }
+            SpinScheme::Ncl => {
+                return Err("restart requested for unsupported spin_scheme='ncl'".to_string())
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn read_checkpoint_meta_required(filename: &str) -> Result<CheckpointMeta, String> {
+    let checkpoint_meta = CheckpointMeta::read_from_path_optional(filename)?;
+    checkpoint_meta.ok_or_else(|| {
+        format!(
+            "checkpoint metadata is missing in '{}'; regenerate checkpoints with the current schema",
+            filename
+        )
+    })
+}
+
+fn validate_loaded_wavefunction_shapes(
+    loaded: &VKEigenVector,
+    expected: &VKEigenVector,
+    ik_first: usize,
+) -> Result<(), String> {
+    match (loaded, expected) {
+        (VKEigenVector::NonSpin(loaded_ns), VKEigenVector::NonSpin(expected_ns)) => {
+            if loaded_ns.len() != expected_ns.len() {
+                return Err(format!(
+                    "wavefunction restart mismatch: loaded {} k-point blocks, expected {}",
+                    loaded_ns.len(),
+                    expected_ns.len()
+                ));
+            }
+            for (i, (loaded_mat, expected_mat)) in loaded_ns.iter().zip(expected_ns.iter()).enumerate()
+            {
+                if loaded_mat.nrow() != expected_mat.nrow() || loaded_mat.ncol() != expected_mat.ncol()
+                {
+                    return Err(format!(
+                        "wavefunction restart shape mismatch at k_index {}: loaded {}x{}, expected {}x{}",
+                        ik_first + i,
+                        loaded_mat.nrow(),
+                        loaded_mat.ncol(),
+                        expected_mat.nrow(),
+                        expected_mat.ncol()
+                    ));
+                }
+            }
+        }
+        (VKEigenVector::Spin(loaded_up, loaded_dn), VKEigenVector::Spin(expected_up, expected_dn)) => {
+            if loaded_up.len() != expected_up.len() || loaded_dn.len() != expected_dn.len() {
+                return Err(format!(
+                    "wavefunction restart mismatch: loaded blocks (up={}, dn={}), expected (up={}, dn={})",
+                    loaded_up.len(),
+                    loaded_dn.len(),
+                    expected_up.len(),
+                    expected_dn.len()
+                ));
+            }
+            for (i, (loaded_mat, expected_mat)) in loaded_up.iter().zip(expected_up.iter()).enumerate()
+            {
+                if loaded_mat.nrow() != expected_mat.nrow() || loaded_mat.ncol() != expected_mat.ncol()
+                {
+                    return Err(format!(
+                        "wavefunction restart shape mismatch (up) at k_index {}: loaded {}x{}, expected {}x{}",
+                        ik_first + i,
+                        loaded_mat.nrow(),
+                        loaded_mat.ncol(),
+                        expected_mat.nrow(),
+                        expected_mat.ncol()
+                    ));
+                }
+            }
+            for (i, (loaded_mat, expected_mat)) in loaded_dn.iter().zip(expected_dn.iter()).enumerate()
+            {
+                if loaded_mat.nrow() != expected_mat.nrow() || loaded_mat.ncol() != expected_mat.ncol()
+                {
+                    return Err(format!(
+                        "wavefunction restart shape mismatch (dn) at k_index {}: loaded {}x{}, expected {}x{}",
+                        ik_first + i,
+                        loaded_mat.nrow(),
+                        loaded_mat.ncol(),
+                        expected_mat.nrow(),
+                        expected_mat.ncol()
+                    ));
+                }
+            }
+        }
+        _ => {
+            return Err(
+                "wavefunction restart spin-scheme mismatch between loaded and expected storage"
+                    .to_string(),
+            )
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_checkpoint_lattice(
+    expected: &lattice::Lattice,
+    checkpoint: &lattice::Lattice,
+    tol: f64,
+    checkpoint_kind: &str,
+) -> Result<(), String> {
+    let max_diff = lattice_max_abs_diff(expected, checkpoint);
+    if max_diff > tol {
+        Err(format!(
+            "{} checkpoint lattice mismatch: max |delta(b)|={:.3e} exceeds tolerance {:.3e}",
+            checkpoint_kind, max_diff, tol
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn lattice_max_abs_diff(lhs: &lattice::Lattice, rhs: &lattice::Lattice) -> f64 {
+    let lhs_arr = lhs.as_2d_array_row_major();
+    let rhs_arr = rhs.as_2d_array_row_major();
+    let mut max_diff = 0.0f64;
+    for i in 0..3 {
+        for j in 0..3 {
+            let d = (lhs_arr[i][j] - rhs_arr[i][j]).abs();
+            if d > max_diff {
+                max_diff = d;
+            }
+        }
+    }
+    max_diff
+}
+
+fn checkpoint_meta_for_run(
+    control: &Control,
+    spin_scheme: SpinScheme,
+    k_mesh: [i32; 3],
+) -> CheckpointMeta {
+    let spin_channels = match spin_scheme {
+        SpinScheme::NonSpin => 1,
+        SpinScheme::Spin => 2,
+        SpinScheme::Ncl => 4,
+    };
+
+    let nband_usize = control.get_nband();
+    if nband_usize > u32::MAX as usize {
+        panic!("nband={} exceeds checkpoint metadata limit {}", nband_usize, u32::MAX);
+    }
+    let nband = nband_usize as u32;
+
+    CheckpointMeta::new(
+        spin_channels,
+        nband,
+        control.get_ecut(),
+        control.get_ecutrho(),
+        k_mesh,
+    )
 }
 
 fn post_processing(

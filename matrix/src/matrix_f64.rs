@@ -122,18 +122,45 @@ impl Matrix<f64> {
             .unwrap();
     }
 
-    /// Load the array from a HDF5 group as saved by the save_hdf5 function.
+    /// Fallible HDF5 loader used by restart/checkpoint paths.
+    pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
+        let shape_ds = group
+            .dataset("shape")
+            .map_err(|e| format!("failed to open dataset 'shape': {}", e))?;
+        let shape: Vec<usize> = shape_ds
+            .read()
+            .map_err(|e| format!("failed to read dataset 'shape': {}", e))?
+            .to_vec();
+        if shape.len() != 2 {
+            return Err(format!(
+                "invalid matrix shape length: expected 2, got {}",
+                shape.len()
+            ));
+        }
+        let nrow = shape[0];
+        let ncol = shape[1];
+
+        let data: Vec<f64> = group
+            .dataset("data")
+            .map_err(|e| format!("failed to open dataset 'data': {}", e))?
+            .read()
+            .map_err(|e| format!("failed to read dataset 'data': {}", e))?
+            .to_vec();
+
+        let expected_len = nrow * ncol;
+        if data.len() != expected_len {
+            return Err(format!(
+                "invalid matrix payload length: expected {}, got {}",
+                expected_len,
+                data.len()
+            ));
+        }
+
+        Ok(Self { nrow, ncol, data })
+    }
+
+    /// Load the matrix from HDF5 and panic on malformed input.
     pub fn load_hdf5(group: &hdf5::Group) -> Self {
-        let mut mat = Self::default();
-
-        // Read nrow and ncol
-        let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
-        mat.nrow = *shape.get(0).unwrap();
-        mat.ncol = *shape.get(1).unwrap();
-
-        // Read data
-        mat.data = group.dataset("data").unwrap().read().unwrap().to_vec();
-
-        mat
+        Self::try_load_hdf5(group).expect("failed to load Matrix<f64> from HDF5")
     }
 }

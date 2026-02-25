@@ -121,25 +121,66 @@ impl Matrix<c64> {
             .unwrap();
     }
 
-    /// Load the array from a HDF5 group as saved by the save_hdf5 function.
-    pub fn load_hdf5(group: &hdf5::Group) -> Self {
-        let mut mat = Self::default();
+    /// Fallible HDF5 loader used by restart/checkpoint paths.
+    pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
+        let shape_ds = group
+            .dataset("shape")
+            .map_err(|e| format!("failed to open dataset 'shape': {}", e))?;
+        let shape: Vec<usize> = shape_ds
+            .read()
+            .map_err(|e| format!("failed to read dataset 'shape': {}", e))?
+            .to_vec();
+        if shape.len() != 2 {
+            return Err(format!(
+                "invalid matrix shape length: expected 2, got {}",
+                shape.len()
+            ));
+        }
+        let nrow = shape[0];
+        let ncol = shape[1];
 
-        // Read nrow and ncol
-        let shape: Vec<usize> = group.dataset("shape").unwrap().read().unwrap().to_vec();
-        mat.nrow = *shape.get(0).unwrap();
-        mat.ncol = *shape.get(1).unwrap();
+        let real_data: Vec<f64> = group
+            .dataset("real")
+            .map_err(|e| format!("failed to open dataset 'real': {}", e))?
+            .read()
+            .map_err(|e| format!("failed to read dataset 'real': {}", e))?
+            .to_vec();
+        let imag_data: Vec<f64> = group
+            .dataset("imag")
+            .map_err(|e| format!("failed to open dataset 'imag': {}", e))?
+            .read()
+            .map_err(|e| format!("failed to read dataset 'imag': {}", e))?
+            .to_vec();
 
-        // Read data
-        let real_data: Vec<f64> = group.dataset("real").unwrap().read().unwrap().to_vec();
-        let imag_data: Vec<f64> = group.dataset("imag").unwrap().read().unwrap().to_vec();
-        mat.data = real_data
+        if real_data.len() != imag_data.len() {
+            return Err(format!(
+                "invalid matrix payload: real_len={} imag_len={}",
+                real_data.len(),
+                imag_data.len()
+            ));
+        }
+
+        let expected_len = nrow * ncol;
+        if real_data.len() != expected_len {
+            return Err(format!(
+                "invalid matrix payload length: expected {}, got {}",
+                expected_len,
+                real_data.len()
+            ));
+        }
+
+        let data = real_data
             .iter()
             .zip(imag_data)
             .map(|(&r, i)| c64::new(r, i))
             .collect();
 
-        mat
+        Ok(Self { nrow, ncol, data })
+    }
+
+    /// Load the matrix from HDF5 and panic on malformed input.
+    pub fn load_hdf5(group: &hdf5::Group) -> Self {
+        Self::try_load_hdf5(group).expect("failed to load Matrix<c64> from HDF5")
     }
 }
 

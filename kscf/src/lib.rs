@@ -300,11 +300,18 @@ impl<'a> KSCF<'a> {
         evecs: &mut Matrix<c64>,
     ) -> (usize, usize) {
         // Optional randomized initialization in early SCF cycles.
+        // Preserve loaded restart vectors when they are already non-zero.
         if scf_iter <= self.control.get_scf_max_iter_rand_wfc() {
             let kg = self.pwwfc.get_kg();
 
             for ib in 0..self.control.get_nband() {
                 let mut evec = evecs.get_mut_col(ib);
+
+                let has_restart_guess = evec.iter().any(|x| x.norm_sqr() > EPS20);
+                if has_restart_guess {
+                    utility::normalize_vector_c64(&mut evec);
+                    continue;
+                }
 
                 utility::make_normalized_rand_vector(&mut evec);
 

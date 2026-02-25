@@ -191,7 +191,124 @@ The previous list contained intentional overlap to capture related themes. The i
 - Baseline performance dashboard exists for representative workloads
 - CI detects meaningful performance regressions and physics regressions
 
+### E12 - Restart Semantics and Checkpoint Completeness
+**Priority**: P1  
+**Status**: Completed (2026-02-25)  
+**Files**: `pw/src/main.rs`, `control/src/lib.rs`, `dfttypes/src/lib.rs`, `workflow/src/main.rs`
+
+- Honor `restart` as an explicit runtime policy instead of implicit file-existence checks
+- Support warm restart for both nonspin and spin paths (density, eigenvectors, occupations, and SCF bookkeeping)
+- Validate checkpoint compatibility (`spin_scheme`, lattice, k-mesh, cutoffs, `nband`, schema version) before load
+- Replace checkpoint `unwrap()` failure paths with actionable error messages
+
+**Acceptance Criteria**
+- `restart=false` never attempts to read checkpoint artifacts
+- `restart=true` can resume nonspin and spin runs without manual file edits
+- Incompatible checkpoint inputs fail with clear diagnostics and no panic
+
+**Completion Update (2026-02-25)**
+- [x] `pw` now treats `restart` as an explicit policy gate for density checkpoint loading
+- [x] Spin and nonspin density restart paths are both wired in `pw`
+- [x] Wavefunction warm-start loading added with lattice and local basis compatibility checks
+- [x] Restart now emits explicit diagnostics when checkpoint files are missing or incompatible
+- [x] Replace panic-based checkpoint readers with `Result`-based loaders in `dfttypes`/`matrix`/`ndarray`
+- [x] Persist and validate checkpoint metadata (spin mode, cutoffs, k-mesh, `nband`, schema version)
+- [x] Validate wavefunction checkpoint metadata across local k-point files before loading vectors
+
+### E13 - Spin SCF MPI and Symmetry Parity
+**Priority**: P1  
+**Status**: Open  
+**Files**: `scf/src/spin.rs`, `scf/src/utils.rs`, `pw/src/main.rs`
+
+- Align spin SCF reduction semantics with nonspin (`band_energy`, force, stress, and derived totals)
+- Apply symmetry projection to spin force/stress paths when symmetry is enabled
+- Remove rank-noisy default logs in spin path and enforce root-only summaries
+- Add spin multi-rank parity tests versus single-rank references
+
+**Acceptance Criteria**
+- Spin total energies/forces/stresses are rank-count invariant within tolerance
+- Symmetry-enabled spin runs satisfy force/stress invariance checks
+- Default spin output volume is comparable to nonspin output volume
+
+### E14 - FFT Planning and Spectral-Operator Workspace Tuning
+**Priority**: P2  
+**Status**: Open  
+**Files**: `dwfft3d/src/lib.rs`, `rgtransform/src/lib.rs`, SCF/XC callers
+
+- Remove hard-coded FFT thread count and add controlled runtime selection
+- Add FFT plan reuse policy (including optional wisdom persistence where supported)
+- Eliminate transient allocations in gradient/divergence kernels with reusable workspace buffers
+- Benchmark FFT planning overhead and GGA-heavy SCF loops before/after changes
+
+**Acceptance Criteria**
+- FFT thread policy is configurable and documented
+- Repeated transforms avoid redundant planning overhead
+- Gradient/divergence paths are allocation-free in steady-state profiling
+
+### E15 - Cost-Aware K-Point Scheduling and Spin Cache Deduplication
+**Priority**: P2/P3  
+**Status**: Open  
+**Files**: `kpts_distribution/src/lib.rs`, `pw/src/main.rs`, `kscf/src/lib.rs`
+
+- Replace pure contiguous k-point partitioning with cost-aware scheduling (e.g., `npw * nband` proxy)
+- Add optional dynamic scheduling mode for heterogeneous k-point costs
+- Share immutable per-k caches between spin-up/down workers to avoid duplicated precompute/memory
+- Track per-rank timing imbalance and memory deltas in scaling reports
+
+**Acceptance Criteria**
+- MPI rank wall-time imbalance is reduced on asymmetric k-point workloads
+- Spin memory footprint drops measurably on representative systems
+- Numerical results remain unchanged versus current partitioning
+
+### E16 - Deterministic Initialization and Run Provenance
+**Priority**: P2/P4  
+**Status**: Open  
+**Files**: `utility/src/lib.rs`, `control/src/lib.rs`, `pw/src/main.rs`, `workflow/src/main.rs`
+
+- Add explicit RNG seed control for wavefunction random initialization
+- Record full run manifest (seed, git commit, crate features, MPI/rayon settings, input hashes)
+- Surface provenance in properties/workflow outputs to support reproducible reruns
+- Add replay checks that reject stale/incompatible manifests when requested
+
+**Acceptance Criteria**
+- Fixed seed runs are bitwise or numerically stable under fixed runtime settings
+- Every run directory contains a machine-readable provenance manifest
+- Reproducibility checks can be automated in CI for at least one reference case
+
+### E17 - Scalable Checkpoint I/O and Artifact Schema Governance
+**Priority**: P3/P4  
+**Status**: Open  
+**Files**: `dfttypes/src/lib.rs`, `pw/src/main.rs`, `workflow/src/main.rs`
+
+- Add scalable checkpoint layout options beyond per-k-point small-file patterns
+- Support chunking/compression and batched write/read strategies for large runs
+- Introduce explicit schema/version metadata for `rho`/`wfc` artifacts
+- Provide migration/compatibility checks across schema revisions
+
+**Acceptance Criteria**
+- Large-k workloads produce fewer metadata-heavy I/O bottlenecks
+- Checkpoint readers reject incompatible schema versions with actionable guidance
+- Restart throughput improves on representative multi-rank filesystems
+
+### E18 - Verbosity Policy and Structured Runtime Logging
+**Priority**: P3  
+**Status**: Open  
+**Files**: `control/src/lib.rs`, `pw/src/main.rs`, `scf/`, `kscf/`
+
+- Implement typed verbosity levels (`quiet`, `normal`, `verbose`, `debug`) and enforce them consistently
+- Gate high-volume per-band/per-rank diagnostics behind explicit debug modes
+- Emit structured iteration timing/metric logs (`jsonl` or CSV) alongside human-readable output
+- Ensure logging overhead is measured and bounded in production defaults
+
+**Acceptance Criteria**
+- `verbosity` setting materially changes output behavior across modules
+- Default mode avoids high-frequency diagnostic flood in large runs
+- Structured logs can drive regression tooling without parsing free-form stdout
+
 ## Legacy to Canonical Mapping
+
+Legacy mapping covers the original normalized set (`E1`-`E11`).  
+Newly added items (`E12`-`E18`) are code-review additions without legacy IDs.
 
 | Legacy Item | Canonical Item |
 | --- | --- |
@@ -302,9 +419,41 @@ The previous list contained intentional overlap to capture related themes. The i
 - Performance baseline stored and compared in CI
 - Regression jobs protect runtime and physics quality
 
+### Sprint 9 - Restart and Spin-Path Correctness
+**Scope**: `E12`, `E13`
+
+- Implement explicit restart-policy behavior and checkpoint compatibility checks
+- Bring spin SCF reductions/symmetry handling to parity with nonspin execution
+
+**Exit Gates**
+- Spin and nonspin multi-rank parity tests pass
+- Restart behavior is deterministic and policy-controlled
+
+### Sprint 10 - FFT and Scheduling Throughput
+**Scope**: `E14`, `E15`
+
+- Add configurable FFT planning/threading and spectral workspace reuse
+- Introduce cost-aware k-point scheduling and spin cache deduplication
+
+**Exit Gates**
+- GGA-heavy and large-k runs show measured throughput gains
+- Rank imbalance and memory duplication are reduced in scaling reports
+
+### Sprint 11 - Reproducibility, I/O, and Logging Hardening
+**Scope**: `E16`, `E17`, `E18`
+
+- Implement deterministic seed control and provenance manifests
+- Upgrade checkpoint schema/versioning and scalable artifact I/O
+- Enforce typed verbosity plus structured runtime logs
+
+**Exit Gates**
+- End-to-end reproducibility checks pass on reference workflows
+- Restart artifacts are schema-validated and backward-compatible
+- Production-default logging overhead is bounded and documented
+
 ## Feature Track (Post-Core Stabilization)
 
-Run these after Sprints 1-8 establish a stable core execution framework.
+Run these after Sprints 1-11 establish a stable core execution framework.
 
 ### F1 - Equation of State and Thermodynamics
 - [ ] Add automated volume-scan workflow (`-6%` to `+6%`)
@@ -380,6 +529,16 @@ Run these after Sprints 1-8 establish a stable core execution framework.
 - [ ] Add hybrid exchange contribution to force and stress
 - [ ] Add benchmark comparison against reference implementations
 
+### F9 - Automated Convergence Campaigns
+- [ ] Add workflow mode for automatic `ecut`, `kmesh`, `nband`, and smearing convergence sweeps
+- [ ] Support stopping criteria based on user tolerances (energy, force, stress, gap, DOS stability)
+- [ ] Reuse checkpoint/restart to skip already-converged sample points
+- [ ] Export machine-readable recommendation report and selected final inputs
+
+**Deliverables**
+- `convergence_report.json`
+- `recommended_in.ctrl` and `recommended_in.kmesh`
+
 ## Cross-Cutting Rules
 
 Apply to every sprint and feature milestone:
@@ -389,6 +548,8 @@ Apply to every sprint and feature milestone:
 - Keep reductions deterministic under thread and MPI execution
 - Keep library crates `Result`-based (no direct process termination)
 - Keep schema changes versioned and backward-compatible
+- Keep restart/checkpoint compatibility explicitly validated before resume
+- Keep run provenance complete enough for reproducibility audits
 
 ## Execution Rule
 

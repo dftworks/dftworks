@@ -153,18 +153,25 @@ impl PWBasis {
     /// - Data format is invalid (e.g., k_cart doesn't have 3 elements)
     /// - Data dimensions are inconsistent
     pub fn load_hdf5(group: &hdf5::Group) -> Self {
-        let kg_dataset = group.dataset("kg").expect("Failed to find kg dataset");
+        Self::try_load_hdf5(group).expect("failed to load PWBasis from HDF5")
+    }
+
+    /// Fallible HDF5 loader used by restart/checkpoint paths.
+    pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
+        let kg_dataset = group
+            .dataset("kg")
+            .map_err(|e| format!("failed to open dataset 'kg': {}", e))?;
 
         let kg: Vec<f64> = kg_dataset
             .read()
-            .expect("Failed to read kg dataset")
+            .map_err(|e| format!("failed to read dataset 'kg': {}", e))?
             .to_vec();
 
         let gindex: Vec<usize> = group
             .dataset("gindex")
-            .expect("Failed to find gindex dataset")
+            .map_err(|e| format!("failed to open dataset 'gindex': {}", e))?
             .read()
-            .expect("Failed to read gindex dataset")
+            .map_err(|e| format!("failed to read dataset 'gindex': {}", e))?
             .to_vec();
 
         // New files store metadata on the "kg" dataset; keep group-level
@@ -172,58 +179,56 @@ impl PWBasis {
         let k_index: usize = kg_dataset
             .attr("k_index")
             .or_else(|_| group.attr("k_index"))
-            .expect("Failed to find k_index attribute")
+            .map_err(|e| format!("failed to open attribute 'k_index': {}", e))?
             .read_scalar()
-            .expect("Failed to read k_index attribute");
+            .map_err(|e| format!("failed to read attribute 'k_index': {}", e))?;
 
         let npw: usize = kg_dataset
             .attr("n_pw")
             .or_else(|_| group.attr("n_pw"))
-            .expect("Failed to find n_pw attribute")
+            .map_err(|e| format!("failed to open attribute 'n_pw': {}", e))?
             .read_scalar()
-            .expect("Failed to read n_pw attribute");
+            .map_err(|e| format!("failed to read attribute 'n_pw': {}", e))?;
 
         let k_cart_vec: Vec<f64> = kg_dataset
             .attr("k_cart")
             .or_else(|_| group.attr("k_cart"))
-            .expect("Failed to find k_cart attribute")
+            .map_err(|e| format!("failed to open attribute 'k_cart': {}", e))?
             .read()
-            .expect("Failed to read k_cart attribute")
+            .map_err(|e| format!("failed to read attribute 'k_cart': {}", e))?
             .to_vec();
 
-        // Validate k_cart vector has exactly 3 elements
         if k_cart_vec.len() != 3 {
-            panic!(
-                "k_cart attribute must have exactly 3 elements, found {}",
+            return Err(format!(
+                "invalid k_cart attribute length: expected 3, got {}",
                 k_cart_vec.len()
-            );
+            ));
         }
 
         let k_cart = Vector3f64::new(k_cart_vec[0], k_cart_vec[1], k_cart_vec[2]);
 
-        // Validate loaded dimensions before constructing object.
         if kg.len() != npw {
-            panic!(
-                "Inconsistent kg data: expected {} elements, found {}",
+            return Err(format!(
+                "inconsistent kg data: expected {} elements, found {}",
                 npw,
                 kg.len()
-            );
+            ));
         }
         if gindex.len() != npw {
-            panic!(
-                "Inconsistent gindex data: expected {} elements, found {}",
+            return Err(format!(
+                "inconsistent gindex data: expected {} elements, found {}",
                 npw,
                 gindex.len()
-            );
+            ));
         }
 
-        PWBasis {
+        Ok(PWBasis {
             k_cart,
             k_index,
             npw,
             gindex,
             kg,
-        }
+        })
     }
 }
 

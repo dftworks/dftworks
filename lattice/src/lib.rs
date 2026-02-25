@@ -179,9 +179,20 @@ impl Lattice {
 
     /// Load the lattice from a HDF5 file.
     pub fn load_hdf5(group: &hdf5::Group) -> Self {
-        Lattice {
-            data: Matrix::<f64>::load_hdf5(group),
+        Self::try_load_hdf5(group).expect("failed to load Lattice from HDF5")
+    }
+
+    /// Fallible HDF5 loader used by restart/checkpoint paths.
+    pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
+        let data = Matrix::<f64>::try_load_hdf5(group)?;
+        if data.nrow() != 3 || data.ncol() != 3 {
+            return Err(format!(
+                "invalid lattice matrix shape: expected 3x3, got {}x{}",
+                data.nrow(),
+                data.ncol()
+            ));
         }
+        Ok(Lattice { data })
     }
 }
 
