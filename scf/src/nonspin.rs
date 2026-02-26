@@ -1,12 +1,12 @@
 //#![allow(warnings)]
 
+use super::engine::{run_scf_iteration_engine, ScfIterationAdapter};
 use super::hubbard;
 use super::utils;
 use crate::SCF;
 use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
-use dwconsts::*;
 use ewald::Ewald;
 use fftgrid::FFTGrid;
 use gvector::GVector;
@@ -77,6 +77,189 @@ impl NonSpinScfWorkspace {
         debug_assert_eq!(self.vxc_3d.as_non_spin().unwrap().as_slice().len(), nfft);
         debug_assert_eq!(self.exc_3d.as_slice().len(), nfft);
         debug_assert_eq!(self.vloc_3d.as_slice().len(), nfft);
+    }
+}
+
+struct NonSpinIterationAdapter<'ctx, 'ks> {
+    geom_iter: usize,
+    control: &'ctx Control,
+    crystal: &'ctx Crystal,
+    gvec: &'ctx GVector,
+    pwden: &'ctx PWDensity,
+    rgtrans: &'ctx RGTransform,
+    ewald: &'ctx Ewald,
+    ntot_elec: f64,
+    npw_wfc_max: usize,
+    fft_ntotf64: f64,
+    xc: &'ctx dyn xc::XC,
+    density_driver: &'ctx dyn density::Density,
+    fermi_driver: &'ctx dyn fermilevel::FermiLevel,
+    mixing: &'ctx mut dyn mixing::Mixing,
+    vkscf: &'ctx mut VKSCF<'ks>,
+    rhog: &'ctx mut RHOG,
+    rho_3d: &'ctx mut RHOR,
+    rhocore_3d: &'ctx Array3<c64>,
+    vkevals: &'ctx mut VKEigenValue,
+    vkevecs: &'ctx mut VKEigenVector,
+    ws: &'ctx mut NonSpinScfWorkspace,
+    hubbard_energy: f64,
+}
+
+impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
+    fn prepare_potential_in_rspace(&mut self) {
+        self.rgtrans.g1d_to_r3d(
+            self.gvec,
+            self.pwden,
+            &self.ws.vlocg,
+            self.ws.vloc_3d.as_mut_slice(),
+        );
+    }
+
+    fn solve_eigen_equations(&mut self, scf_iter: usize, energy_diff: f64) -> f64 {
+        let eigvalue_epsilon = utils::get_eigvalue_epsilon(
+            self.geom_iter,
+            scf_iter,
+            self.control,
+            self.ntot_elec,
+            energy_diff,
+            self.npw_wfc_max,
+        );
+
+        utils::solve_eigen_equations(
+            self.rgtrans,
+            &self.ws.vloc_3d,
+            eigvalue_epsilon,
+            self.geom_iter,
+            scf_iter,
+            self.vkscf,
+            self.vkevals,
+            self.vkevecs,
+        );
+
+        eigvalue_epsilon
+    }
+
+    fn update_occupations(&mut self) -> f64 {
+        let fermi_level =
+            self.fermi_driver
+                .get_fermi_level(self.vkscf, self.ntot_elec, self.vkevals);
+        self.hubbard_energy =
+            hubbard::update_hubbard_nonspin(self.control, self.vkscf, &*self.vkevecs);
+
+        fermi_level
+    }
+
+    fn compute_harris_energy(&mut self) -> f64 {
+        utils::compute_total_energy(
+            self.pwden,
+            self.crystal,
+            self.rhog.as_non_spin().unwrap(),
+            self.vkscf.as_non_spin().unwrap(),
+            self.vkevals.as_non_spin().unwrap(),
+            self.rho_3d.as_non_spin_mut().unwrap(),
+            self.rhocore_3d,
+            &self.ws.exc_3d,
+            self.ws.vxc_3d.as_non_spin().unwrap(),
+            self.ewald.get_energy(),
+            self.hubbard_energy,
+        )
+    }
+
+    fn rebuild_density(&mut self) {
+        self.density_driver.compute_charge_density(
+            self.vkscf,
+            self.rgtrans,
+            self.vkevecs,
+            self.crystal.get_latt().volume(),
+            self.rho_3d,
+        );
+    }
+
+    fn compute_charge(&mut self) -> f64 {
+        self.rho_3d.as_non_spin().unwrap().sum().re * self.crystal.get_latt().volume()
+            / self.fft_ntotf64
+    }
+
+    fn refresh_energy_terms(&mut self) {
+        utils::compute_rho_of_g(
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            self.rho_3d,
+            &mut self.ws.rhog_out,
+        );
+
+        utils::compute_v_e_xc_of_r(
+            self.xc,
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            self.rho_3d,
+            self.rhocore_3d,
+            &mut self.ws.vxc_3d,
+            &mut self.ws.exc_3d,
+        );
+    }
+
+    fn compute_scf_energy(&mut self) -> f64 {
+        utils::compute_total_energy(
+            self.pwden,
+            self.crystal,
+            &self.ws.rhog_out,
+            self.vkscf.as_non_spin().unwrap(),
+            self.vkevals.as_non_spin().unwrap(),
+            self.rho_3d.as_non_spin_mut().unwrap(),
+            self.rhocore_3d,
+            &self.ws.exc_3d,
+            self.ws.vxc_3d.as_non_spin().unwrap(),
+            self.ewald.get_energy(),
+            self.hubbard_energy,
+        )
+    }
+
+    fn mix_and_rebuild_potential(&mut self) {
+        utils::compute_next_density(
+            self.pwden,
+            self.mixing,
+            &self.ws.rhog_out,
+            &mut self.ws.rhog_diff,
+            self.rhog,
+        );
+
+        self.rgtrans.g1d_to_r3d(
+            self.gvec,
+            self.pwden,
+            self.rhog.as_non_spin().unwrap(),
+            self.rho_3d.as_non_spin_mut().unwrap().as_mut_slice(),
+        );
+
+        utils::compute_v_hartree(self.pwden, self.rhog, &mut self.ws.vhg);
+
+        utils::compute_v_e_xc_of_r(
+            self.xc,
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            self.rho_3d,
+            self.rhocore_3d,
+            &mut self.ws.vxc_3d,
+            &mut self.ws.exc_3d,
+        );
+
+        utils::compute_v_xc_of_g(
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            &self.ws.vxc_3d,
+            &mut self.ws.vxcg,
+        );
+
+        utils::add_up_v(
+            &self.ws.vpslocg,
+            &self.ws.vhg,
+            &self.ws.vxcg,
+            &mut self.ws.vlocg,
+        );
     }
 }
 
@@ -153,244 +336,39 @@ impl SCF for SCFNonspin {
         let mut mixing = mixing::new(control);
 
         let ntot_elec = crystal.get_n_total_electrons(pots);
-
-        let mut energy_diff = 0.0;
+        let fft_ntotf64 = fftgrid.get_ntotf64();
 
         let npw_wfc_max = utils::get_n_plane_waves_max(vpwwfc);
 
         let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
 
-        //
+        let mut adapter = NonSpinIterationAdapter {
+            geom_iter,
+            control,
+            crystal,
+            gvec,
+            pwden,
+            rgtrans,
+            ewald,
+            ntot_elec,
+            npw_wfc_max,
+            fft_ntotf64,
+            xc: xc.as_ref(),
+            density_driver: density_driver.as_ref(),
+            fermi_driver: fermi_driver.as_ref(),
+            mixing: mixing.as_mut(),
+            vkscf,
+            rhog,
+            rho_3d,
+            rhocore_3d,
+            vkevals,
+            vkevecs,
+            ws: &mut ws,
+            hubbard_energy: 0.0,
+        };
 
-        let mut scf_iter = 1;
-
-        if dwmpi::is_root() {
-            println!(
-                "    {:>3}  {:>10} {:>10} {:>16} {:>25} {:>25} {:>12}",
-                "", "eps(eV)", "Fermi(eV)", "charge", "Eharris(Ry)", "Escf(Ry)", "dE(eV)"
-            );
-        }
-        loop {
-            // Step 1: transform local KS potential from G-space to real-space.
-
-            rgtrans.g1d_to_r3d(gvec, pwden, &ws.vlocg, ws.vloc_3d.as_mut_slice());
-
-            //
-
-            let eigvalue_epsilon = utils::get_eigvalue_epsilon(
-                geom_iter,
-                scf_iter,
-                control,
-                ntot_elec,
-                energy_diff,
-                npw_wfc_max,
-            );
-
-            utils::solve_eigen_equations(
-                rgtrans,
-                &ws.vloc_3d,
-                eigvalue_epsilon,
-                geom_iter,
-                scf_iter,
-                vkscf,
-                vkevals,
-                vkevecs,
-            );
-
-            // Step 2: update occupations through Fermi-level search.
-            // vkscf is mutable because occupations are stored inside.
-
-            let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, vkevals);
-            let hubbard_energy = hubbard::update_hubbard_nonspin(control, vkscf, &*vkevecs);
-
-            // recalculate the occ
-
-            // let nelec_below = fermi_driver.set_occ(
-            //     vkscf,
-            //     ntot_elec,
-            //     &vkevals,
-            //     fermi_level,
-            //     control.get_occ_inversion(),
-            // );
-
-            // Step 3: Harris energy from current potential/density state.
-
-            let energy_harris = utils::compute_total_energy(
-                pwden,
-                crystal,
-                rhog.as_non_spin().unwrap(),
-                vkscf.as_non_spin().unwrap(),
-                vkevals.as_non_spin().unwrap(),
-                rho_3d.as_non_spin_mut().unwrap(),
-                rhocore_3d,
-                &ws.exc_3d,
-                ws.vxc_3d.as_non_spin().unwrap(),
-                ewald.get_energy(),
-                hubbard_energy,
-            );
-
-            // Step 4: rebuild rho(r) from occupied states.
-
-            density_driver.as_ref().compute_charge_density(
-                vkscf,
-                rgtrans,
-                vkevecs,
-                crystal.get_latt().volume(),
-                rho_3d,
-            );
-
-            // add the removed electrons back in term of jellium
-
-            // if let Some(nelec_occupied) = nelec_below {
-            //     let nelec_jellium = ntot_elec - nelec_occupied;
-
-            //     rho_3d
-            //         .as_non_spin_mut()
-            //         .unwrap()
-            //         .add(nelec_jellium / crystal.get_latt().volume());
-            // }
-
-            // Step 5: integrated total charge for diagnostics.
-
-            let charge = rho_3d.as_non_spin().unwrap().sum().re * crystal.get_latt().volume()
-                / fftgrid.get_ntotf64();
-
-            // Step 6: transform new rho(r) back to rho(G).
-
-            utils::compute_rho_of_g(gvec, pwden, rgtrans, rho_3d, &mut ws.rhog_out);
-
-            // up to here
-            // rhog_out: out rho in G
-            // rho_3d:   out rho in r
-
-            utils::compute_v_e_xc_of_r(
-                xc.as_ref(),
-                gvec,
-                pwden,
-                rgtrans,
-                rho_3d,
-                rhocore_3d,
-                &mut ws.vxc_3d,
-                &mut ws.exc_3d,
-            );
-
-            // Step 7: evaluate self-consistent total energy.
-
-            let energy_scf = utils::compute_total_energy(
-                pwden,
-                crystal,
-                &ws.rhog_out,
-                vkscf.as_non_spin().unwrap(),
-                vkevals.as_non_spin().unwrap(),
-                rho_3d.as_non_spin_mut().unwrap(),
-                rhocore_3d,
-                &ws.exc_3d,
-                ws.vxc_3d.as_non_spin().unwrap(),
-                ewald.get_energy(),
-                hubbard_energy,
-            );
-
-            energy_diff = (energy_scf - energy_harris).abs();
-
-            //
-
-            if dwmpi::is_root() {
-                println!(
-                    "    {:>3}: {:>10.3E} {:>10.3E} {:>16.6E} {:>25.12E} {:>25.12E} {:>12.3E}",
-                    scf_iter,
-                    eigvalue_epsilon * HA_TO_EV,
-                    fermi_level * HA_TO_EV,
-                    charge,
-                    energy_harris * HA_TO_RY,
-                    energy_scf * HA_TO_RY,
-                    energy_diff * HA_TO_EV
-                );
-            }
-
-            /////////////////////////////////////////////////
-            // check convergence
-
-            // Step 8: convergence check.
-
-            if energy_diff < control.get_energy_epsilon() {
-                if dwmpi::is_root() {
-                    println!(
-                        "\n     {:<width1$}",
-                        "scf_convergence_success",
-                        width1 = OUT_WIDTH1
-                    );
-                }
-
-                break;
-            }
-
-            // if not converged, but exceed the max_scf, then exit
-
-            if scf_iter == control.get_scf_max_iter() {
-                if dwmpi::is_root() {
-                    println!(
-                        "\n     {:<width1$}",
-                        "scf_convergence_failure",
-                        width1 = OUT_WIDTH1
-                    );
-                }
-
-                break;
-            }
-
-            /////////////////////////////////////////////////
-
-            // Step 9: mix densities in reciprocal space.
-
-            utils::compute_next_density(
-                pwden,
-                mixing.as_mut(),
-                &ws.rhog_out,
-                &mut ws.rhog_diff,
-                rhog,
-            );
-
-            // Step 10: convert mixed rho(G) back to rho(r).
-
-            rgtrans.g1d_to_r3d(
-                gvec,
-                pwden,
-                rhog.as_non_spin().unwrap(),
-                rho_3d.as_non_spin_mut().unwrap().as_mut_slice(),
-            );
-
-            ///////////////////////////////////////////////////
-            // Step 11: rebuild local KS potential for next iteration.
-
-            // Hartree part.
-
-            utils::compute_v_hartree(pwden, rhog, &mut ws.vhg);
-
-            // XC part in real space.
-
-            utils::compute_v_e_xc_of_r(
-                xc.as_ref(),
-                gvec,
-                pwden,
-                rgtrans,
-                rho_3d,
-                rhocore_3d,
-                &mut ws.vxc_3d,
-                &mut ws.exc_3d,
-            );
-
-            // XC part transformed to reciprocal space.
-
-            utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &ws.vxc_3d, &mut ws.vxcg);
-
-            // Assemble total local potential in reciprocal space.
-
-            utils::add_up_v(&ws.vpslocg, &ws.vhg, &ws.vxcg, &mut ws.vlocg);
-
-            ///////////////////////////////////////////////////
-
-            scf_iter += 1;
-        }
+        run_scf_iteration_engine(control, &mut adapter);
+        drop(adapter);
 
         // after the SCF iterations
 

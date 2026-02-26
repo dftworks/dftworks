@@ -1,5 +1,6 @@
 #![allow(warnings)]
 
+use super::engine::{run_scf_iteration_engine, ScfIterationAdapter};
 use super::hartree;
 use super::hubbard;
 use super::utils;
@@ -76,10 +77,7 @@ impl SpinScfWorkspace {
             vpslocg: vec![c64::zero(); npw_rho],
             vhg: vec![c64::zero(); npw_rho],
             vxcg: VXCG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
-            vxc_3d: VXCR::Spin(
-                Array3::<c64>::new(fft_shape),
-                Array3::<c64>::new(fft_shape),
-            ),
+            vxc_3d: VXCR::Spin(Array3::<c64>::new(fft_shape), Array3::<c64>::new(fft_shape)),
             exc_3d: Array3::<c64>::new(fft_shape),
             vlocg_up: vec![c64::zero(); npw_rho],
             vlocg_dn: vec![c64::zero(); npw_rho],
@@ -117,6 +115,323 @@ impl SpinScfWorkspace {
     }
 }
 
+#[inline]
+fn add_core_density_to_spin_channels(rho_3d: &mut RHOR, rhocore_3d: &Array3<c64>, scale: f64) {
+    if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
+        for i in 0..rhocore_3d.as_slice().len() {
+            let core = rhocore_3d.as_slice()[i] * scale;
+            rho_3d_up.as_mut_slice()[i] += core;
+            rho_3d_dn.as_mut_slice()[i] += core;
+        }
+    }
+}
+
+fn solve_spin_eigen_equations(
+    rgtrans: &RGTransform,
+    vloc_3d_up: &Array3<c64>,
+    vloc_3d_dn: &Array3<c64>,
+    eigvalue_epsilon: f64,
+    geom_iter: usize,
+    scf_iter: usize,
+    vkscf: &VKSCF,
+    vkevals: &mut VKEigenValue,
+    vkevecs: &mut VKEigenVector,
+) {
+    if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
+        if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
+            if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
+                for (ik, kscf) in vkscf_up.iter().enumerate() {
+                    kscf.run(
+                        rgtrans,
+                        vloc_3d_up,
+                        eigvalue_epsilon,
+                        geom_iter,
+                        scf_iter,
+                        &mut vkevals_up[ik],
+                        &mut vkevecs_up[ik],
+                    );
+                }
+
+                for (ik, kscf) in vkscf_dn.iter().enumerate() {
+                    kscf.run(
+                        rgtrans,
+                        vloc_3d_dn,
+                        eigvalue_epsilon,
+                        geom_iter,
+                        scf_iter,
+                        &mut vkevals_dn[ik],
+                        &mut vkevecs_dn[ik],
+                    );
+                }
+            }
+        }
+    }
+}
+
+struct SpinIterationAdapter<'ctx, 'ks> {
+    geom_iter: usize,
+    control: &'ctx Control,
+    crystal: &'ctx Crystal,
+    gvec: &'ctx GVector,
+    pwden: &'ctx PWDensity,
+    rgtrans: &'ctx RGTransform,
+    ewald: &'ctx Ewald,
+    ntot_elec: f64,
+    npw_wfc_max: usize,
+    fft_ntotf64: f64,
+    xc: &'ctx dyn xc::XC,
+    density_driver: &'ctx dyn density::Density,
+    fermi_driver: &'ctx dyn fermilevel::FermiLevel,
+    mixing_rho: &'ctx mut dyn mixing::Mixing,
+    mixing_spin: &'ctx mut dyn mixing::Mixing,
+    vkscf: &'ctx mut VKSCF<'ks>,
+    rhog: &'ctx mut RHOG,
+    rho_3d: &'ctx mut RHOR,
+    rhocore_3d: &'ctx Array3<c64>,
+    vkevals: &'ctx mut VKEigenValue,
+    vkevecs: &'ctx mut VKEigenVector,
+    ws: &'ctx mut SpinScfWorkspace,
+    hubbard_energy: f64,
+}
+
+impl SpinIterationAdapter<'_, '_> {
+    fn refresh_spin_xc_for_iteration(&mut self, core_scale: f64) {
+        add_core_density_to_spin_channels(self.rho_3d, self.rhocore_3d, core_scale);
+        self.xc.potential_and_energy(
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            self.rho_3d,
+            &mut self.ws.vxc_3d,
+            &mut self.ws.exc_3d,
+        );
+        add_core_density_to_spin_channels(self.rho_3d, self.rhocore_3d, -core_scale);
+    }
+
+    fn refresh_vxcg_from_vxc_3d(&mut self) {
+        let (vxc_3d_up, vxc_3d_dn) = self.ws.vxc_3d.as_spin().unwrap();
+        let (vxcg_up, vxcg_dn) = self.ws.vxcg.as_spin_mut().unwrap();
+
+        self.rgtrans
+            .r3d_to_g1d(self.gvec, self.pwden, vxc_3d_up.as_slice(), vxcg_up);
+        self.rgtrans
+            .r3d_to_g1d(self.gvec, self.pwden, vxc_3d_dn.as_slice(), vxcg_dn);
+    }
+
+    fn rebuild_vlocg_from_components(&mut self) {
+        let (vxcg_up, vxcg_dn) = self.ws.vxcg.as_spin().unwrap();
+
+        for (v_loc, v_xc, v_ha, v_psloc) in multizip((
+            self.ws.vlocg_up.iter_mut(),
+            vxcg_up.iter(),
+            self.ws.vhg.iter(),
+            self.ws.vpslocg.iter(),
+        )) {
+            *v_loc = *v_xc + *v_ha + *v_psloc;
+        }
+
+        for (v_loc, v_xc, v_ha, v_psloc) in multizip((
+            self.ws.vlocg_dn.iter_mut(),
+            vxcg_dn.iter(),
+            self.ws.vhg.iter(),
+            self.ws.vpslocg.iter(),
+        )) {
+            *v_loc = *v_xc + *v_ha + *v_psloc;
+        }
+    }
+
+    fn rebuild_hartree_from_spin_density(&mut self) {
+        if let RHOG::Spin(rhog_up, rhog_dn) = self.rhog {
+            sum_spin_channels(rhog_up, rhog_dn, &mut self.ws.rhog_tot);
+        }
+
+        hartree::potential(self.pwden.get_g(), &self.ws.rhog_tot, &mut self.ws.vhg);
+    }
+}
+
+impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
+    fn prepare_potential_in_rspace(&mut self) {
+        self.rgtrans.g1d_to_r3d(
+            self.gvec,
+            self.pwden,
+            &self.ws.vlocg_up,
+            self.ws.vloc_3d_up.as_mut_slice(),
+        );
+        self.rgtrans.g1d_to_r3d(
+            self.gvec,
+            self.pwden,
+            &self.ws.vlocg_dn,
+            self.ws.vloc_3d_dn.as_mut_slice(),
+        );
+    }
+
+    fn solve_eigen_equations(&mut self, scf_iter: usize, energy_diff: f64) -> f64 {
+        let eigvalue_epsilon = get_eigvalue_epsilon(
+            self.geom_iter,
+            scf_iter,
+            self.control,
+            self.ntot_elec,
+            energy_diff,
+            self.npw_wfc_max,
+        );
+
+        solve_spin_eigen_equations(
+            self.rgtrans,
+            &self.ws.vloc_3d_up,
+            &self.ws.vloc_3d_dn,
+            eigvalue_epsilon,
+            self.geom_iter,
+            scf_iter,
+            self.vkscf,
+            self.vkevals,
+            self.vkevecs,
+        );
+
+        eigvalue_epsilon
+    }
+
+    fn update_occupations(&mut self) -> f64 {
+        let fermi_level =
+            self.fermi_driver
+                .get_fermi_level(self.vkscf, self.ntot_elec, self.vkevals);
+        self.hubbard_energy =
+            hubbard::update_hubbard_spin(self.control, self.vkscf, &*self.vkevecs);
+
+        fermi_level
+    }
+
+    fn compute_harris_energy(&mut self) -> f64 {
+        let (rhog_up, rhog_dn) = self.rhog.as_spin().unwrap();
+
+        compute_total_energy(
+            self.pwden,
+            self.crystal.get_latt(),
+            rhog_up,
+            rhog_dn,
+            self.vkscf,
+            self.vkevals,
+            self.rho_3d,
+            self.rhocore_3d,
+            &self.ws.exc_3d,
+            &self.ws.vxc_3d,
+            self.ewald.get_energy(),
+            self.hubbard_energy,
+            &mut self.ws.rhog_tot_scratch,
+        )
+    }
+
+    fn rebuild_density(&mut self) {
+        self.density_driver.compute_charge_density(
+            self.vkscf,
+            self.rgtrans,
+            self.vkevecs,
+            self.crystal.get_latt().volume(),
+            self.rho_3d,
+        );
+    }
+
+    fn compute_charge(&mut self) -> f64 {
+        if let RHOR::Spin(rho_3d_up, rho_3d_dn) = self.rho_3d {
+            let charge_up =
+                rho_3d_up.sum().re * self.crystal.get_latt().volume() / self.fft_ntotf64;
+            let charge_dn =
+                rho_3d_dn.sum().re * self.crystal.get_latt().volume() / self.fft_ntotf64;
+
+            charge_up + charge_dn
+        } else {
+            0.0
+        }
+    }
+
+    fn refresh_energy_terms(&mut self) {
+        if let RHOR::Spin(rho_3d_up, rho_3d_dn) = self.rho_3d {
+            self.rgtrans.r3d_to_g1d(
+                self.gvec,
+                self.pwden,
+                rho_3d_up.as_slice(),
+                &mut self.ws.rhog_out_up,
+            );
+            self.rgtrans.r3d_to_g1d(
+                self.gvec,
+                self.pwden,
+                rho_3d_dn.as_slice(),
+                &mut self.ws.rhog_out_dn,
+            );
+        }
+
+        self.refresh_spin_xc_for_iteration(0.5);
+    }
+
+    fn compute_scf_energy(&mut self) -> f64 {
+        compute_total_energy(
+            self.pwden,
+            self.crystal.get_latt(),
+            &self.ws.rhog_out_up,
+            &self.ws.rhog_out_dn,
+            self.vkscf,
+            self.vkevals,
+            self.rho_3d,
+            self.rhocore_3d,
+            &self.ws.exc_3d,
+            &self.ws.vxc_3d,
+            self.ewald.get_energy(),
+            self.hubbard_energy,
+            &mut self.ws.rhog_tot_scratch,
+        )
+    }
+
+    fn mix_and_rebuild_potential(&mut self) {
+        if let RHOR::Spin(rho_3d_up, rho_3d_dn) = self.rho_3d {
+            let rho_3d_up = rho_3d_up.as_mut_slice();
+            let rho_3d_dn = rho_3d_dn.as_mut_slice();
+
+            if let RHOG::Spin(rhog_up, rhog_dn) = self.rhog {
+                for ipw in 0..self.pwden.get_n_plane_waves() {
+                    self.ws.rhog_total[ipw] = rhog_up[ipw] + rhog_dn[ipw];
+                    self.ws.rhog_spin[ipw] = rhog_up[ipw] - rhog_dn[ipw];
+                }
+
+                for ipw in 0..self.pwden.get_n_plane_waves() {
+                    self.ws.rhog_diff[ipw] = (self.ws.rhog_out_up[ipw] + self.ws.rhog_out_dn[ipw])
+                        - (rhog_up[ipw] + rhog_dn[ipw]);
+                }
+
+                self.mixing_rho.compute_next_density(
+                    self.pwden.get_g(),
+                    &mut self.ws.rhog_total,
+                    &self.ws.rhog_diff,
+                );
+
+                for ipw in 0..self.pwden.get_n_plane_waves() {
+                    self.ws.rhog_diff[ipw] = (self.ws.rhog_out_up[ipw] - self.ws.rhog_out_dn[ipw])
+                        - (rhog_up[ipw] - rhog_dn[ipw]);
+                }
+
+                self.mixing_spin.compute_next_density(
+                    self.pwden.get_g(),
+                    &mut self.ws.rhog_spin,
+                    &self.ws.rhog_diff,
+                );
+
+                for ipw in 0..self.pwden.get_n_plane_waves() {
+                    rhog_up[ipw] = (self.ws.rhog_total[ipw] + self.ws.rhog_spin[ipw]) / 2.0;
+                    rhog_dn[ipw] = (self.ws.rhog_total[ipw] - self.ws.rhog_spin[ipw]) / 2.0;
+                }
+
+                self.rgtrans
+                    .g1d_to_r3d(self.gvec, self.pwden, rhog_up, rho_3d_up);
+                self.rgtrans
+                    .g1d_to_r3d(self.gvec, self.pwden, rhog_dn, rho_3d_dn);
+            }
+        }
+
+        self.rebuild_hartree_from_spin_density();
+        self.refresh_spin_xc_for_iteration(0.5);
+        self.refresh_vxcg_from_vxc_3d();
+        self.rebuild_vlocg_from_components();
+    }
+}
+
 impl SCF for SCFSpin {
     fn run(
         &self,
@@ -140,13 +455,6 @@ impl SCF for SCFSpin {
         stress_total: &mut Matrix<f64>,
         force_total: &mut Vec<Vector3f64>,
     ) {
-        if dwmpi::is_root() {
-            println!(
-                "    {:>3}  {:>10} {:>10} {:>16} {:>25} {:>25} {:>12}",
-                "", "eps(eV)", "Fermi(eV)", "charge", "Eharris(Ry)", "Escf(Ry)", "dE(eV)"
-            );
-        }
-
         let density_driver = density::new(control.get_spin_scheme_enum());
         utils::validate_hse06_runtime_constraints(control, kpts);
 
@@ -183,25 +491,9 @@ impl SCF for SCFSpin {
 
         let xc = xc::new(control.get_xc_scheme());
 
-        // NLCC: evaluate XC using total charge seen by the functional.
-        // In spin-collinear mode we split rhocore equally across up/down.
-        if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-            for i in 0..nfft {
-                rho_3d_up.as_mut_slice()[i] += rhocore_3d.as_slice()[i];
-                rho_3d_dn.as_mut_slice()[i] += rhocore_3d.as_slice()[i];
-            }
-        }
-
-        // XC call includes full GGA derivative logic internally.
+        add_core_density_to_spin_channels(rho_3d, rhocore_3d, 1.0);
         xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);
-
-        // Restore valence-only rho in SCF state.
-        if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-            for i in 0..nfft {
-                rho_3d_up.as_mut_slice()[i] -= rhocore_3d.as_slice()[i];
-                rho_3d_dn.as_mut_slice()[i] -= rhocore_3d.as_slice()[i];
-            }
-        }
+        add_core_density_to_spin_channels(rho_3d, rhocore_3d, -1.0);
 
         {
             let (vxc_3d_up, vxc_3d_dn) = ws.vxc_3d.as_spin().unwrap();
@@ -247,337 +539,41 @@ impl SCF for SCFSpin {
         let mut mixing_spin = mixing::new(control);
 
         let ntot_elec = crystal.get_n_total_electrons(pots);
-
-        let mut energy_diff = 0.0;
+        let fft_ntotf64 = fftgrid.get_ntotf64();
 
         let npw_wfc_max = get_n_plane_waves_max(&vpwwfc);
 
         // Reuse one Fermi-level driver across SCF iterations to avoid repeated allocations.
         let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
 
-        let mut scf_iter = 1;
-
-        loop {
-            // transform v_loc from G to r
-
-            {
-                rgtrans.g1d_to_r3d(gvec, pwden, &ws.vlocg_up, ws.vloc_3d_up.as_mut_slice());
-                rgtrans.g1d_to_r3d(gvec, pwden, &ws.vlocg_dn, ws.vloc_3d_dn.as_mut_slice());
-            }
-
-            // set the epsilon for eigenvalue for this iteration
-            // use the Hartree energy as delta E
-
-            let eigvalue_epsilon = get_eigvalue_epsilon(
-                geom_iter,
-                scf_iter,
-                control,
-                ntot_elec,
-                energy_diff,
-                npw_wfc_max,
-            );
-            {
-                if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
-                    if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
-                        if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
-                            // spin up
-
-                            for (ik, kscf) in vkscf_up.iter().enumerate() {
-                                let (_n_band_converged, _n_hpsi) = kscf.run(
-                                    rgtrans,
-                                    &ws.vloc_3d_up,
-                                    eigvalue_epsilon,
-                                    geom_iter,
-                                    scf_iter,
-                                    &mut vkevals_up[ik],
-                                    &mut vkevecs_up[ik],
-                                );
-                            }
-
-                            // spin down
-
-                            for (ik, kscf) in vkscf_dn.iter().enumerate() {
-                                let (_n_band_converged, _n_hpsi) = kscf.run(
-                                    rgtrans,
-                                    &ws.vloc_3d_dn,
-                                    eigvalue_epsilon,
-                                    geom_iter,
-                                    scf_iter,
-                                    &mut vkevals_dn[ik],
-                                    &mut vkevecs_dn[ik],
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            // calculate Fermi level; vkscf has to be &mut since occ will be modified
-
-            let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
-            let hubbard_energy = hubbard::update_hubbard_spin(control, vkscf, &*vkevecs);
-
-            // calculate Harris energy
-
-            let (rhog_up, rhog_dn) = rhog.as_spin().unwrap();
-            let energy_harris = compute_total_energy(
-                pwden,
-                crystal.get_latt(),
-                rhog_up,
-                rhog_dn,
-                &vkscf,
-                &vkevals,
-                rho_3d,
-                rhocore_3d,
-                &ws.exc_3d,
-                &ws.vxc_3d,
-                ewald.get_energy(),
-                hubbard_energy,
-                &mut ws.rhog_tot_scratch,
-            );
-
-            // build the density based on the new wavefunctions
-
-            density_driver.compute_charge_density(
-                &vkscf,
-                rgtrans,
-                &vkevecs,
-                crystal.get_latt().volume(),
-                rho_3d,
-            );
-
-            let mut charge = 0.0;
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                let charge_up =
-                    rho_3d_up.sum().re * crystal.get_latt().volume() / fftgrid.get_ntotf64();
-                let charge_dn =
-                    rho_3d_dn.sum().re * crystal.get_latt().volume() / fftgrid.get_ntotf64();
-
-                charge = charge_up + charge_dn;
-            }
-
-            // rho r -> G
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                rgtrans.r3d_to_g1d(gvec, pwden, rho_3d_up.as_slice(), &mut ws.rhog_out_up);
-                rgtrans.r3d_to_g1d(gvec, pwden, rho_3d_dn.as_slice(), &mut ws.rhog_out_dn);
-            }
-
-            // if symmetry enabled, the charge density need to be symmetrized
-
-            //
-            // rhog_out: out rho in G
-            // rho_3d:   out rho in r
-
-            // NLCC: add core density before XC evaluation.
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                for i in 0..nfft {
-                    rho_3d_up.as_mut_slice()[i] += rhocore_3d.as_slice()[i] / 2.0;
-                    rho_3d_dn.as_mut_slice()[i] += rhocore_3d.as_slice()[i] / 2.0;
-                }
-            }
-
-            // Full GGA-consistent v_xc and eps_xc.
-            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);
-
-            // Restore valence-only rho after XC.
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                for i in 0..nfft {
-                    rho_3d_up.as_mut_slice()[i] -= rhocore_3d.as_slice()[i] / 2.0;
-                    rho_3d_dn.as_mut_slice()[i] -= rhocore_3d.as_slice()[i] / 2.0;
-                }
-            }
-
-            // calculate scf energy
-
-            let energy_scf = compute_total_energy(
-                pwden,
-                crystal.get_latt(),
-                &ws.rhog_out_up,
-                &ws.rhog_out_dn,
-                &vkscf,
-                &vkevals,
-                rho_3d,
-                rhocore_3d,
-                &ws.exc_3d,
-                &ws.vxc_3d,
-                ewald.get_energy(),
-                hubbard_energy,
-                &mut ws.rhog_tot_scratch,
-            );
-
-            energy_diff = (energy_scf - energy_harris).abs();
-            if dwmpi::is_root() {
-                println!(
-                    "    {:>3}: {:>10.3E} {:>10.3E} {:>16.6E} {:>25.12E} {:>25.12E} {:>12.3E}",
-                    scf_iter,
-                    eigvalue_epsilon * HA_TO_EV,
-                    fermi_level * HA_TO_EV,
-                    charge,
-                    energy_harris * HA_TO_RY,
-                    energy_scf * HA_TO_RY,
-                    energy_diff * HA_TO_EV
-                );
-            }
-
-            //// check convergence
-
-            // if converged, then exit
-            if energy_diff < control.get_energy_epsilon() {
-                if dwmpi::is_root() {
-                    println!(
-                        "\n     {:<width1$}",
-                        "scf_convergence_success",
-                        width1 = OUT_WIDTH1
-                    );
-                }
-
-                break;
-            }
-
-            // if not converged, but exceed the max_scf, then exit
-
-            if scf_iter == control.get_scf_max_iter() {
-                if dwmpi::is_root() {
-                    println!(
-                        "\n     {:<width1$}",
-                        "scf_convergence_failure",
-                        width1 = OUT_WIDTH1
-                    );
-                }
-
-                break;
-            }
-
-            // mix old and new densities to get the density for the next iteration
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                let rho_3d_up = rho_3d_up.as_mut_slice();
-                let rho_3d_dn = rho_3d_dn.as_mut_slice();
-
-                if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
-                    for ipw in 0..npw_rho {
-                        ws.rhog_total[ipw] = rhog_up[ipw] + rhog_dn[ipw];
-                        ws.rhog_spin[ipw] = rhog_up[ipw] - rhog_dn[ipw];
-                    }
-
-                    // total rho
-
-                    for ipw in 0..npw_rho {
-                        ws.rhog_diff[ipw] = (ws.rhog_out_up[ipw] + ws.rhog_out_dn[ipw])
-                            - (rhog_up[ipw] + rhog_dn[ipw]);
-                    }
-
-                    mixing_rho.compute_next_density(
-                        pwden.get_g(),
-                        &mut ws.rhog_total,
-                        &ws.rhog_diff,
-                    );
-
-                    // spin rho
-
-                    for ipw in 0..npw_rho {
-                        ws.rhog_diff[ipw] = (ws.rhog_out_up[ipw] - ws.rhog_out_dn[ipw])
-                            - (rhog_up[ipw] - rhog_dn[ipw]);
-                    }
-
-                    mixing_spin.compute_next_density(
-                        pwden.get_g(),
-                        &mut ws.rhog_spin,
-                        &ws.rhog_diff,
-                    );
-
-                    for ipw in 0..npw_rho {
-                        rhog_up[ipw] = (ws.rhog_total[ipw] + ws.rhog_spin[ipw]) / 2.0;
-                    }
-
-                    for ipw in 0..npw_rho {
-                        rhog_dn[ipw] = (ws.rhog_total[ipw] - ws.rhog_spin[ipw]) / 2.0;
-                    }
-
-                    rgtrans.g1d_to_r3d(gvec, pwden, rhog_up, rho_3d_up);
-                    rgtrans.g1d_to_r3d(gvec, pwden, rhog_dn, rho_3d_dn);
-                }
-            }
-
-            // build the local potential for the next iteration
-
-            // v_h
-
-            if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
-                sum_spin_channels(rhog_up, rhog_dn, &mut ws.rhog_tot);
-            }
-
-            hartree::potential(pwden.get_g(), &ws.rhog_tot, &mut ws.vhg);
-
-            // v_xc
-
-            // NLCC: include core density during XC update.
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                for i in 0..nfft {
-                    rho_3d_up.as_mut_slice()[i] += rhocore_3d.as_slice()[i] / 2.0;
-                }
-
-                for i in 0..nfft {
-                    rho_3d_dn.as_mut_slice()[i] += rhocore_3d.as_slice()[i] / 2.0;
-                }
-            }
-
-            // Full GGA-consistent XC refresh for next SCF iteration.
-            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);
-
-            // Restore valence-only rho for SCF state/mixing.
-
-            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                for i in 0..nfft {
-                    rho_3d_up.as_mut_slice()[i] -= rhocore_3d.as_slice()[i] / 2.0;
-                }
-
-                for i in 0..nfft {
-                    rho_3d_dn.as_mut_slice()[i] -= rhocore_3d.as_slice()[i] / 2.0;
-                }
-            }
-
-            {
-                let (vxc_3d_up, vxc_3d_dn) = ws.vxc_3d.as_spin().unwrap();
-                let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin_mut().unwrap();
-
-                rgtrans.r3d_to_g1d(gvec, pwden, vxc_3d_up.as_slice(), vxcg_up);
-                rgtrans.r3d_to_g1d(gvec, pwden, vxc_3d_dn.as_slice(), vxcg_dn);
-            }
-
-            // v_xc + v_h + v_psloc in G space
-            {
-                let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
-
-                // spin up
-
-                for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-                    ws.vlocg_up.iter_mut(),
-                    vxcg_up.iter(),
-                    ws.vhg.iter(),
-                    ws.vpslocg.iter(),
-                )) {
-                    *v_loc = *v_xc + *v_ha + *v_psloc;
-                }
-
-                // spin dn
-
-                for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-                    ws.vlocg_dn.iter_mut(),
-                    vxcg_dn.iter(),
-                    ws.vhg.iter(),
-                    ws.vpslocg.iter(),
-                )) {
-                    *v_loc = *v_xc + *v_ha + *v_psloc;
-                }
-            }
-
-            scf_iter += 1;
-        }
+        let mut adapter = SpinIterationAdapter {
+            geom_iter,
+            control,
+            crystal,
+            gvec,
+            pwden,
+            rgtrans,
+            ewald,
+            ntot_elec,
+            npw_wfc_max,
+            fft_ntotf64,
+            xc: xc.as_ref(),
+            density_driver: density_driver.as_ref(),
+            fermi_driver: fermi_driver.as_ref(),
+            mixing_rho: mixing_rho.as_mut(),
+            mixing_spin: mixing_spin.as_mut(),
+            vkscf,
+            rhog,
+            rho_3d,
+            rhocore_3d,
+            vkevals,
+            vkevecs,
+            ws: &mut ws,
+            hubbard_energy: 0.0,
+        };
+
+        run_scf_iteration_engine(control, &mut adapter);
+        drop(adapter);
 
         // display eigenvalues
 
@@ -678,27 +674,16 @@ impl SCF for SCFSpin {
             }
         }
 
-        if control.get_symmetry() {
-            utils::project_force_by_symmetry(crystal, symdrv, &mut force_loc);
-            utils::project_force_by_symmetry(crystal, symdrv, &mut force_vnl);
-            utils::project_force_by_symmetry(crystal, symdrv, &mut force_nlcc);
-            utils::project_force_by_symmetry(crystal, symdrv, &mut force_ewald);
-        }
-
-        for iat in 0..natoms {
-            force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat];
-        }
-
-        if dwmpi::is_root() {
-            force::display(
-                crystal,
-                &force_total,
-                &force_ewald,
-                &force_loc,
-                &force_vnl,
-                &force_nlcc,
-            );
-        }
+        utils::finalize_force_by_parts(
+            control,
+            crystal,
+            symdrv,
+            force_total.as_mut_slice(),
+            force_ewald.as_mut_slice(),
+            force_loc.as_mut_slice(),
+            force_vnl.as_mut_slice(),
+            force_nlcc.as_mut_slice(),
+        );
 
         // stress
 
@@ -736,8 +721,13 @@ impl SCF for SCFSpin {
         dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
 
         let mut stress_hartree = stress::hartree(gvec, pwden, &ws.rhog_tot);
-        let mut stress_xc =
-            stress::xc_spin(crystal.get_latt(), rho_3d, rhocore_3d, &ws.vxc_3d, &ws.exc_3d);
+        let mut stress_xc = stress::xc_spin(
+            crystal.get_latt(),
+            rho_3d,
+            rhocore_3d,
+            &ws.vxc_3d,
+            &ws.exc_3d,
+        );
         let mut stress_spectral_ws = stress::SpectralWorkspace::new();
 
         let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
@@ -784,40 +774,19 @@ impl SCF for SCFSpin {
         );
         let mut stress_ewald = ewald.get_stress().clone();
 
-        if control.get_symmetry() {
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_kin);
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_hartree);
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_xc);
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_xc_nlcc);
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_loc);
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_vnl);
-            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_ewald);
-        }
-
-        for i in 0..3 {
-            for j in 0..3 {
-                stress_total[[i, j]] = stress_kin[[i, j]]
-                    + stress_hartree[[i, j]]
-                    + stress_xc[[i, j]]
-                    + stress_xc_nlcc[[i, j]]
-                    + stress_loc[[i, j]]
-                    + stress_vnl[[i, j]]
-                    + stress_ewald[[i, j]];
-            }
-        }
-
-        if dwmpi::is_root() {
-            stress::display_stress_by_parts(
-                &stress_kin,
-                &stress_hartree,
-                &stress_xc,
-                &stress_xc_nlcc,
-                &stress_loc,
-                &stress_vnl,
-                &stress_ewald,
-                &stress_total,
-            );
-        }
+        utils::finalize_stress_by_parts(
+            control,
+            crystal,
+            symdrv,
+            stress_total,
+            &mut stress_kin,
+            &mut stress_hartree,
+            &mut stress_xc,
+            &mut stress_xc_nlcc,
+            &mut stress_loc,
+            &mut stress_vnl,
+            &mut stress_ewald,
+        );
     }
 }
 

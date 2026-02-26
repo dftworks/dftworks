@@ -343,13 +343,19 @@ New canonical refactoring items are added below to unblock future feature expans
 
 ### E19 - Unified SCF Iteration Engine (Spin/Nonspin)
 **Priority**: P1/P2  
-**Status**: Open  
+**Status**: Done (Spin/Nonspin)  
 **Files**: `scf/src/nonspin.rs`, `scf/src/spin.rs`, `scf/src/lib.rs`, `scf/src/utils.rs`
 
 - Extract a shared SCF iteration template/state machine (`potential -> eigensolve -> occupations -> density -> energy -> convergence -> mixing`)
 - Move spin-specific versus nonspin-specific behavior behind explicit channel adapters rather than duplicated loops
 - Centralize convergence bookkeeping and iteration reporting so both paths use the same metrics schema
 - Reuse one shared post-SCF reduction/projection pipeline for force/stress parts with channel contributions as inputs
+
+**Implementation Update (2026-02-26)**
+- [x] Added shared SCF iteration engine module (`scf/src/engine.rs`) with unified stage ordering and convergence/report output schema
+- [x] Replaced duplicated nonspin/spin loop control flow with explicit channel adapters (`NonSpinIterationAdapter`, `SpinIterationAdapter`)
+- [x] Consolidated post-SCF force/stress finalize+projection path into shared helpers in `scf/src/utils.rs`
+- [x] Validated via Docker correctness gates (`run_phase12_regression.sh`, `run_spin_mpi_parity.sh`)
 
 **Acceptance Criteria**
 - SCF loop control flow lives in one shared engine with spin/nonspin adapters
@@ -595,9 +601,9 @@ Newly added items (`E12`-`E25`) are code-review additions without legacy IDs.
 ### Sprint 12 - SCF Structural Consolidation
 **Scope**: `E19`, `E23`, `E25`
 
-- Introduce shared SCF iteration engine and channel adapters
-- Decompose `scf::utils` and unify duplicated helper logic
-- Roll out typed k-point domain/index model in SCF setup and execution
+- [x] Introduce shared SCF iteration engine and channel adapters
+- [x] Decompose `scf::utils` and unify duplicated helper logic
+- [ ] Roll out typed k-point domain/index model in SCF setup and execution
 
 **Exit Gates**
 - Spin/nonspin loops run through shared orchestration without behavior regression

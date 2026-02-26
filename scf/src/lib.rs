@@ -1,3 +1,4 @@
+mod engine;
 mod hartree;
 mod hubbard;
 mod utils;
