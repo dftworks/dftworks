@@ -14,12 +14,56 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 use vector3::*;
+use std::cell::RefCell;
 
-pub struct DensityNonspin {}
+struct DensityNonspinWorkspace {
+    shape: [usize; 3],
+    unk: Array3<c64>,
+    fft_work: Array3<c64>,
+    rho_3d_local: Array3<c64>,
+}
+
+impl DensityNonspinWorkspace {
+    fn new(shape: [usize; 3]) -> Self {
+        Self {
+            shape,
+            unk: Array3::<c64>::new(shape),
+            fft_work: Array3::<c64>::new(shape),
+            rho_3d_local: Array3::<c64>::new(shape),
+        }
+    }
+}
+
+pub struct DensityNonspin {
+    workspace: RefCell<Option<DensityNonspinWorkspace>>,
+}
 
 impl DensityNonspin {
     pub fn new() -> DensityNonspin {
-        DensityNonspin {}
+        DensityNonspin {
+            workspace: RefCell::new(None),
+        }
+    }
+
+    fn with_workspace<R>(
+        &self,
+        shape: [usize; 3],
+        f: impl FnOnce(&mut DensityNonspinWorkspace) -> R,
+    ) -> R {
+        let mut workspace = self.workspace.borrow_mut();
+        let needs_init = workspace
+            .as_ref()
+            .map(|w| w.shape != shape)
+            .unwrap_or(true);
+        if needs_init {
+            *workspace = Some(DensityNonspinWorkspace::new(shape));
+        }
+
+        let ws = workspace
+            .as_mut()
+            .expect("density nonspin workspace should be initialized");
+
+        f(ws)
     }
 }
 
@@ -76,44 +120,49 @@ impl Density for DensityNonspin {
         rho_3d.set_value(c64::zero());
 
         let [n1, n2, n3] = rho_3d.shape();
+        self.with_workspace([n1, n2, n3], |workspace| {
+            workspace.rho_3d_local.set_value(c64::zero());
 
-        let mut unk = Array3::<c64>::new([n1, n2, n3]);
+            // Local rank contribution:
+            // rho(r) = sum_{n,k} f_{nk} w_k |u_{nk}(r)|^2
+            for (ik, kscf) in vkscf.iter().enumerate() {
+                let occ = kscf.get_occ();
 
-        let mut fft_work = Array3::<c64>::new([n1, n2, n3]);
+                let nev = kscf.get_nbands();
 
-        let mut rho_3d_local = Array3::<c64>::new([n1, n2, n3]);
-        rho_3d_local.set_value(c64::zero());
+                for ib in 0..nev {
+                    if occ[ib] > EPS20 {
+                        // Plane-wave coefficients -> real-space periodic part u_nk(r).
 
-        // Local rank contribution:
-        // rho(r) = sum_{n,k} f_{nk} w_k |u_{nk}(r)|^2
-        for (ik, kscf) in vkscf.iter().enumerate() {
-            let occ = kscf.get_occ();
+                        kscf.get_unk(
+                            rgtrans,
+                            &vkevecs[ik],
+                            volume,
+                            ib,
+                            &mut workspace.unk,
+                            &mut workspace.fft_work,
+                        );
 
-            let nev = kscf.get_nbands();
+                        // Add weighted orbital density to local accumulator.
 
-            for ib in 0..nev {
-                if occ[ib] > EPS20 {
-                    // Plane-wave coefficients -> real-space periodic part u_nk(r).
-
-                    kscf.get_unk(rgtrans, &vkevecs[ik], volume, ib, &mut unk, &mut fft_work);
-
-                    // Add weighted orbital density to local accumulator.
-
-                    rho_3d_local.scaled_sqr_add(&unk, occ[ib] * kscf.get_k_weight());
-                } else {
-                    // Occupations are sorted; once empty, higher bands are empty.
-                    break;
+                        workspace
+                            .rho_3d_local
+                            .scaled_sqr_add(&workspace.unk, occ[ib] * kscf.get_k_weight());
+                    } else {
+                        // Occupations are sorted; once empty, higher bands are empty.
+                        break;
+                    }
                 }
             }
-        }
 
-        // MPI reduction + broadcast so all ranks carry the same final rho(r).
-        dwmpi::reduce_slice_sum(
-            rho_3d_local.as_slice(),
-            rho_3d.as_mut_slice(),
-            MPI_COMM_WORLD,
-        );
-        dwmpi::bcast_slice(rho_3d.as_mut_slice(), MPI_COMM_WORLD);
+            // MPI reduction + broadcast so all ranks carry the same final rho(r).
+            dwmpi::reduce_slice_sum(
+                workspace.rho_3d_local.as_slice(),
+                rho_3d.as_mut_slice(),
+                MPI_COMM_WORLD,
+            );
+            dwmpi::bcast_slice(rho_3d.as_mut_slice(), MPI_COMM_WORLD);
+        });
     }
 }
 

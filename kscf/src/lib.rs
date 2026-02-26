@@ -23,13 +23,45 @@ use vector3::*;
 use vnl::VNL;
 
 use itertools::multizip;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 mod hubbard;
 mod hybrid;
 mod subspace;
 use hubbard::HubbardPotential;
 use hybrid::HybridPotential;
+
+struct KscfWorkspace {
+    vunkg_3d: Array3<c64>,
+    unk_3d: Array3<c64>,
+    fft_workspace: Array3<c64>,
+    hubbard_beta: Vec<c64>,
+    hubbard_coeff: Vec<c64>,
+    hybrid_workspace: hybrid::HybridWorkspace,
+    hybrid_prepare_workspace: hybrid::HybridPrepareWorkspace,
+    rayleigh_evecs: Matrix<c64>,
+}
+
+impl KscfWorkspace {
+    fn new(
+        fft_shape: [usize; 3],
+        npw_wfc: usize,
+        npw_rho: usize,
+        nband: usize,
+        hubbard_n_m: usize,
+    ) -> Self {
+        Self {
+            vunkg_3d: Array3::<c64>::new(fft_shape),
+            unk_3d: Array3::<c64>::new(fft_shape),
+            fft_workspace: Array3::<c64>::new(fft_shape),
+            hubbard_beta: vec![c64::new(0.0, 0.0); hubbard_n_m],
+            hubbard_coeff: vec![c64::new(0.0, 0.0); hubbard_n_m],
+            hybrid_workspace: hybrid::HybridWorkspace::new(fft_shape, npw_rho),
+            hybrid_prepare_workspace: hybrid::HybridPrepareWorkspace::new(fft_shape, npw_rho),
+            rayleigh_evecs: Matrix::<c64>::new(npw_wfc, nband),
+        }
+    }
+}
 
 // Cached non-local data for one species at one k-point.
 // Keeping structure factors + projector tables together avoids repeated
@@ -68,6 +100,8 @@ pub struct KSCF<'a> {
     hybrid: HybridPotential,
     hubbard: HubbardPotential,
     hybrid_exchange_energy: Cell<f64>,
+    workspace: RefCell<KscfWorkspace>,
+    sparse_solver: RefCell<Box<dyn eigensolver::EigenSolver>>,
 
     k_weight: f64,
 }
@@ -130,6 +164,15 @@ impl<'a> KSCF<'a> {
         let vnl_terms = build_nonlocal_terms(crystal, gvec, pspot, pwwfc, vnl);
         let hybrid = HybridPotential::new(control, pwwfc, pwden);
         let hubbard = HubbardPotential::new(control, crystal, gvec, pspot, pwwfc, &kgylm);
+        let npw_wfc = pwwfc.get_n_plane_waves();
+        let workspace = KscfWorkspace::new(
+            fft_shape,
+            npw_wfc,
+            pwden.get_n_plane_waves(),
+            control.get_nband(),
+            hubbard.n_m(),
+        );
+        let sparse_solver = eigensolver::new(control.get_eigen_solver(), npw_wfc, control.get_nband());
 
         KSCF {
             control,
@@ -150,6 +193,8 @@ impl<'a> KSCF<'a> {
             hybrid,
             hubbard,
             hybrid_exchange_energy: Cell::new(0.0),
+            workspace: RefCell::new(workspace),
+            sparse_solver: RefCell::new(sparse_solver),
             k_weight,
         }
     }
@@ -323,33 +368,43 @@ impl<'a> KSCF<'a> {
             }
         }
 
-        let npw_wfc = self.pwwfc.get_n_plane_waves();
+        let mut workspace = self.workspace.borrow_mut();
+        let (
+            vunkg_3d,
+            unk_3d,
+            fft_workspace,
+            hubbard_beta,
+            hubbard_coeff,
+            hybrid_workspace,
+            hybrid_prepare_workspace,
+            rayleigh_evecs,
+        ) = {
+            let ws = &mut *workspace;
+            (
+                &mut ws.vunkg_3d,
+                &mut ws.unk_3d,
+                &mut ws.fft_workspace,
+                &mut ws.hubbard_beta,
+                &mut ws.hubbard_coeff,
+                &mut ws.hybrid_workspace,
+                &mut ws.hybrid_prepare_workspace,
+                &mut ws.rayleigh_evecs,
+            )
+        };
 
-        // Workspaces reused by Hamiltonian applications.
-
-        let mut vunkg_3d = Array3::<c64>::new(self.fft_shape);
-        let mut unk_3d = Array3::<c64>::new(self.fft_shape);
-        let mut fft_workspace = Array3::<c64>::new(self.fft_shape);
-        let mut hubbard_beta = vec![c64::new(0.0, 0.0); self.hubbard.n_m()];
-        let mut hubbard_coeff = vec![c64::new(0.0, 0.0); self.hubbard.n_m()];
-        let hybrid_prepared = self.hybrid.prepare(
+        let hybrid_prepared = self.hybrid.prepare_with_workspace(
             rgtrans,
             self.gvec,
             self.pwden,
             self.volume,
-            self.fft_shape,
             &self.fft_linear_index,
             evecs,
             &self.occ,
             self.control.is_spin(),
+            hybrid_prepare_workspace,
         );
         self.hybrid_exchange_energy
             .set(hybrid_prepared.exchange_energy());
-        let mut hybrid_workspace = self
-            .hybrid
-            .make_workspace(self.fft_shape, self.pwden.get_n_plane_waves());
-
-        //
 
         // Closure implementing H|psi> for eigensolver backend.
         let mut hamiltonian_on_psi = |vin: &[c64], vout: &mut [c64]| {
@@ -364,9 +419,9 @@ impl<'a> KSCF<'a> {
                 self.volume,
                 &self.fft_linear_index,
                 vloc_3d,
-                &mut vunkg_3d,
-                &mut unk_3d,
-                &mut fft_workspace,
+                vunkg_3d,
+                unk_3d,
+                fft_workspace,
                 vin,
                 vout,
             );
@@ -392,26 +447,24 @@ impl<'a> KSCF<'a> {
                 self.volume,
                 &self.fft_linear_index,
                 &hybrid_prepared,
-                &mut hybrid_workspace,
+                hybrid_workspace,
                 vin,
                 vout,
             );
 
             // Hubbard (+U) contribution hook.
-            self.hubbard
-                .apply_on_psi(vin, vout, &mut hubbard_beta, &mut hubbard_coeff);
+            self.hubbard.apply_on_psi(
+                vin,
+                vout,
+                hubbard_beta,
+                hubbard_coeff,
+            );
 
             // Kinetic contribution (diagonal in PW basis).
 
             hpsi::kinetic_on_psi(&self.kin, vin, vout);
         };
-
-        // Eigensolver instance (PCG or chosen backend).
-        let mut sparse = eigensolver::new(
-            self.control.get_eigen_solver(),
-            npw_wfc,
-            self.control.get_nband(),
-        );
+        let mut sparse = self.sparse_solver.borrow_mut();
 
         let max_scf_iter_wfc = self.control.get_scf_max_iter_wfc();
 
@@ -442,11 +495,13 @@ impl<'a> KSCF<'a> {
 
             // Optional Rayleigh-Ritz rotation pass.
             if need_rayleigh_quotient(self.control, scf_iter, n_cg_loop) {
-                let mut t_evecs = Matrix::<c64>::new(npw_wfc, self.control.get_nband());
-
-                t_evecs.assign(evecs);
-
-                subspace::rotate_wfc(&mut hamiltonian_on_psi, &mut t_evecs, evecs, evals);
+                rayleigh_evecs.assign(evecs);
+                subspace::rotate_wfc(
+                    &mut hamiltonian_on_psi,
+                    rayleigh_evecs,
+                    evecs,
+                    evals,
+                );
 
                 // println!("subspace rotation after eigen-solver");
             }

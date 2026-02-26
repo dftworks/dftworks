@@ -23,6 +23,8 @@ pub struct EigenSolverPCG {
     pg0: Vec<c64>,
     pg1: Vec<c64>,
     precond: Vec<c64>,
+    gram_schmidt_vec: Vec<c64>,
+    proj_coeff: Vec<c64>,
 }
 
 impl EigenSolverPCG {
@@ -36,6 +38,8 @@ impl EigenSolverPCG {
         let mut pg0 = Vec::with_capacity(npw);
         let mut pg1 = Vec::with_capacity(npw);
         let mut precond = Vec::with_capacity(npw);
+        let mut gram_schmidt_vec = Vec::with_capacity(npw);
+        let mut proj_coeff = Vec::with_capacity(nband);
 
         x0.resize(npw, c64::zero());
         h_x0.resize(npw, c64::zero());
@@ -46,9 +50,49 @@ impl EigenSolverPCG {
         pg0.resize(npw, c64::zero());
         pg1.resize(npw, c64::zero());
         precond.resize(npw, c64::zero());
+        gram_schmidt_vec.resize(npw, c64::zero());
+        proj_coeff.resize(nband, c64::zero());
 
-        EigenSolverPCG { npw, nband, x0, h_x0, d0, h_d0, g0, g1, pg0, pg1, precond }
+        EigenSolverPCG {
+            npw,
+            nband,
+            x0,
+            h_x0,
+            d0,
+            h_d0,
+            g0,
+            g1,
+            pg0,
+            pg1,
+            precond,
+            gram_schmidt_vec,
+            proj_coeff,
+        }
     }
+
+    fn gram_schmidt(&mut self, evecs: &mut Matrix<c64>, iband: usize) {
+        self.gram_schmidt_vec.copy_from_slice(evecs.get_col(iband));
+
+        for j in 0..iband {
+            let psi = evecs.get_col(j);
+            self.proj_coeff[j] = utility::zdot_product(psi, evecs.get_col(iband));
+        }
+
+        for j in 0..iband {
+            let proj = self.proj_coeff[j];
+            let psi = evecs.get_col(j);
+            self.gram_schmidt_vec
+                .iter_mut()
+                .zip(psi.iter())
+                .for_each(|(vi, &psi_i)| {
+                    *vi -= proj * psi_i;
+                });
+        }
+
+        utility::normalize_vector_c64(&mut self.gram_schmidt_vec);
+        evecs.set_col(iband, &self.gram_schmidt_vec);
+    }
+
 }
 
 impl EigenSolver for EigenSolverPCG {
@@ -68,7 +112,7 @@ impl EigenSolver for EigenSolverPCG {
             // orthogonalize to lower bands and normalize
 
             if iband > 0 {
-                gram_schmidt(evecs, iband);
+                self.gram_schmidt(evecs, iband);
             }
 
             // nscf or scf
@@ -110,7 +154,12 @@ impl EigenSolver for EigenSolverPCG {
 
                 // orthogonalize g1 to all lower bands
 
-                orthogonalize_to_lower_bands(evecs, iband, &mut self.g1);
+                orthogonalize_to_lower_bands_with_proj(
+                    &mut self.proj_coeff,
+                    evecs,
+                    iband,
+                    &mut self.g1,
+                );
 
                 for i in 0..self.npw {
                     self.pg1[i] = self.g1[i] * self.precond[i];
@@ -118,7 +167,12 @@ impl EigenSolver for EigenSolverPCG {
 
                 // orthogonalize pg1 to all lower bands
 
-                orthogonalize_to_lower_bands(evecs, iband, &mut self.pg1);
+                orthogonalize_to_lower_bands_with_proj(
+                    &mut self.proj_coeff,
+                    evecs,
+                    iband,
+                    &mut self.pg1,
+                );
 
                 utility::normalize_vector_c64(&mut self.pg1);
 
@@ -246,49 +300,22 @@ fn compute_preconditioner(psi: &[c64], kin: &[f64], kgg: &mut [c64]) {
     }
 }
 
-fn gram_schmidt(evecs: &mut Matrix<c64>, iband: usize) {
-    let npw = evecs.nrow();
-    let mut v = vec![c64::zero(); npw];
-    v.copy_from_slice(evecs.get_col(iband));
-
-    // Pre-allocate projection coefficients
-    let mut proj = Vec::with_capacity(iband);
-
-    // Compute all projections first (Classical Gram-Schmidt)
-    for j in 0..iband {
-        let psi = evecs.get_col(j);
-        proj.push(utility::zdot_product(psi, evecs.get_col(iband)));
-    }
-
-    // Apply all projections using SIMD-friendly operations
-    for (j, &proj_coeff) in proj.iter().enumerate() {
-        let psi = evecs.get_col(j);
-        // Use iterator for better vectorization
-        v.iter_mut().zip(psi.iter()).for_each(|(vi, &psi_i)| {
-            *vi -= proj_coeff * psi_i;
-        });
-    }
-
-    utility::normalize_vector_c64(&mut v);
-    evecs.set_col(iband, &v);
-}
-
-fn orthogonalize_to_lower_bands(evecs: &Matrix<c64>, ibnd: usize, y: &mut [c64]) {
-    // Pre-allocate projection coefficients with capacity
-    let mut proj = Vec::with_capacity(ibnd);
-
-    // Compute all projections first using iterator for better vectorization
+fn orthogonalize_to_lower_bands_with_proj(
+    proj_coeff: &mut [c64],
+    evecs: &Matrix<c64>,
+    ibnd: usize,
+    y: &mut [c64],
+) {
     for i in 0..ibnd {
         let psi = evecs.get_col(i);
-        proj.push(utility::zdot_product(psi, y));
+        proj_coeff[i] = utility::zdot_product(psi, y);
     }
 
-    // Apply all projections using SIMD-friendly operations
-    for (i, &proj_coeff) in proj.iter().enumerate() {
+    for i in 0..ibnd {
+        let proj = proj_coeff[i];
         let psi = evecs.get_col(i);
-        // Use iterator for better vectorization
         y.iter_mut().zip(psi.iter()).for_each(|(yi, &psi_i)| {
-            *yi -= proj_coeff * psi_i;
+            *yi -= proj * psi_i;
         });
     }
 }

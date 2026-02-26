@@ -2,6 +2,12 @@
 
 This document is the deduplicated execution backlog for optimization, architecture, and feature expansion.
 
+## Validation Policy (Effective 2026-02-26)
+
+- For every major code change, correctness must be validated in Docker before commit/push.
+- Baseline gate: run `scripts/run_phase12_regression.sh` inside `rust-dev` Docker (`FORCE_BUILD=1`).
+- If spin/MPI behavior is touched, also run `scripts/run_spin_mpi_parity.sh` in Docker.
+
 ## Completed Work Summary
 
 ### Infrastructure
@@ -73,7 +79,11 @@ The previous list contained intentional overlap to capture related themes. The i
 - [x] Added explicit reusable SCF workspaces for nonspin and spin paths (`scf/src/nonspin.rs`, `scf/src/spin.rs`) with one-shot size construction and validation
 - [x] Refactored SCF hot-loop scratch storage (`vhg`, `vxc`, `vloc`, `rho(G)` mix buffers) into workspace-owned buffers instead of ad-hoc locals
 - [x] Removed spin per-iteration `rhog_tot` allocation in total-energy evaluation by introducing reusable scratch buffers
-- [ ] Extend workspace pattern to `kscf`, density kernels, eigensolver scratch, and `pw` orchestration contexts
+- [x] Extended workspace pattern to `kscf` by persisting Hamiltonian scratch, Hubbard scratch, hybrid work buffers, Rayleigh rotation matrix scratch, and eigensolver instance (`kscf/src/lib.rs`, `kscf/src/hybrid.rs`)
+- [x] Added reusable density-kernel workspaces for nonspin/spin charge-density builds (`density/src/nonspin.rs`, `density/src/spin.rs`)
+- [x] Added eigensolver scratch reuse for Gram-Schmidt/projection paths to avoid per-band short-lived `Vec` allocations (`eigensolver/src/pcg.rs`)
+- [x] Introduced typed `GeometryStepContext` and reusable `OrchestrationWorkspace` in `pw` to centralize per-step setup and core-charge/symmetry scratch buffers (`pw/src/main.rs`)
+- [ ] Extend workspace coverage to force/stress spectral kernels and FFT-gradient operators; confirm steady-state allocation profile via benchmark traces
 
 ### E3 - Remove Serialized Eigenvalue Output Delay
 **Priority**: P2  

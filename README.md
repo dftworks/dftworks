@@ -245,6 +245,22 @@ Regression check (converged SCF):
 bash scripts/run_hse06_regression.sh
 ```
 
+# Major-change correctness gate (required)
+
+For each major code change, run correctness validation in Docker before commit/push.
+
+Required baseline command:
+
+```bash
+docker run --rm -v "$PWD":/usr/src/app -w /usr/src/app rust-dev bash -lc 'source $HOME/.cargo/env && FORCE_BUILD=1 bash ./scripts/run_phase12_regression.sh'
+```
+
+If the change touches spin/MPI behavior, also run:
+
+```bash
+docker run --rm -v "$PWD":/usr/src/app -w /usr/src/app rust-dev bash -lc 'source $HOME/.cargo/env && FORCE_BUILD=0 bash ./scripts/run_spin_mpi_parity.sh'
+```
+
 # Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.

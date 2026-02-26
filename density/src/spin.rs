@@ -15,11 +15,33 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
 use vector3::*;
+use std::cell::RefCell;
 
 pub struct DensitySpin {
     // Per-species starting magnetization used to split initial atomic density
     // into up/down channels.
     starting_mag: MagMoment,
+    workspace: RefCell<Option<DensitySpinWorkspace>>,
+}
+
+struct DensitySpinWorkspace {
+    shape: [usize; 3],
+    rho_3d_up_local: Array3<c64>,
+    rho_3d_dn_local: Array3<c64>,
+    unk: Array3<c64>,
+    fft_work: Array3<c64>,
+}
+
+impl DensitySpinWorkspace {
+    fn new(shape: [usize; 3]) -> Self {
+        Self {
+            shape,
+            rho_3d_up_local: Array3::<c64>::new(shape),
+            rho_3d_dn_local: Array3::<c64>::new(shape),
+            unk: Array3::<c64>::new(shape),
+            fft_work: Array3::<c64>::new(shape),
+        }
+    }
 }
 
 impl DensitySpin {
@@ -28,7 +50,28 @@ impl DensitySpin {
         magmom.read_file("in.magmom");
         DensitySpin {
             starting_mag: magmom,
+            workspace: RefCell::new(None),
         }
+    }
+
+    fn with_workspace<R>(
+        &self,
+        shape: [usize; 3],
+        f: impl FnOnce(&mut DensitySpinWorkspace) -> R,
+    ) -> R {
+        let mut workspace = self.workspace.borrow_mut();
+        let needs_init = workspace
+            .as_ref()
+            .map(|w| w.shape != shape)
+            .unwrap_or(true);
+        if needs_init {
+            *workspace = Some(DensitySpinWorkspace::new(shape));
+        }
+
+        let ws = workspace
+            .as_mut()
+            .expect("density spin workspace should be initialized");
+        f(ws)
     }
 }
 
@@ -88,107 +131,101 @@ impl Density for DensitySpin {
         let (vkscf_up, vkscf_dn) = vkscf.as_spin().unwrap();
         let (vkevecs_up, vkevecs_dn) = vkevecs.as_spin().unwrap();
 
-        let mut rho_3d_up_local = Array3::<c64>::new([n1, n2, n3]);
-        let mut rho_3d_dn_local = Array3::<c64>::new([n1, n2, n3]);
-        rho_3d_up_local.set_value(c64::zero());
-        rho_3d_dn_local.set_value(c64::zero());
+        self.with_workspace([n1, n2, n3], |workspace| {
+            workspace.rho_3d_up_local.set_value(c64::zero());
+            workspace.rho_3d_dn_local.set_value(c64::zero());
 
-        let mut unk = Array3::<c64>::new([n1, n2, n3]);
+            // Spin-up channel:
+            // rho_up(r) = sum_{n,k} f_up(n,k) w_k |u_up(n,k,r)|^2
 
-        // FFT workspace reused while converting band coefficients to u_nk(r).
+            for (ik, kscf) in vkscf_up.iter().enumerate() {
+                let occ = kscf.get_occ();
 
-        let mut fft_work = Array3::<c64>::new([n1, n2, n3]);
+                let nev = kscf.get_nbands();
 
-        // Spin-up channel:
-        // rho_up(r) = sum_{n,k} f_up(n,k) w_k |u_up(n,k,r)|^2
+                for ib in 0..nev {
+                    if occ[ib] > EPS20 {
+                        // Plane-wave coefficients -> u_nk(r).
 
-        for (ik, kscf) in vkscf_up.iter().enumerate() {
-            let occ = kscf.get_occ();
+                        kscf.get_unk(
+                            rgtrans,
+                            &vkevecs_up[ik],
+                            volume,
+                            ib,
+                            &mut workspace.unk,
+                            &mut workspace.fft_work,
+                        );
 
-            let nev = kscf.get_nbands();
+                        // Add weighted orbital density.
 
-            for ib in 0..nev {
-                if occ[ib] > EPS20 {
-                    // Plane-wave coefficients -> u_nk(r).
+                        let factor = occ[ib] * kscf.get_k_weight();
 
-                    kscf.get_unk(
-                        rgtrans,
-                        &vkevecs_up[ik],
-                        volume,
-                        ib,
-                        &mut unk,
-                        &mut fft_work,
-                    );
-
-                    // Add weighted orbital density.
-
-                    let factor = occ[ib] * kscf.get_k_weight();
-
-                    for (y, x) in multizip((
-                        rho_3d_up_local.as_mut_slice().iter_mut(),
-                        unk.as_slice().iter(),
-                    )) {
-                        *y += x.norm_sqr() * factor;
+                        for (y, x) in multizip((
+                            workspace.rho_3d_up_local.as_mut_slice().iter_mut(),
+                            workspace.unk.as_slice().iter(),
+                        )) {
+                            *y += x.norm_sqr() * factor;
+                        }
+                    } else {
+                        // Occupations are ordered; remaining bands are empty.
+                        break;
                     }
-                } else {
-                    // Occupations are ordered; remaining bands are empty.
-                    break;
                 }
             }
-        }
 
-        // Spin-down channel:
-        // rho_dn(r) = sum_{n,k} f_dn(n,k) w_k |u_dn(n,k,r)|^2
+            // Spin-down channel:
+            // rho_dn(r) = sum_{n,k} f_dn(n,k) w_k |u_dn(n,k,r)|^2
 
-        for (ik, kscf) in vkscf_dn.iter().enumerate() {
-            let occ = kscf.get_occ();
+            for (ik, kscf) in vkscf_dn.iter().enumerate() {
+                let occ = kscf.get_occ();
 
-            let nev = kscf.get_nbands();
+                let nev = kscf.get_nbands();
 
-            for ib in 0..nev {
-                if occ[ib] > EPS20 {
-                    // Plane-wave coefficients -> u_nk(r).
+                for ib in 0..nev {
+                    if occ[ib] > EPS20 {
+                        // Plane-wave coefficients -> u_nk(r).
 
-                    kscf.get_unk(
-                        rgtrans,
-                        &vkevecs_dn[ik],
-                        volume,
-                        ib,
-                        &mut unk,
-                        &mut fft_work,
-                    );
+                        kscf.get_unk(
+                            rgtrans,
+                            &vkevecs_dn[ik],
+                            volume,
+                            ib,
+                            &mut workspace.unk,
+                            &mut workspace.fft_work,
+                        );
 
-                    // Add weighted orbital density.
+                        // Add weighted orbital density.
 
-                    let factor = occ[ib] * kscf.get_k_weight();
+                        let factor = occ[ib] * kscf.get_k_weight();
 
-                    for (y, x) in multizip((
-                        rho_3d_dn_local.as_mut_slice().iter_mut(),
-                        unk.as_slice().iter(),
-                    )) {
-                        *y += x.norm_sqr() * factor;
+                        for (y, x) in multizip((
+                            workspace.rho_3d_dn_local.as_mut_slice().iter_mut(),
+                            workspace.unk.as_slice().iter(),
+                        )) {
+                            *y += x.norm_sqr() * factor;
+                        }
+                    } else {
+                        // Occupations are ordered; remaining bands are empty.
+                        break;
                     }
-                } else {
-                    // Occupations are ordered; remaining bands are empty.
-                    break;
                 }
             }
-        }
 
-        // MPI reduction + broadcast so all ranks share identical rho_up/rho_dn.
-        dwmpi::reduce_slice_sum(
-            rho_3d_up_local.as_slice(),
-            rho_3d_up.as_mut_slice(),
-            MPI_COMM_WORLD,
-        );
-        dwmpi::reduce_slice_sum(
-            rho_3d_dn_local.as_slice(),
-            rho_3d_dn.as_mut_slice(),
-            MPI_COMM_WORLD,
-        );
+            // MPI reduction + broadcast so all ranks share identical rho_up/rho_dn.
+            dwmpi::reduce_slice_sum(
+                workspace.rho_3d_up_local.as_slice(),
+                rho_3d_up.as_mut_slice(),
+                MPI_COMM_WORLD,
+            );
+            dwmpi::reduce_slice_sum(
+                workspace.rho_3d_dn_local.as_slice(),
+                rho_3d_dn.as_mut_slice(),
+                MPI_COMM_WORLD,
+            );
 
-        dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
-        dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
+        });
     }
 }
 

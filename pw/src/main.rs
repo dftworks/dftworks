@@ -241,6 +241,108 @@ fn display_symmetry_equivalent_atoms(crystal: &Crystal, symdrv: &dyn SymmetryDri
     }
 }
 
+struct GeometryStepContext {
+    fftgrid: FFTGrid,
+    rgtrans: rgtransform::RGTransform,
+    gvec: GVector,
+    pwden: PWDensity,
+    blatt: lattice::Lattice,
+}
+
+impl GeometryStepContext {
+    fn new(crystal: &Crystal, ecutrho: f64) -> Self {
+        let fftgrid = FFTGrid::new(crystal.get_latt(), ecutrho);
+        let [n1, n2, n3] = fftgrid.get_size();
+        let rgtrans = rgtransform::RGTransform::new(n1, n2, n3);
+        let gvec = GVector::new(crystal.get_latt(), n1, n2, n3);
+        let pwden = PWDensity::new(ecutrho, &gvec);
+        let blatt = crystal.get_latt().reciprocal();
+
+        Self {
+            fftgrid,
+            rgtrans,
+            gvec,
+            pwden,
+            blatt,
+        }
+    }
+
+    fn fft_shape(&self) -> [usize; 3] {
+        self.fftgrid.get_size()
+    }
+}
+
+struct OrchestrationWorkspace {
+    rhocoreg: Vec<c64>,
+    rhocore_3d: Option<Array3<c64>>,
+    atom_positions: Vec<[f64; 3]>,
+}
+
+impl OrchestrationWorkspace {
+    fn new() -> Self {
+        Self {
+            rhocoreg: Vec::new(),
+            rhocore_3d: None,
+            atom_positions: Vec::new(),
+        }
+    }
+
+    fn ensure_shape(&mut self, npw_rho: usize, fft_shape: [usize; 3]) {
+        if self.rhocoreg.len() != npw_rho {
+            self.rhocoreg.resize(npw_rho, c64::zero());
+        } else {
+            self.rhocoreg.fill(c64::zero());
+        }
+
+        let needs_rhocore_resize = self
+            .rhocore_3d
+            .as_ref()
+            .map(|rho| rho.shape() != fft_shape)
+            .unwrap_or(true);
+        if needs_rhocore_resize {
+            self.rhocore_3d = Some(Array3::<c64>::new(fft_shape));
+        }
+
+        self.rhocore_3d
+            .as_mut()
+            .expect("orchestration workspace rhocore_3d should be initialized")
+            .set_value(c64::zero());
+    }
+
+    fn update_atom_positions(&mut self, crystal: &Crystal) {
+        let natom = crystal.get_n_atoms();
+        if self.atom_positions.len() != natom {
+            self.atom_positions = vec![[0.0; 3]; natom];
+        }
+
+        let vatoms = crystal.get_atom_positions();
+        for (dst, src) in self.atom_positions.iter_mut().zip(vatoms.iter()) {
+            dst[0] = src.x;
+            dst[1] = src.y;
+            dst[2] = src.z;
+        }
+    }
+
+    fn core_charge_buffers_mut(&mut self) -> (&mut [c64], &mut Array3<c64>) {
+        let rhocoreg = self.rhocoreg.as_mut_slice();
+        let rhocore_3d = self
+            .rhocore_3d
+            .as_mut()
+            .expect("orchestration workspace rhocore_3d should be initialized");
+        (rhocoreg, rhocore_3d)
+    }
+
+    fn rhocore_3d(&self) -> &Array3<c64> {
+        self.rhocore_3d
+            .as_ref()
+            .expect("orchestration workspace rhocore_3d should be initialized")
+    }
+
+    fn atom_positions(&self) -> &[[f64; 3]] {
+        self.atom_positions.as_slice()
+    }
+}
+
 fn main() {
     // Top-level program flow:
     // 1) initialize MPI/runtime and read all inputs
@@ -325,33 +427,24 @@ fn main() {
     let scf_driver = scf::new(spin_scheme);
 
     let density_driver = density::new(spin_scheme);
+    let mut orchestration_workspace = OrchestrationWorkspace::new();
 
     // crystal.display();
 
     loop {
         // Rebuild reciprocal/FFT objects each geometry step because lattice may
         // change during cell optimization.
-        // FFT Grid
-
-        let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
-        let [n1, n2, n3] = fftgrid.get_size();
-
-        // RGTransform
-
-        let rgtrans = rgtransform::RGTransform::new(n1, n2, n3);
-
-        // G vectors
-
-        let gvec = GVector::new(crystal.get_latt(), n1, n2, n3);
-
-        // G vectors for density expansion
-
-        let pwden = PWDensity::new(control.get_ecutrho(), &gvec);
+        let geom_ctx = GeometryStepContext::new(&crystal, control.get_ecutrho());
+        let fftgrid = &geom_ctx.fftgrid;
+        let rgtrans = &geom_ctx.rgtrans;
+        let gvec = &geom_ctx.gvec;
+        let pwden = &geom_ctx.pwden;
+        let blatt = &geom_ctx.blatt;
+        let [n1, n2, n3] = geom_ctx.fft_shape();
         let npw_rho = pwden.get_n_plane_waves();
-        let blatt = crystal.get_latt().reciprocal();
 
         if dwmpi::is_root() {
-            display_grid_information(&fftgrid, &pwden);
+            display_grid_information(fftgrid, pwden);
         }
 
         //loop {
@@ -363,7 +456,7 @@ fn main() {
 
         // Ewald
 
-        let ewald = ewald::Ewald::new(&crystal, &zions, &gvec, &pwden);
+        let ewald = ewald::Ewald::new(&crystal, &zions, gvec, pwden);
 
         let nspin = match spin_scheme {
             SpinScheme::NonSpin => 1,
@@ -404,10 +497,10 @@ fn main() {
                 match try_load_density_checkpoint(
                     spin_scheme,
                     &expected_checkpoint_meta,
-                    &blatt,
-                    &rgtrans,
-                    &gvec,
-                    &pwden,
+                    blatt,
+                    rgtrans,
+                    gvec,
+                    pwden,
                     &mut rhog,
                     &mut rho_3d,
                 ) {
@@ -425,9 +518,9 @@ fn main() {
                 density_driver.from_atomic_super_position(
                     &pots,
                     &crystal,
-                    &rgtrans,
-                    &gvec,
-                    &pwden,
+                    rgtrans,
+                    gvec,
+                    pwden,
                     &mut rhog,
                     &mut rho_3d,
                 );
@@ -488,35 +581,25 @@ fn main() {
         }
 
         // Core charge used by NLCC terms.
-
-        let mut rhocoreg = vec![c64::zero(); npw_rho];
-        let mut rhocore_3d = Array3::<c64>::new([n1, n2, n3]);
-        rhocore_3d.set_value(c64::zero());
+        orchestration_workspace.ensure_shape(npw_rho, [n1, n2, n3]);
+        let (rhocoreg, rhocore_3d_workspace) = orchestration_workspace.core_charge_buffers_mut();
 
         nlcc::from_atomic_super_position(
             &pots,
             &crystal,
-            &rgtrans,
-            &gvec,
-            &pwden,
-            &mut rhocoreg,
-            &mut rhocore_3d,
+            rgtrans,
+            gvec,
+            pwden,
+            rhocoreg,
+            rhocore_3d_workspace,
         );
 
         // Symmetry helper used by force/stress post-processing.
-
-        let mut atom_positions = vec![[0.0; 3]; crystal.get_n_atoms()];
-
-        let vatoms = crystal.get_atom_positions();
-        for iat in 0..crystal.get_n_atoms() {
-            atom_positions[iat][0] = vatoms[iat].x;
-            atom_positions[iat][1] = vatoms[iat].y;
-            atom_positions[iat][2] = vatoms[iat].z;
-        }
+        orchestration_workspace.update_atom_positions(&crystal);
 
         let symdrv = symmetry::new(
             &crystal.get_latt().as_2d_array_row_major(),
-            &atom_positions,
+            orchestration_workspace.atom_positions(),
             &crystal.get_atom_types(),
             EPS6,
         );
@@ -572,9 +655,9 @@ fn main() {
         if let Some((ik_first, ik_last)) = ik_range {
             (ik_first..=ik_last).into_iter().for_each(|ik| {
                 let k_frac = kpts.get_k_frac(ik);
-                let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                let k_cart = kpts.frac_to_cart(&k_frac, blatt);
 
-                let pwwfc: PWBasis = PWBasis::new(k_cart, ik, control.get_ecut(), &gvec);
+                let pwwfc: PWBasis = PWBasis::new(k_cart, ik, control.get_ecut(), gvec);
 
                 vpwwfc.push(pwwfc);
             });
@@ -602,13 +685,13 @@ fn main() {
                     if let Some((ik_first, ik_last)) = ik_range {
                         for ik in ik_first..=ik_last {
                             let k_frac = kpts.get_k_frac(ik);
-                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let k_cart = kpts.frac_to_cart(&k_frac, blatt);
                             let k_weight = kpts.get_k_weight(ik);
 
                             let kscf = KSCF::new(
                                 &control,
-                                &gvec,
-                                &pwden,
+                                gvec,
+                                pwden,
                                 &crystal,
                                 &pots,
                                 &vpwwfc[ik - ik_first],
@@ -630,13 +713,13 @@ fn main() {
                     if let Some((ik_first, ik_last)) = ik_range {
                         for ik in ik_first..=ik_last {
                             let k_frac = kpts.get_k_frac(ik);
-                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let k_cart = kpts.frac_to_cart(&k_frac, blatt);
                             let k_weight = kpts.get_k_weight(ik);
 
                             let kscf = KSCF::new(
                                 &control,
-                                &gvec,
-                                &pwden,
+                                gvec,
+                                pwden,
                                 &crystal,
                                 &pots,
                                 &vpwwfc[ik - ik_first],
@@ -652,13 +735,13 @@ fn main() {
 
                         for ik in ik_first..=ik_last {
                             let k_frac = kpts.get_k_frac(ik);
-                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let k_cart = kpts.frac_to_cart(&k_frac, blatt);
                             let k_weight = kpts.get_k_weight(ik);
 
                             let kscf = KSCF::new(
                                 &control,
-                                &gvec,
-                                &pwden,
+                                gvec,
+                                pwden,
                                 &crystal,
                                 &pots,
                                 &vpwwfc[ik - ik_first],
@@ -718,7 +801,7 @@ fn main() {
                     spin_scheme,
                     ik_first_local,
                     ik_last_local,
-                    &blatt,
+                    blatt,
                     &expected_checkpoint_meta,
                     &vpwwfc,
                     &mut vkevecs,
@@ -744,22 +827,24 @@ fn main() {
             println!("\n   #step: geom-{}\n", geom_iter);
         }
 
+        let rhocore_3d = orchestration_workspace.rhocore_3d();
+
         //loop {
         scf_driver.run(
             geom_iter,
             &control,
             &crystal,
-            &gvec,
-            &pwden,
+            gvec,
+            pwden,
             &pots,
-            &rgtrans,
+            rgtrans,
             kpts.as_ref(),
             &ewald,
             &vpwwfc,
             &mut vkscf,
             &mut rhog,
             &mut rho_3d,
-            &rhocore_3d,
+            rhocore_3d,
             &mut vkevals,
             &mut vkevecs,
             symdrv.as_ref(),
@@ -771,7 +856,7 @@ fn main() {
 
         if dwmpi::is_root() {
             if control.get_save_rho() {
-                rho_3d.save_hdf5_with_meta(&blatt, Some(&expected_checkpoint_meta));
+                rho_3d.save_hdf5_with_meta(blatt, Some(&expected_checkpoint_meta));
             }
 
             crystal.output();
@@ -782,7 +867,7 @@ fn main() {
             vkevecs.save_hdf5_with_meta(
                 ik_first,
                 &vpwwfc,
-                &blatt,
+                blatt,
                 Some(&expected_checkpoint_meta),
             );
         }

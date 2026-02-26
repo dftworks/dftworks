@@ -74,6 +74,24 @@ impl HybridWorkspace {
     }
 }
 
+pub struct HybridPrepareWorkspace {
+    psi_tmp: Array3<c64>,
+    fft_workspace: Array3<c64>,
+    pair_r: Array3<c64>,
+    pair_g: Vec<c64>,
+}
+
+impl HybridPrepareWorkspace {
+    pub fn new(fft_shape: [usize; 3], npw_rho: usize) -> Self {
+        Self {
+            psi_tmp: Array3::<c64>::new(fft_shape),
+            fft_workspace: Array3::<c64>::new(fft_shape),
+            pair_r: Array3::<c64>::new(fft_shape),
+            pair_g: vec![c64::new(0.0, 0.0); npw_rho],
+        }
+    }
+}
+
 impl HybridPotential {
     pub fn new(control: &Control, pwwfc: &PWBasis, pwden: &PWDensity) -> Self {
         if control.get_xc_scheme() != "hse06" {
@@ -114,6 +132,14 @@ impl HybridPotential {
         HybridWorkspace::new(fft_shape, npw_rho)
     }
 
+    pub fn make_prepare_workspace(
+        &self,
+        fft_shape: [usize; 3],
+        npw_rho: usize,
+    ) -> HybridPrepareWorkspace {
+        HybridPrepareWorkspace::new(fft_shape, npw_rho)
+    }
+
     pub fn prepare(
         &self,
         rgtrans: &RGTransform,
@@ -126,6 +152,32 @@ impl HybridPotential {
         occ: &[f64],
         is_spin: bool,
     ) -> HybridPrepared {
+        let mut workspace = HybridPrepareWorkspace::new(fft_shape, pwden.get_n_plane_waves());
+        self.prepare_with_workspace(
+            rgtrans,
+            gvec,
+            pwden,
+            volume,
+            fft_linear_index,
+            evecs,
+            occ,
+            is_spin,
+            &mut workspace,
+        )
+    }
+
+    pub fn prepare_with_workspace(
+        &self,
+        rgtrans: &RGTransform,
+        gvec: &GVector,
+        pwden: &PWDensity,
+        volume: f64,
+        fft_linear_index: &[usize],
+        evecs: &Matrix<c64>,
+        occ: &[f64],
+        is_spin: bool,
+        workspace: &mut HybridPrepareWorkspace,
+    ) -> HybridPrepared {
         if !self.enabled {
             return HybridPrepared {
                 occ_eff: Vec::new(),
@@ -135,9 +187,6 @@ impl HybridPotential {
         }
 
         let occ_scale = effective_occ_scale(is_spin);
-
-        let mut psi_tmp = Array3::<c64>::new(fft_shape);
-        let mut fft_workspace = Array3::<c64>::new(fft_shape);
 
         let mut occ_eff = Vec::<f64>::new();
         let mut psi_occ_r = Vec::<Vec<c64>>::new();
@@ -153,16 +202,23 @@ impl HybridPotential {
                 volume,
                 fft_linear_index,
                 evecs.get_col(ibnd),
-                &mut psi_tmp,
-                &mut fft_workspace,
+                &mut workspace.psi_tmp,
+                &mut workspace.fft_workspace,
             );
 
             occ_eff.push(occ_weight);
-            psi_occ_r.push(psi_tmp.as_slice().to_vec());
+            psi_occ_r.push(workspace.psi_tmp.as_slice().to_vec());
         }
 
         let exchange_energy = self.compute_exchange_energy(
-            gvec, pwden, rgtrans, volume, &occ_eff, &psi_occ_r, fft_shape,
+            gvec,
+            pwden,
+            rgtrans,
+            volume,
+            &occ_eff,
+            &psi_occ_r,
+            &mut workspace.pair_r,
+            &mut workspace.pair_g,
         );
 
         HybridPrepared {
@@ -180,16 +236,19 @@ impl HybridPotential {
         volume: f64,
         occ_eff: &[f64],
         psi_occ_r: &[Vec<c64>],
-        fft_shape: [usize; 3],
+        pair_r: &mut Array3<c64>,
+        pair_g: &mut [c64],
     ) -> f64 {
         if occ_eff.is_empty() {
             return 0.0;
         }
 
         let n_occ = occ_eff.len();
-
-        let mut pair_r = Array3::<c64>::new(fft_shape);
-        let mut pair_g = vec![c64::new(0.0, 0.0); pwden.get_n_plane_waves()];
+        assert_eq!(
+            pair_g.len(),
+            pwden.get_n_plane_waves(),
+            "hybrid prepare workspace pair_g size mismatch"
+        );
 
         let mut sum_weighted = 0.0;
 
@@ -203,7 +262,7 @@ impl HybridPotential {
                     pair_r_slice[ip] = psi_j[ip].conj() * psi_i[ip];
                 }
 
-                rgtrans.r3d_to_g1d(gvec, pwden, pair_r.as_slice(), &mut pair_g);
+                rgtrans.r3d_to_g1d(gvec, pwden, pair_r.as_slice(), pair_g);
 
                 let mut integral_g = 0.0;
                 for ig in 1..pair_g.len() {
