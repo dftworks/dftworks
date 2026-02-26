@@ -5,6 +5,7 @@ use dfttypes::*;
 use dwconsts::*;
 use fftgrid::FFTGrid;
 use gvector::GVector;
+use kpts::KPTS;
 use kscf::KSCF;
 use matrix::*;
 use mpi_sys::MPI_COMM_WORLD;
@@ -343,6 +344,187 @@ impl OrchestrationWorkspace {
     }
 }
 
+struct RuntimeContext<'a> {
+    control: &'a Control,
+    crystal: &'a Crystal,
+    pots: &'a PSPot,
+    kpts: &'a dyn KPTS,
+    spin_scheme: SpinScheme,
+}
+
+impl<'a> RuntimeContext<'a> {
+    fn new(
+        control: &'a Control,
+        crystal: &'a Crystal,
+        pots: &'a PSPot,
+        kpts: &'a dyn KPTS,
+        spin_scheme: SpinScheme,
+    ) -> Self {
+        Self {
+            control,
+            crystal,
+            pots,
+            kpts,
+            spin_scheme,
+        }
+    }
+
+    fn kpoint_domain(&self) -> kpts_distribution::KPointDomain {
+        let nkpt = self.kpts.get_n_kpts();
+        let nrank = dwmpi::get_comm_world_size() as usize;
+        kpts_distribution::KPointDomain::for_current_rank(nkpt, nrank)
+    }
+
+    fn checkpoint_meta(&self) -> CheckpointMeta {
+        checkpoint_meta_for_run(self.control, self.spin_scheme, self.kpts.get_k_mesh())
+    }
+}
+
+struct ElectronicStepContext {
+    k_domain: kpts_distribution::KPointDomain,
+    vpwwfc: Vec<PWBasis>,
+    vvnl: Vec<VNL>,
+}
+
+impl ElectronicStepContext {
+    fn build(runtime: &RuntimeContext, blatt: &lattice::Lattice, gvec: &GVector) -> Self {
+        let k_domain = runtime.kpoint_domain();
+
+        let mut vpwwfc = Vec::<PWBasis>::with_capacity(k_domain.len());
+        for slot in k_domain.iter() {
+            let ik = slot.global_index;
+            let k_frac = runtime.kpts.get_k_frac(ik);
+            let k_cart = runtime.kpts.frac_to_cart(&k_frac, blatt);
+            let pwwfc = PWBasis::new(k_cart, ik, runtime.control.get_ecut(), gvec);
+            vpwwfc.push(pwwfc);
+        }
+
+        let mut vvnl = Vec::<VNL>::with_capacity(k_domain.len());
+        for slot in k_domain.iter() {
+            let ik = slot.global_index;
+            let ilocal = slot.local_index;
+            let vnl = VNL::new(ik, runtime.pots, &vpwwfc[ilocal], runtime.crystal);
+            vvnl.push(vnl);
+        }
+
+        Self {
+            k_domain,
+            vpwwfc,
+            vvnl,
+        }
+    }
+
+    fn global_k_range(&self) -> Option<(usize, usize)> {
+        self.k_domain.global_range()
+    }
+
+    fn global_k_first_or_zero(&self) -> usize {
+        self.k_domain.global_first_or_zero()
+    }
+
+    fn local_nkpt(&self) -> usize {
+        self.k_domain.len()
+    }
+
+    fn build_scf_state<'a>(
+        &'a self,
+        runtime: &RuntimeContext<'a>,
+        gvec: &'a GVector,
+        pwden: &'a PWDensity,
+        fft_shape: [usize; 3],
+    ) -> (VKSCF<'a>, VKEigenValue, VKEigenVector) {
+        let nband = runtime.control.get_nband();
+        let my_nkpt = self.local_nkpt();
+
+        let vkscf = match runtime.spin_scheme {
+            SpinScheme::NonSpin => {
+                let channel = build_kscf_channel(runtime, self, gvec, pwden, fft_shape);
+                VKSCF::NonSpin(channel)
+            }
+            SpinScheme::Spin => {
+                let channel_up = build_kscf_channel(runtime, self, gvec, pwden, fft_shape);
+                let channel_dn = build_kscf_channel(runtime, self, gvec, pwden, fft_shape);
+                VKSCF::Spin(channel_up, channel_dn)
+            }
+            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
+        };
+
+        let vkevals = allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt);
+        let vkevecs = allocate_eigenvectors(runtime.spin_scheme, nband, &self.vpwwfc);
+
+        (vkscf, vkevals, vkevecs)
+    }
+}
+
+fn build_kscf_channel<'a>(
+    runtime: &RuntimeContext<'a>,
+    electronic_ctx: &'a ElectronicStepContext,
+    gvec: &'a GVector,
+    pwden: &'a PWDensity,
+    fft_shape: [usize; 3],
+) -> Vec<KSCF<'a>> {
+    let mut channel = Vec::<KSCF>::with_capacity(electronic_ctx.k_domain.len());
+    let blatt = runtime.crystal.get_latt().reciprocal();
+
+    for slot in electronic_ctx.k_domain.iter() {
+        let ik = slot.global_index;
+        let ilocal = slot.local_index;
+        let k_frac = runtime.kpts.get_k_frac(ik);
+        let k_cart = runtime.kpts.frac_to_cart(&k_frac, &blatt);
+        let k_weight = runtime.kpts.get_k_weight(ik);
+
+        let kscf = KSCF::new(
+            runtime.control,
+            gvec,
+            pwden,
+            runtime.crystal,
+            runtime.pots,
+            &electronic_ctx.vpwwfc[ilocal],
+            &electronic_ctx.vvnl[ilocal],
+            fft_shape,
+            ik,
+            k_cart,
+            k_weight,
+        );
+        channel.push(kscf);
+    }
+
+    channel
+}
+
+fn allocate_eigenvalues(spin_scheme: SpinScheme, nband: usize, nk_local: usize) -> VKEigenValue {
+    match spin_scheme {
+        SpinScheme::NonSpin => VKEigenValue::NonSpin(vec![vec![0.0; nband]; nk_local]),
+        SpinScheme::Spin => {
+            VKEigenValue::Spin(vec![vec![0.0; nband]; nk_local], vec![vec![0.0; nband]; nk_local])
+        }
+        SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
+    }
+}
+
+fn allocate_eigenvector_channel(vpwwfc: &[PWBasis], nband: usize) -> Vec<Matrix<c64>> {
+    let mut channel = Vec::with_capacity(vpwwfc.len());
+    for pwwfc in vpwwfc.iter() {
+        channel.push(Matrix::new(pwwfc.get_n_plane_waves(), nband));
+    }
+    channel
+}
+
+fn allocate_eigenvectors(
+    spin_scheme: SpinScheme,
+    nband: usize,
+    vpwwfc: &[PWBasis],
+) -> VKEigenVector {
+    match spin_scheme {
+        SpinScheme::NonSpin => VKEigenVector::NonSpin(allocate_eigenvector_channel(vpwwfc, nband)),
+        SpinScheme::Spin => VKEigenVector::Spin(
+            allocate_eigenvector_channel(vpwwfc, nband),
+            allocate_eigenvector_channel(vpwwfc, nband),
+        ),
+        SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
+    }
+}
+
 fn main() {
     // Top-level program flow:
     // 1) initialize MPI/runtime and read all inputs
@@ -405,11 +587,6 @@ fn main() {
     let mut stress_total = Matrix::<f64>::new(3, 3);
     let mut force_total = vec![Vector3f64::zeros(); crystal.get_n_atoms()];
 
-    //let mut vkevals: Vec<Vec<f64>>;
-    let mut vkevals: VKEigenValue;
-
-    let mut vkevecs: VKEigenVector;
-
     // Geometry optimizer state (BFGS/DIIS depending on in.ctrl).
 
     let mut geom_iter = 1;
@@ -442,6 +619,7 @@ fn main() {
         let blatt = &geom_ctx.blatt;
         let [n1, n2, n3] = geom_ctx.fft_shape();
         let npw_rho = pwden.get_n_plane_waves();
+        let runtime_ctx = RuntimeContext::new(&control, &crystal, &pots, kpts.as_ref(), spin_scheme);
 
         if dwmpi::is_root() {
             display_grid_information(fftgrid, pwden);
@@ -457,14 +635,6 @@ fn main() {
         // Ewald
 
         let ewald = ewald::Ewald::new(&crystal, &zions, gvec, pwden);
-
-        let nspin = match spin_scheme {
-            SpinScheme::NonSpin => 1,
-            SpinScheme::Spin => 2,
-            SpinScheme::Ncl => {
-                panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
-            }
-        };
 
         let mut rhog = match spin_scheme {
             SpinScheme::NonSpin => RHOG::NonSpin(vec![c64::zero(); npw_rho]),
@@ -488,8 +658,7 @@ fn main() {
         // Initialize density either from previous converged file (restart) or
         // from atomic superposition.
 
-        let expected_checkpoint_meta =
-            checkpoint_meta_for_run(&control, spin_scheme, kpts.get_k_mesh());
+        let expected_checkpoint_meta = runtime_ctx.checkpoint_meta();
 
         if dwmpi::is_root() {
             let mut loaded_from_restart = false;
@@ -638,172 +807,19 @@ fn main() {
         }
 
         //
-
-        let nband = control.get_nband();
-        let nkpt = kpts.get_n_kpts();
-
-        // vpwwfc
-
-        let nrank = dwmpi::get_comm_world_size() as usize;
-        let my_nkpt = kpts_distribution::get_my_k_total(nkpt, nrank);
-
-        let mut vpwwfc = Vec::<PWBasis>::with_capacity(my_nkpt);
-
-        let ik_range = kpts_distribution::get_my_k_range(nkpt, nrank);
-        let (ik_first, ik_last) = ik_range.unwrap_or((0, 0));
-
-        if let Some((ik_first, ik_last)) = ik_range {
-            (ik_first..=ik_last).into_iter().for_each(|ik| {
-                let k_frac = kpts.get_k_frac(ik);
-                let k_cart = kpts.frac_to_cart(&k_frac, blatt);
-
-                let pwwfc: PWBasis = PWBasis::new(k_cart, ik, control.get_ecut(), gvec);
-
-                vpwwfc.push(pwwfc);
-            });
-        }
-
-        // vvnl
-
-        let mut vvnl = Vec::<VNL>::with_capacity(my_nkpt);
-
-        if let Some((ik_first, ik_last)) = ik_range {
-            for ik in ik_first..=ik_last {
-                let vnl: VNL = VNL::new(ik, &pots, &vpwwfc[ik - ik_first], &crystal);
-                vvnl.push(vnl);
-            }
-        }
-
-        // vkscf
-
-        let mut vkscf: VKSCF;
-
-        match spin_scheme {
-            SpinScheme::NonSpin => {
-                vkscf = VKSCF::NonSpin(Vec::<KSCF>::new());
-                if let VKSCF::NonSpin(ref mut vkscf) = vkscf {
-                    if let Some((ik_first, ik_last)) = ik_range {
-                        for ik in ik_first..=ik_last {
-                            let k_frac = kpts.get_k_frac(ik);
-                            let k_cart = kpts.frac_to_cart(&k_frac, blatt);
-                            let k_weight = kpts.get_k_weight(ik);
-
-                            let kscf = KSCF::new(
-                                &control,
-                                gvec,
-                                pwden,
-                                &crystal,
-                                &pots,
-                                &vpwwfc[ik - ik_first],
-                                &vvnl[ik - ik_first],
-                                fftgrid.get_size(),
-                                ik,
-                                k_cart,
-                                k_weight,
-                            );
-
-                            vkscf.push(kscf);
-                        }
-                    }
-                }
-            }
-            SpinScheme::Spin => {
-                vkscf = VKSCF::Spin(Vec::<KSCF>::new(), Vec::<KSCF>::new());
-                if let VKSCF::Spin(ref mut vkscf_up, ref mut vkscf_dn) = vkscf {
-                    if let Some((ik_first, ik_last)) = ik_range {
-                        for ik in ik_first..=ik_last {
-                            let k_frac = kpts.get_k_frac(ik);
-                            let k_cart = kpts.frac_to_cart(&k_frac, blatt);
-                            let k_weight = kpts.get_k_weight(ik);
-
-                            let kscf = KSCF::new(
-                                &control,
-                                gvec,
-                                pwden,
-                                &crystal,
-                                &pots,
-                                &vpwwfc[ik - ik_first],
-                                &vvnl[ik - ik_first],
-                                fftgrid.get_size(),
-                                ik,
-                                k_cart,
-                                k_weight,
-                            );
-
-                            vkscf_up.push(kscf);
-                        }
-
-                        for ik in ik_first..=ik_last {
-                            let k_frac = kpts.get_k_frac(ik);
-                            let k_cart = kpts.frac_to_cart(&k_frac, blatt);
-                            let k_weight = kpts.get_k_weight(ik);
-
-                            let kscf = KSCF::new(
-                                &control,
-                                gvec,
-                                pwden,
-                                &crystal,
-                                &pots,
-                                &vpwwfc[ik - ik_first],
-                                &vvnl[ik - ik_first],
-                                fftgrid.get_size(),
-                                ik,
-                                k_cart,
-                                k_weight,
-                            );
-
-                            vkscf_dn.push(kscf);
-                        }
-                    }
-                }
-            }
-            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
-        }
-
-        match spin_scheme {
-            SpinScheme::NonSpin => {
-                vkevals = VKEigenValue::NonSpin(vec![vec![0.0; nband]; my_nkpt]);
-                vkevecs = VKEigenVector::NonSpin(vec![Matrix::new(0, 0); 0]);
-
-                if let VKEigenVector::NonSpin(ref mut vkevecs) = vkevecs {
-                    for (ik, pwwfc) in vpwwfc.iter().enumerate() {
-                        let npw = pwwfc.get_n_plane_waves();
-                        vkevecs.push(Matrix::new(npw, nband));
-                    }
-                }
-            }
-            SpinScheme::Spin => {
-                vkevals = VKEigenValue::Spin(
-                    vec![vec![0.0; nband]; my_nkpt],
-                    vec![vec![0.0; nband]; my_nkpt],
-                );
-                vkevecs =
-                    VKEigenVector::Spin(vec![Matrix::new(0, 0); 0], vec![Matrix::new(0, 0); 0]);
-
-                if let VKEigenVector::Spin(ref mut vkevc_up, ref mut vkevc_dn) = vkevecs {
-                    for (ik, pwwfc) in vpwwfc.iter().enumerate() {
-                        let npw = pwwfc.get_n_plane_waves();
-                        vkevc_up.push(Matrix::new(npw, nband));
-                    }
-
-                    for (ik, pwwfc) in vpwwfc.iter().enumerate() {
-                        let npw = pwwfc.get_n_plane_waves();
-                        vkevc_dn.push(Matrix::new(npw, nband));
-                    }
-                }
-            }
-            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
-        }
+        let electronic_ctx = ElectronicStepContext::build(&runtime_ctx, blatt, gvec);
+        let (mut vkscf, mut vkevals, mut vkevecs) =
+            electronic_ctx.build_scf_state(&runtime_ctx, gvec, pwden, fftgrid.get_size());
 
         if geom_iter == 1 && control.get_restart() {
-            if let Some((ik_first_local, ik_last_local)) = ik_range {
+            if let Some((ik_first_local, ik_last_local)) = electronic_ctx.global_k_range() {
                 match try_load_wavefunction_checkpoint(
                     spin_scheme,
                     ik_first_local,
                     ik_last_local,
                     blatt,
                     &expected_checkpoint_meta,
-                    &vpwwfc,
+                    &electronic_ctx.vpwwfc,
                     &mut vkevecs,
                 ) {
                     Ok(message) => {
@@ -840,7 +856,7 @@ fn main() {
             rgtrans,
             kpts.as_ref(),
             &ewald,
-            &vpwwfc,
+            &electronic_ctx.vpwwfc,
             &mut vkscf,
             &mut rhog,
             &mut rho_3d,
@@ -865,8 +881,8 @@ fn main() {
         // save wavefunction
         if control.get_save_wfc() || control.get_wannier90_export() {
             vkevecs.save_hdf5_with_meta(
-                ik_first,
-                &vpwwfc,
+                electronic_ctx.global_k_first_or_zero(),
+                &electronic_ctx.vpwwfc,
                 blatt,
                 Some(&expected_checkpoint_meta),
             );
@@ -909,7 +925,11 @@ fn main() {
 
         if should_exit {
             if control.get_wannier90_export() {
-                match wannier90::write_eig_inputs(&control, &vkevals, ik_first) {
+                match wannier90::write_eig_inputs(
+                    &control,
+                    &vkevals,
+                    electronic_ctx.global_k_first_or_zero(),
+                ) {
                     Ok(summary) => {
                         if dwmpi::is_root() {
                             println!();

@@ -364,13 +364,20 @@ New canonical refactoring items are added below to unblock future feature expans
 
 ### E20 - Typed Run Context and Phase Builders
 **Priority**: P1/P2  
-**Status**: Open  
+**Status**: Done  
 **Files**: `pw/src/main.rs`, `scf/src/lib.rs`, `kpts_distribution/src/lib.rs`
 
 - Replace repeated construction blocks with typed phase builders (`RuntimeContext`, `GeometryStepContext`, `ElectronicStepContext`)
 - Centralize k-point local/global indexing, local basis, and local VNL construction into a reusable domain object
 - Remove repeated spin-branch allocation/initialization code for `VKSCF`, `VKEigenValue`, and `VKEigenVector`
 - Keep `main` as orchestration only; move restart/checkpoint and SCF setup into dedicated modules
+
+**Implementation Update (2026-02-26)**
+- [x] Added typed runtime/electronic phase setup in `pw` via `RuntimeContext` + `ElectronicStepContext`
+- [x] Added typed local k-point domain model (`KPointDomain`, `KPointSlot`) in `kpts_distribution`
+- [x] Removed ad-hoc `ik - ik_first` indexing from SCF setup by using domain `global/local` slot mapping
+- [x] Consolidated spin/nonspin SCF state allocation (`VKSCF`, `VKEigenValue`, `VKEigenVector`) behind shared builder helpers
+- [x] Validated with Docker correctness gates (`run_phase12_regression.sh`, `run_spin_mpi_parity.sh`)
 
 **Acceptance Criteria**
 - `pw/src/main.rs` delegates to phase modules and no longer owns low-level construction details
@@ -613,7 +620,7 @@ Newly added items (`E12`-`E25`) are code-review additions without legacy IDs.
 ### Sprint 13 - Runtime Contracts and Expansion Interfaces
 **Scope**: `E20`, `E21`, `E22`, `E24`
 
-- Modularize `pw` into typed phase contexts/builders
+- [x] Modularize `pw` into typed phase contexts/builders
 - Replace control parser with declarative schema and typed errors
 - Introduce checkpoint repository abstraction and codec split
 - Add centralized capability matrix to replace runtime "not implemented" panics

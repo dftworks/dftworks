@@ -68,6 +68,109 @@ fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
     vchunks
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KPointSlot {
+    pub local_index: usize,
+    pub global_index: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct KPointDomain {
+    first: usize,
+    total: usize,
+}
+
+impl KPointDomain {
+    pub fn new(nkpt: usize, nrank: usize, rank: usize) -> Self {
+        assert!(nrank > 0);
+        assert!(rank < nrank);
+
+        let first = compute_k_first(nkpt, nrank, rank);
+        let total = compute_k_total(nkpt, nrank, rank);
+
+        Self { first, total }
+    }
+
+    pub fn for_current_rank(nkpt: usize, nrank: usize) -> Self {
+        let rank = dwmpi::get_comm_world_rank() as usize;
+        Self::new(nkpt, nrank, rank)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.total
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.total == 0
+    }
+
+    #[inline]
+    pub fn global_range(&self) -> Option<(usize, usize)> {
+        if self.total == 0 {
+            None
+        } else {
+            Some((self.first, self.first + self.total - 1))
+        }
+    }
+
+    #[inline]
+    pub fn global_first_or_zero(&self) -> usize {
+        self.global_range().map(|(first, _)| first).unwrap_or(0)
+    }
+
+    #[inline]
+    pub fn global_index(&self, local_index: usize) -> Option<usize> {
+        if local_index < self.total {
+            Some(self.first + local_index)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn local_index(&self, global_index: usize) -> Option<usize> {
+        if global_index < self.first || global_index >= self.first + self.total {
+            None
+        } else {
+            Some(global_index - self.first)
+        }
+    }
+
+    pub fn iter(&self) -> KPointDomainIter {
+        KPointDomainIter {
+            first: self.first,
+            total: self.total,
+            next_local: 0,
+        }
+    }
+}
+
+pub struct KPointDomainIter {
+    first: usize,
+    total: usize,
+    next_local: usize,
+}
+
+impl Iterator for KPointDomainIter {
+    type Item = KPointSlot;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_local >= self.total {
+            return None;
+        }
+
+        let local_index = self.next_local;
+        self.next_local += 1;
+
+        Some(KPointSlot {
+            local_index,
+            global_index: self.first + local_index,
+        })
+    }
+}
+
 pub fn get_k_first(nkpt: usize, nrank: usize, rank: usize) -> usize {
     assert!(nrank > 0);
     compute_k_first(nkpt, nrank, rank)
@@ -103,14 +206,11 @@ pub fn get_my_k_last(nkpt: usize, nrank: usize) -> usize {
 }
 
 pub fn get_my_k_total(nkpt: usize, nrank: usize) -> usize {
-    let rank = dwmpi::get_comm_world_rank() as usize;
-    assert!(nrank > 0);
-    compute_k_total(nkpt, nrank, rank)
+    KPointDomain::for_current_rank(nkpt, nrank).len()
 }
 
 pub fn get_my_k_range(nkpt: usize, nrank: usize) -> Option<(usize, usize)> {
-    let rank = dwmpi::get_comm_world_rank() as usize;
-    get_k_range(nkpt, nrank, rank)
+    KPointDomain::for_current_rank(nkpt, nrank).global_range()
 }
 
 #[test]
@@ -168,4 +268,37 @@ fn test_oversubscribed_ranks() {
             assert_eq!(k2 - k1 + 1, ntot);
         }
     }
+}
+
+#[test]
+fn test_kpoint_domain_iteration_and_mapping() {
+    let domain = KPointDomain::new(10, 3, 1);
+    let slots = domain.iter().collect::<Vec<KPointSlot>>();
+
+    assert_eq!(domain.global_range(), Some((4, 6)));
+    assert_eq!(domain.len(), 3);
+    assert_eq!(
+        slots,
+        vec![
+            KPointSlot {
+                local_index: 0,
+                global_index: 4
+            },
+            KPointSlot {
+                local_index: 1,
+                global_index: 5
+            },
+            KPointSlot {
+                local_index: 2,
+                global_index: 6
+            },
+        ]
+    );
+    assert_eq!(domain.global_index(0), Some(4));
+    assert_eq!(domain.global_index(2), Some(6));
+    assert_eq!(domain.global_index(3), None);
+    assert_eq!(domain.local_index(4), Some(0));
+    assert_eq!(domain.local_index(6), Some(2));
+    assert_eq!(domain.local_index(3), None);
+    assert_eq!(domain.local_index(7), None);
 }
