@@ -352,7 +352,7 @@ fn array_3x3_to_matrix(a: &[[f64; 3]; 3], m: &mut Matrix<f64>) {
     }
 }
 
-fn project_force_by_symmetry(
+pub(crate) fn project_force_by_symmetry(
     crystal: &Crystal,
     symdrv: &dyn SymmetryDriver,
     force: &mut [Vector3f64],
@@ -404,7 +404,7 @@ fn project_force_by_symmetry(
     }
 }
 
-fn project_stress_by_symmetry(
+pub(crate) fn project_stress_by_symmetry(
     crystal: &Crystal,
     symdrv: &dyn SymmetryDriver,
     stress: &mut Matrix<f64>,

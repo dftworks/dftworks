@@ -16,6 +16,7 @@ use kpts::KPTS;
 use kscf::KSCF;
 use lattice::Lattice;
 use matrix::Matrix;
+use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -59,8 +60,12 @@ impl SCF for SCFSpin {
         stress_total: &mut Matrix<f64>,
         force_total: &mut Vec<Vector3f64>,
     ) {
-        println!("");
-        println!("   {:*^60}", " self-consistent field ");
+        if dwmpi::is_root() {
+            println!(
+                "    {:>3}  {:>10} {:>10} {:>16} {:>25} {:>25} {:>12}",
+                "", "eps(eV)", "Fermi(eV)", "charge", "Eharris(Ry)", "Escf(Ry)", "dE(eV)"
+            );
+        }
 
         let density_driver = density::new(control.get_spin_scheme_enum());
         utils::validate_hse06_runtime_constraints(control, kpts);
@@ -188,8 +193,6 @@ impl SCF for SCFSpin {
         let mut mixing_spin = mixing::new(control);
 
         //
-        let nkpt = kpts.get_n_kpts();
-
         let mut vloc_3d_up = Array3::<c64>::new([n1, n2, n3]);
         let mut vloc_3d_dn = Array3::<c64>::new([n1, n2, n3]);
 
@@ -200,8 +203,6 @@ impl SCF for SCFSpin {
         let mut rhog_diff = vec![c64::zero(); npw_rho];
         let mut rhog_total = vec![c64::zero(); npw_rho];
         let mut rhog_spin = vec![c64::zero(); npw_rho];
-        let mut vk_n_band_converged = vec![0; nkpt];
-        let mut vk_n_hpsi = vec![0; nkpt];
 
         let mut energy_diff = 0.0;
 
@@ -213,9 +214,6 @@ impl SCF for SCFSpin {
         let mut scf_iter = 1;
 
         loop {
-            println!("\n   #step: geom-{}-scf-{}\n", geom_iter, scf_iter);
-            //println!("\n   {} {:<5}\n", "#scf_iteration", format!("{}", scf_iter));
-
             // transform v_loc from G to r
 
             {
@@ -234,30 +232,14 @@ impl SCF for SCFSpin {
                 energy_diff,
                 npw_wfc_max,
             );
-            println!(
-                "     {:<width1$} = {:>width2$.3E}",
-                "eigval_epsilon (eV)",
-                eigvalue_epsilon * HA_TO_EV,
-                width1 = OUT_WIDTH1,
-                width2 = OUT_WIDTH3
-            );
-
-            //
-
-            vk_n_band_converged.fill(0);
-            vk_n_hpsi.fill(0);
             {
-                //            let (vkscf_up, vkscf_dn) = utility::get_slice_up_dn(vkscf);
-                //                let (vkevals_up, vkevals_dn) = utility::get_mut_slice_up_dn(vkevals);
-                //              let (vkevecs_up, vkevecs_dn) = utility::get_mut_slice_up_dn(vkevecs);
-
                 if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
                     if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
                         if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
                             // spin up
 
                             for (ik, kscf) in vkscf_up.iter().enumerate() {
-                                let (n_band_converged, n_hpsi) = kscf.run(
+                                let (_n_band_converged, _n_hpsi) = kscf.run(
                                     rgtrans,
                                     &vloc_3d_up,
                                     eigvalue_epsilon,
@@ -266,29 +248,12 @@ impl SCF for SCFSpin {
                                     &mut vkevals_up[ik],
                                     &mut vkevecs_up[ik],
                                 );
-
-                                vk_n_band_converged[ik] = n_band_converged;
-                                vk_n_hpsi[ik] = n_hpsi;
                             }
-
-                            println!(
-                                "     {:<width1$} =      {:3?}",
-                                "n_band_converged",
-                                vk_n_band_converged,
-                                width1 = OUT_WIDTH1,
-                            );
-
-                            println!(
-                                "     {:<width1$} =      {:3?}",
-                                "n_ham_on_psi",
-                                vk_n_hpsi,
-                                width1 = OUT_WIDTH1,
-                            );
 
                             // spin down
 
                             for (ik, kscf) in vkscf_dn.iter().enumerate() {
-                                let (n_band_converged, n_hpsi) = kscf.run(
+                                let (_n_band_converged, _n_hpsi) = kscf.run(
                                     rgtrans,
                                     &vloc_3d_dn,
                                     eigvalue_epsilon,
@@ -297,24 +262,7 @@ impl SCF for SCFSpin {
                                     &mut vkevals_dn[ik],
                                     &mut vkevecs_dn[ik],
                                 );
-
-                                vk_n_band_converged[ik] = n_band_converged;
-                                vk_n_hpsi[ik] = n_hpsi;
                             }
-
-                            println!(
-                                "     {:<width1$} =      {:3?}",
-                                "n_band_converged",
-                                vk_n_band_converged,
-                                width1 = OUT_WIDTH1,
-                            );
-
-                            println!(
-                                "     {:<width1$} =      {:3?}",
-                                "n_ham_on_psi",
-                                vk_n_hpsi,
-                                width1 = OUT_WIDTH1,
-                            );
                         }
                     }
                 }
@@ -323,14 +271,6 @@ impl SCF for SCFSpin {
 
             let fermi_level = fermi_driver.get_fermi_level(vkscf, ntot_elec, &vkevals);
             let hubbard_energy = hubbard::update_hubbard_spin(control, vkscf, &*vkevecs);
-
-            println!(
-                "     {:<width1$} = {:>width2$.5}",
-                "Fermi_level",
-                fermi_level * HA_TO_EV,
-                width1 = OUT_WIDTH1,
-                width2 = OUT_WIDTH3
-            );
 
             // calculate Harris energy
 
@@ -368,14 +308,6 @@ impl SCF for SCFSpin {
 
                 charge = charge_up + charge_dn;
             }
-
-            println!(
-                "     {:<width1$} = {:>width2$.5}",
-                "charge",
-                charge,
-                width1 = OUT_WIDTH1,
-                width2 = OUT_WIDTH3
-            );
 
             // rho r -> G
 
@@ -429,41 +361,31 @@ impl SCF for SCFSpin {
                 hubbard_energy,
             );
 
-            println!(
-                "     {:<width1$} = {:>width2$.12}",
-                "harris_energy (Ry)",
-                energy_harris * HA_TO_RY,
-                width1 = OUT_WIDTH1,
-                width2 = OUT_WIDTH3
-            );
-
-            println!(
-                "     {:<width1$} = {:>width2$.12}",
-                "scf_energy (Ry)",
-                energy_scf * HA_TO_RY,
-                width1 = OUT_WIDTH1,
-                width2 = OUT_WIDTH3
-            );
-
             energy_diff = (energy_scf - energy_harris).abs();
-
-            println!(
-                "     {:<width1$} = {:>width2$.3E}",
-                "delta_energy (eV)",
-                energy_diff * HA_TO_EV,
-                width1 = OUT_WIDTH1,
-                width2 = OUT_WIDTH3
-            );
+            if dwmpi::is_root() {
+                println!(
+                    "    {:>3}: {:>10.3E} {:>10.3E} {:>16.6E} {:>25.12E} {:>25.12E} {:>12.3E}",
+                    scf_iter,
+                    eigvalue_epsilon * HA_TO_EV,
+                    fermi_level * HA_TO_EV,
+                    charge,
+                    energy_harris * HA_TO_RY,
+                    energy_scf * HA_TO_RY,
+                    energy_diff * HA_TO_EV
+                );
+            }
 
             //// check convergence
 
             // if converged, then exit
             if energy_diff < control.get_energy_epsilon() {
-                println!(
-                    "\n     {:<width1$}",
-                    "scf_convergence_success",
-                    width1 = OUT_WIDTH1
-                );
+                if dwmpi::is_root() {
+                    println!(
+                        "\n     {:<width1$}",
+                        "scf_convergence_success",
+                        width1 = OUT_WIDTH1
+                    );
+                }
 
                 break;
             }
@@ -471,11 +393,13 @@ impl SCF for SCFSpin {
             // if not converged, but exceed the max_scf, then exit
 
             if scf_iter == control.get_scf_max_iter() {
-                println!(
-                    "\n     {:<width1$}",
-                    "scf_convergence_failure",
-                    width1 = OUT_WIDTH1
-                );
+                if dwmpi::is_root() {
+                    println!(
+                        "\n     {:<width1$}",
+                        "scf_convergence_failure",
+                        width1 = OUT_WIDTH1
+                    );
+                }
 
                 break;
             }
@@ -609,22 +533,25 @@ impl SCF for SCFSpin {
         //let (vkscf_up, vkscf_dn) = utility::get_slice_up_dn(vkscf);
         //let (vkevals_up, vkevals_dn) = utility::get_slice_up_dn(vkevals);
 
-        if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
-            if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
-                for ik in 0..nkpt {
-                    let k_frac = kpts.get_k_frac(ik);
-                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                    let npw_wfc = vpwwfc[ik].get_n_plane_waves();
+        if dwmpi::is_root() {
+            if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
+                if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
+                    for ik_local in 0..vkscf_up.len() {
+                        let ik_global = vkscf_up[ik_local].get_ik();
+                        let k_frac = kpts.get_k_frac(ik_global);
+                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                        let npw_wfc = vpwwfc[ik_local].get_n_plane_waves();
 
-                    print_k_point(ik, k_frac, k_cart, npw_wfc);
+                        print_k_point(ik_global, k_frac, k_cart, npw_wfc);
 
-                    let occ_up = vkscf_up[ik].get_occ();
-                    let occ_dn = vkscf_dn[ik].get_occ();
+                        let occ_up = vkscf_up[ik_local].get_occ();
+                        let occ_dn = vkscf_dn[ik_local].get_occ();
 
-                    let evals_up = &vkevals_up[ik];
-                    let evals_dn = &vkevals_dn[ik];
+                        let evals_up = &vkevals_up[ik_local];
+                        let evals_dn = &vkevals_dn[ik_local];
 
-                    print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
+                        print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
+                    }
                 }
             }
         }
@@ -634,18 +561,30 @@ impl SCF for SCFSpin {
         let natoms = crystal.get_n_atoms();
 
         let mut force_loc = vec![Vector3f64::zeros(); natoms];
+        let mut force_vnl_local = vec![Vector3f64::zeros(); natoms];
         let mut force_vnl = vec![Vector3f64::zeros(); natoms];
 
         force::vpsloc(pots, crystal, gvec, pwden, &rhog_tot, &mut force_loc);
 
         if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
             if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
-                force::vnl(crystal, &vkscf_up, &vkevecs_up, &mut force_vnl);
-                force::vnl(crystal, &vkscf_dn, &vkevecs_dn, &mut force_vnl);
+                force::vnl(crystal, &vkscf_up, &vkevecs_up, &mut force_vnl_local);
+                force::vnl(crystal, &vkscf_dn, &vkevecs_dn, &mut force_vnl_local);
             }
         }
 
-        let force_ewald = ewald.get_force();
+        dwmpi::reduce_slice_sum(
+            vector3::as_slice_of_element(&force_vnl_local),
+            vector3::as_mut_slice_of_element(&mut force_vnl),
+            MPI_COMM_WORLD,
+        );
+
+        dwmpi::bcast_slice(
+            vector3::as_mut_slice_of_element(&mut force_vnl),
+            MPI_COMM_WORLD,
+        );
+
+        let mut force_ewald = ewald.get_force().to_vec();
 
         let mut force_nlcc = vec![Vector3f64::zeros(); natoms];
 
@@ -662,40 +601,67 @@ impl SCF for SCFSpin {
                 force_nlcc[iat] = (force_nlcc_up[iat] + force_nlcc_dn[iat]) / 2.0;
             }
         }
+
+        if control.get_symmetry() {
+            utils::project_force_by_symmetry(crystal, symdrv, &mut force_loc);
+            utils::project_force_by_symmetry(crystal, symdrv, &mut force_vnl);
+            utils::project_force_by_symmetry(crystal, symdrv, &mut force_nlcc);
+            utils::project_force_by_symmetry(crystal, symdrv, &mut force_ewald);
+        }
+
         for iat in 0..natoms {
             force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat];
         }
 
-        force::display(
-            crystal,
-            &force_total,
-            &force_ewald,
-            &force_loc,
-            &force_vnl,
-            &force_nlcc,
-        );
+        if dwmpi::is_root() {
+            force::display(
+                crystal,
+                &force_total,
+                &force_ewald,
+                &force_loc,
+                &force_vnl,
+                &force_nlcc,
+            );
+        }
 
         // stress
 
-        let mut stress_kin = Matrix::<f64>::new(3, 3);
-        let mut stress_vnl = Matrix::<f64>::new(3, 3);
+        let mut stress_kin_local = Matrix::<f64>::new(3, 3);
+        let mut stress_vnl_local = Matrix::<f64>::new(3, 3);
 
         if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
             if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
                 let stress_kin_up = stress::kinetic(crystal, &vkscf_up, &vkevecs_up);
                 let stress_kin_dn = stress::kinetic(crystal, &vkscf_dn, &vkevecs_dn);
 
-                stress_kin = stress_kin_up + stress_kin_dn;
+                stress_kin_local = stress_kin_up + stress_kin_dn;
 
                 let stress_vnl_up = stress::vnl(crystal, &vkscf_up, &vkevecs_up);
                 let stress_vnl_dn = stress::vnl(crystal, &vkscf_dn, &vkevecs_dn);
 
-                stress_vnl = stress_vnl_up + stress_vnl_dn;
+                stress_vnl_local = stress_vnl_up + stress_vnl_dn;
             }
         }
 
-        let stress_hartree = stress::hartree(gvec, pwden, &rhog_tot);
-        let stress_xc = stress::xc_spin(crystal.get_latt(), rho_3d, rhocore_3d, &vxc_3d, &exc_3d);
+        let mut stress_kin = Matrix::<f64>::new(3, 3);
+        let mut stress_vnl = Matrix::<f64>::new(3, 3);
+
+        dwmpi::reduce_slice_sum(
+            stress_kin_local.as_slice(),
+            stress_kin.as_mut_slice(),
+            MPI_COMM_WORLD,
+        );
+        dwmpi::reduce_slice_sum(
+            stress_vnl_local.as_slice(),
+            stress_vnl.as_mut_slice(),
+            MPI_COMM_WORLD,
+        );
+        dwmpi::bcast_slice(stress_kin.as_mut_slice(), MPI_COMM_WORLD);
+        dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
+
+        let mut stress_hartree = stress::hartree(gvec, pwden, &rhog_tot);
+        let mut stress_xc =
+            stress::xc_spin(crystal.get_latt(), rho_3d, rhocore_3d, &vxc_3d, &exc_3d);
 
         let (vxcg_up, vxcg_dn) = vxcg.as_spin().unwrap();
 
@@ -711,9 +677,18 @@ impl SCF for SCFSpin {
             }
         }
 
-        let stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, &rhog_tot);
+        let mut stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, &rhog_tot);
+        let mut stress_ewald = ewald.get_stress().clone();
 
-        let stress_ewald = ewald.get_stress();
+        if control.get_symmetry() {
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_kin);
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_hartree);
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_xc);
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_xc_nlcc);
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_loc);
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_vnl);
+            utils::project_stress_by_symmetry(crystal, symdrv, &mut stress_ewald);
+        }
 
         for i in 0..3 {
             for j in 0..3 {
@@ -727,16 +702,18 @@ impl SCF for SCFSpin {
             }
         }
 
-        stress::display_stress_by_parts(
-            &stress_kin,
-            &stress_hartree,
-            &stress_xc,
-            &stress_xc_nlcc,
-            &stress_loc,
-            &stress_vnl,
-            &stress_ewald,
-            &stress_total,
-        );
+        if dwmpi::is_root() {
+            stress::display_stress_by_parts(
+                &stress_kin,
+                &stress_hartree,
+                &stress_xc,
+                &stress_xc_nlcc,
+                &stress_loc,
+                &stress_vnl,
+                &stress_ewald,
+                &stress_total,
+            );
+        }
     }
 }
 
@@ -768,24 +745,30 @@ pub fn compute_total_energy(
 
     //
 
-    let mut etot_bands = 0.0;
+    let mut etot_bands_local = 0.0;
     if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
         if let VKEigenValue::Spin(vevals_up, vevals_dn) = vevals {
             let etot_bands_up = get_bands_energy(vkscf_up, vevals_up);
             let etot_bands_dn = get_bands_energy(vkscf_dn, vevals_dn);
 
-            etot_bands = etot_bands_up + etot_bands_dn;
+            etot_bands_local = etot_bands_up + etot_bands_dn;
         }
     }
+    let mut etot_bands = 0.0;
+    dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut etot_bands, MPI_COMM_WORLD);
 
     let etot_vxc = energy::vxc_spin(latt, rho_3d, rhocore_3d.as_slice(), vxc_3d);
 
     let etot_xc = energy::exc_spin(latt, &rho_3d, &rhocore_3d, &exc_3d);
-    let mut hybrid_exchange = 0.0;
+    let mut hybrid_exchange_local = 0.0;
     if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
-        hybrid_exchange =
+        hybrid_exchange_local =
             get_hybrid_exchange_energy(vkscf_up) + get_hybrid_exchange_energy(vkscf_dn);
     }
+    let mut hybrid_exchange = 0.0;
+    dwmpi::reduce_scalar_sum(&hybrid_exchange_local, &mut hybrid_exchange, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut hybrid_exchange, MPI_COMM_WORLD);
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 

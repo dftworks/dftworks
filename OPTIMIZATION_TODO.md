@@ -217,7 +217,7 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E13 - Spin SCF MPI and Symmetry Parity
 **Priority**: P1  
-**Status**: Open  
+**Status**: Completed (2026-02-25)  
 **Files**: `scf/src/spin.rs`, `scf/src/utils.rs`, `pw/src/main.rs`
 
 - Align spin SCF reduction semantics with nonspin (`band_energy`, force, stress, and derived totals)
@@ -229,6 +229,12 @@ The previous list contained intentional overlap to capture related themes. The i
 - Spin total energies/forces/stresses are rank-count invariant within tolerance
 - Symmetry-enabled spin runs satisfy force/stress invariance checks
 - Default spin output volume is comparable to nonspin output volume
+
+**Completion Update (2026-02-25)**
+- [x] Spin SCF now reduces and broadcasts distributed contributions consistently (`band_energy`, hybrid exchange, nonlocal force, kinetic/nonlocal stress)
+- [x] Symmetry projection is now applied to spin force and stress decomposition terms when symmetry is enabled
+- [x] Spin SCF default logging is now root-only with compact per-iteration summaries
+- [x] Added spin MPI parity regression harness (`scripts/run_spin_mpi_parity.sh`) comparing 1-rank vs 2-rank energy/force/stress outputs
 
 ### E14 - FFT Planning and Spectral-Operator Workspace Tuning
 **Priority**: P2  
@@ -305,10 +311,126 @@ The previous list contained intentional overlap to capture related themes. The i
 - Default mode avoids high-frequency diagnostic flood in large runs
 - Structured logs can drive regression tooling without parsing free-form stdout
 
+## Refactoring Review Update (2026-02-25)
+
+Current code review highlights these structural expansion bottlenecks:
+
+- `pw/src/main.rs` is still a monolithic runtime orchestrator (bootstrap, construction, restart, SCF execution, output, and geom loop in one file)
+- `scf/src/nonspin.rs` and `scf/src/spin.rs` duplicate most SCF iteration flow and post-SCF force/stress assembly
+- `control/src/lib.rs` keeps a large string-key parser with many `unwrap()` and `process::exit` paths, making extension and diagnostics harder
+- `dfttypes/src/lib.rs` repeats spin/nonspin checkpoint I/O logic and still uses panic-style failure paths in several save/load branches
+
+New canonical refactoring items are added below to unblock future feature expansion (NCL, richer checkpoint backends, cleaner workflow composition).
+
+### E19 - Unified SCF Iteration Engine (Spin/Nonspin)
+**Priority**: P1/P2  
+**Status**: Open  
+**Files**: `scf/src/nonspin.rs`, `scf/src/spin.rs`, `scf/src/lib.rs`, `scf/src/utils.rs`
+
+- Extract a shared SCF iteration template/state machine (`potential -> eigensolve -> occupations -> density -> energy -> convergence -> mixing`)
+- Move spin-specific versus nonspin-specific behavior behind explicit channel adapters rather than duplicated loops
+- Centralize convergence bookkeeping and iteration reporting so both paths use the same metrics schema
+- Reuse one shared post-SCF reduction/projection pipeline for force/stress parts with channel contributions as inputs
+
+**Acceptance Criteria**
+- SCF loop control flow lives in one shared engine with spin/nonspin adapters
+- Spin/nonspin convergence output fields are identical by schema
+- MPI parity tests remain green for nonspin and spin after consolidation
+
+### E20 - Typed Run Context and Phase Builders
+**Priority**: P1/P2  
+**Status**: Open  
+**Files**: `pw/src/main.rs`, `scf/src/lib.rs`, `kpts_distribution/src/lib.rs`
+
+- Replace repeated construction blocks with typed phase builders (`RuntimeContext`, `GeometryStepContext`, `ElectronicStepContext`)
+- Centralize k-point local/global indexing, local basis, and local VNL construction into a reusable domain object
+- Remove repeated spin-branch allocation/initialization code for `VKSCF`, `VKEigenValue`, and `VKEigenVector`
+- Keep `main` as orchestration only; move restart/checkpoint and SCF setup into dedicated modules
+
+**Acceptance Criteria**
+- `pw/src/main.rs` delegates to phase modules and no longer owns low-level construction details
+- No ad-hoc `ik - ik_first` indexing arithmetic remains outside k-point domain helpers
+- New phases are unit-testable without invoking full end-to-end `pw` flow
+
+### E21 - Declarative Input Schema and Validation Pipeline
+**Priority**: P1  
+**Status**: Open  
+**Files**: `control/src/lib.rs`
+
+- Replace large manual `match` parser with declarative key schema (type parser + unit conversion + validation rule)
+- Return `Result<Control, ControlError>` with line-aware diagnostics instead of `unwrap()` / `process::exit`
+- Split validation into stages: syntax, semantic ranges, feature-compatibility matrix
+- Add parser tests for invalid keys, invalid values, deprecated aliases, and cross-field constraints
+
+**Acceptance Criteria**
+- `Control` loading has no `process::exit` and no parsing `unwrap()` in normal flow
+- Input error messages include key name and line number
+- Parser/validator test suite covers compatibility gates (HSE, Hubbard U, restart, spin modes)
+
+### E22 - Checkpoint Repository and Codec Abstraction
+**Priority**: P2/P3  
+**Status**: Open  
+**Files**: `dfttypes/src/lib.rs`, `pw/src/main.rs`, `workflow/src/main.rs`
+
+- Split checkpoint domain model from storage codec to allow multiple backends (current HDF5 file-per-k, future packed/chunked formats)
+- Remove duplicated spin/nonspin load/save loops via shared channel iteration helpers
+- Replace remaining `unwrap()`/`expect()` in checkpoint I/O paths with typed errors and context
+- Add backward-compatible schema migration hooks beyond a single version check
+
+**Acceptance Criteria**
+- Restart logic depends on a repository trait instead of direct filename logic in `pw`
+- Save/load branches share common code for spin channel handling
+- Checkpoint compatibility and migration behavior is covered by integration tests
+
+### E23 - SCF Utilities Module Decomposition
+**Priority**: P2  
+**Status**: Open  
+**Files**: `scf/src/utils.rs`, `scf/src/nonspin.rs`, `scf/src/spin.rs`
+
+- Split `scf::utils` into focused modules (`potential`, `energy`, `mixing`, `symmetry_projection`, `diagnostics`)
+- Move printing/output routines out of numerical kernels to a diagnostics layer with verbosity controls
+- Consolidate duplicated helper logic (`get_eigvalue_epsilon`, eigen display helpers, plane-wave max helpers)
+- Keep math helpers (`3x3` transforms/projections) in a dedicated linear-algebra utility module
+
+**Acceptance Criteria**
+- `scf/src/utils.rs` is replaced by smaller purpose-specific modules
+- Numerical kernels do not directly own user-facing I/O formatting
+- Shared helper logic has one source of truth across spin/nonspin paths
+
+### E24 - Capability Matrix and Unsupported-Mode Policy
+**Priority**: P2/P4  
+**Status**: Open  
+**Files**: `control/src/lib.rs`, `pw/src/main.rs`, `scf/src/lib.rs`
+
+- Define explicit capability matrix for `{spin_scheme, xc_scheme, task, restart}` combinations
+- Validate unsupported combinations before runtime setup; return actionable errors instead of runtime `panic!`
+- Keep feature flags/capability tags on SCF drivers to enable incremental NCL rollout without hard panics
+- Ensure checkpoint metadata validation also enforces capability compatibility
+
+**Acceptance Criteria**
+- Unsupported runtime combinations fail at input validation/preflight phase
+- `panic!` for "not implemented" mode combinations is removed from runtime setup paths
+- Adding a new mode requires updating one central capability table and tests
+
+### E25 - K-Point Domain Model and Index Safety
+**Priority**: P2  
+**Status**: Open  
+**Files**: `kpts_distribution/src/lib.rs`, `pw/src/main.rs`, `scf/src/spin.rs`, `scf/src/nonspin.rs`
+
+- Introduce explicit `KPointDomain` (`global_index`, `local_slot`, `weight`, `basis_ref`) to avoid index drift bugs
+- Eliminate duplicated k-point loops for up/down channel setup and checkpoint file naming
+- Provide stable helpers for local/global index transforms used by logging, restart, and parity scripts
+- Add assertions and tests that cover uneven rank partitioning and empty-local-k cases
+
+**Acceptance Criteria**
+- K-point loops use typed domain iterators instead of manual index math
+- Spin/nonspin setup code reuses the same domain traversal utilities
+- Parity tests include uneven rank-to-k distributions and zero-local-k ranks
+
 ## Legacy to Canonical Mapping
 
 Legacy mapping covers the original normalized set (`E1`-`E11`).  
-Newly added items (`E12`-`E18`) are code-review additions without legacy IDs.
+Newly added items (`E12`-`E25`) are code-review additions without legacy IDs.
 
 | Legacy Item | Canonical Item |
 | --- | --- |
@@ -450,6 +572,31 @@ Newly added items (`E12`-`E18`) are code-review additions without legacy IDs.
 - End-to-end reproducibility checks pass on reference workflows
 - Restart artifacts are schema-validated and backward-compatible
 - Production-default logging overhead is bounded and documented
+
+### Sprint 12 - SCF Structural Consolidation
+**Scope**: `E19`, `E23`, `E25`
+
+- Introduce shared SCF iteration engine and channel adapters
+- Decompose `scf::utils` and unify duplicated helper logic
+- Roll out typed k-point domain/index model in SCF setup and execution
+
+**Exit Gates**
+- Spin/nonspin loops run through shared orchestration without behavior regression
+- K-point indexing is domain-driven and validated under uneven MPI partitions
+- MPI parity scripts pass for both spin and nonspin references
+
+### Sprint 13 - Runtime Contracts and Expansion Interfaces
+**Scope**: `E20`, `E21`, `E22`, `E24`
+
+- Modularize `pw` into typed phase contexts/builders
+- Replace control parser with declarative schema and typed errors
+- Introduce checkpoint repository abstraction and codec split
+- Add centralized capability matrix to replace runtime "not implemented" panics
+
+**Exit Gates**
+- `pw` orchestration is phase-modular and testable at unit scope
+- Input/feature compatibility failures return actionable diagnostics without process abort in libraries
+- Restart/checkpoint APIs are backend-ready and schema-governed for future formats
 
 ## Feature Track (Post-Core Stabilization)
 
