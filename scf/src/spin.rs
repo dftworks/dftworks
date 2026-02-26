@@ -37,6 +37,86 @@ impl SCFSpin {
     }
 }
 
+#[inline]
+fn sum_spin_channels(rhog_up: &[c64], rhog_dn: &[c64], rhog_tot: &mut [c64]) {
+    debug_assert_eq!(rhog_up.len(), rhog_dn.len());
+    debug_assert_eq!(rhog_up.len(), rhog_tot.len());
+
+    for i in 0..rhog_tot.len() {
+        rhog_tot[i] = rhog_up[i] + rhog_dn[i];
+    }
+}
+
+// Scratch/work buffers reused across the spin-collinear SCF loop.
+// All sizes are derived once from (npw_rho, fft_shape) and reused in-place.
+struct SpinScfWorkspace {
+    rhog_tot: Vec<c64>,
+    rhog_tot_scratch: Vec<c64>,
+    vpslocg: Vec<c64>,
+    vhg: Vec<c64>,
+    vxcg: VXCG,
+    vxc_3d: VXCR,
+    exc_3d: Array3<c64>,
+    vlocg_up: Vec<c64>,
+    vlocg_dn: Vec<c64>,
+    vloc_3d_up: Array3<c64>,
+    vloc_3d_dn: Array3<c64>,
+    rhog_out_up: Vec<c64>,
+    rhog_out_dn: Vec<c64>,
+    rhog_diff: Vec<c64>,
+    rhog_total: Vec<c64>,
+    rhog_spin: Vec<c64>,
+}
+
+impl SpinScfWorkspace {
+    fn new(npw_rho: usize, fft_shape: [usize; 3]) -> Self {
+        Self {
+            rhog_tot: vec![c64::zero(); npw_rho],
+            rhog_tot_scratch: vec![c64::zero(); npw_rho],
+            vpslocg: vec![c64::zero(); npw_rho],
+            vhg: vec![c64::zero(); npw_rho],
+            vxcg: VXCG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
+            vxc_3d: VXCR::Spin(
+                Array3::<c64>::new(fft_shape),
+                Array3::<c64>::new(fft_shape),
+            ),
+            exc_3d: Array3::<c64>::new(fft_shape),
+            vlocg_up: vec![c64::zero(); npw_rho],
+            vlocg_dn: vec![c64::zero(); npw_rho],
+            vloc_3d_up: Array3::<c64>::new(fft_shape),
+            vloc_3d_dn: Array3::<c64>::new(fft_shape),
+            rhog_out_up: vec![c64::zero(); npw_rho],
+            rhog_out_dn: vec![c64::zero(); npw_rho],
+            rhog_diff: vec![c64::zero(); npw_rho],
+            rhog_total: vec![c64::zero(); npw_rho],
+            rhog_spin: vec![c64::zero(); npw_rho],
+        }
+    }
+
+    fn validate(&self, npw_rho: usize, fft_shape: [usize; 3]) {
+        let nfft = fft_shape[0] * fft_shape[1] * fft_shape[2];
+
+        debug_assert_eq!(self.rhog_tot.len(), npw_rho);
+        debug_assert_eq!(self.rhog_tot_scratch.len(), npw_rho);
+        debug_assert_eq!(self.vpslocg.len(), npw_rho);
+        debug_assert_eq!(self.vhg.len(), npw_rho);
+        debug_assert_eq!(self.vlocg_up.len(), npw_rho);
+        debug_assert_eq!(self.vlocg_dn.len(), npw_rho);
+        debug_assert_eq!(self.rhog_out_up.len(), npw_rho);
+        debug_assert_eq!(self.rhog_out_dn.len(), npw_rho);
+        debug_assert_eq!(self.rhog_diff.len(), npw_rho);
+        debug_assert_eq!(self.rhog_total.len(), npw_rho);
+        debug_assert_eq!(self.rhog_spin.len(), npw_rho);
+        debug_assert_eq!(self.vxcg.as_spin().unwrap().0.len(), npw_rho);
+        debug_assert_eq!(self.vxcg.as_spin().unwrap().1.len(), npw_rho);
+        debug_assert_eq!(self.vxc_3d.as_spin().unwrap().0.as_slice().len(), nfft);
+        debug_assert_eq!(self.vxc_3d.as_spin().unwrap().1.as_slice().len(), nfft);
+        debug_assert_eq!(self.exc_3d.as_slice().len(), nfft);
+        debug_assert_eq!(self.vloc_3d_up.as_slice().len(), nfft);
+        debug_assert_eq!(self.vloc_3d_dn.as_slice().len(), nfft);
+    }
+}
+
 impl SCF for SCFSpin {
     fn run(
         &self,
@@ -83,46 +163,20 @@ impl SCF for SCFSpin {
 
         let npw_rho = pwden.get_n_plane_waves();
 
-        //
-
-        let mut rhog_tot = vec![c64::zero(); npw_rho];
+        let mut ws = SpinScfWorkspace::new(npw_rho, [n1, n2, n3]);
+        ws.validate(npw_rho, [n1, n2, n3]);
 
         if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
-            for i in 0..npw_rho {
-                rhog_tot[i] = rhog_up[i] + rhog_dn[i];
-            }
+            sum_spin_channels(rhog_up, rhog_dn, &mut ws.rhog_tot);
         }
-
-        //
-
-        let mut vpslocg = vec![c64::zero(); npw_rho];
-
-        //
-
-        let mut vhg = vec![c64::zero(); npw_rho];
-
-        //
-
-        let mut vxcg = VXCG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]);
-
-        let mut vxc_3d = VXCR::Spin(
-            Array3::<c64>::new([n1, n2, n3]),
-            Array3::<c64>::new([n1, n2, n3]),
-        );
-
-        let mut exc_3d = Array3::<c64>::new(fft_shape);
-
-        //
-        let mut vlocg_up = vec![c64::zero(); npw_rho];
-        let mut vlocg_dn = vec![c64::zero(); npw_rho];
 
         // v_psloc in G space; this will not change for a fixed set of ion positions
 
-        vloc::from_atomic_super_position(pots, crystal, gvec, pwden, &mut vpslocg);
+        vloc::from_atomic_super_position(pots, crystal, gvec, pwden, &mut ws.vpslocg);
 
         // v_h in G space; this will change with the density
 
-        hartree::potential(pwden.get_g(), &rhog_tot, &mut vhg);
+        hartree::potential(pwden.get_g(), &ws.rhog_tot, &mut ws.vhg);
 
         // v_xc in r space first and then transform to G space; this changes
         // with density every SCF iteration.
@@ -139,7 +193,7 @@ impl SCF for SCFSpin {
         }
 
         // XC call includes full GGA derivative logic internally.
-        xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
+        xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);
 
         // Restore valence-only rho in SCF state.
         if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
@@ -150,8 +204,8 @@ impl SCF for SCFSpin {
         }
 
         {
-            let (vxc_3d_up, vxc_3d_dn) = vxc_3d.as_spin().unwrap();
-            let (vxcg_up, vxcg_dn) = vxcg.as_spin_mut().unwrap();
+            let (vxc_3d_up, vxc_3d_dn) = ws.vxc_3d.as_spin().unwrap();
+            let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin_mut().unwrap();
 
             rgtrans.r3d_to_g1d(gvec, pwden, vxc_3d_up.as_slice(), vxcg_up);
             rgtrans.r3d_to_g1d(gvec, pwden, vxc_3d_dn.as_slice(), vxcg_dn);
@@ -160,15 +214,15 @@ impl SCF for SCFSpin {
         // v_xc + v_h + v_psloc in G space
 
         {
-            let (vxcg_up, vxcg_dn) = vxcg.as_spin().unwrap();
+            let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
 
             // spin up
 
             for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-                vlocg_up.iter_mut(),
+                ws.vlocg_up.iter_mut(),
                 vxcg_up.iter(),
-                vhg.iter(),
-                vpslocg.iter(),
+                ws.vhg.iter(),
+                ws.vpslocg.iter(),
             )) {
                 *v_loc = *v_xc + *v_ha + *v_psloc;
             }
@@ -176,10 +230,10 @@ impl SCF for SCFSpin {
             // spin dn
 
             for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-                vlocg_dn.iter_mut(),
+                ws.vlocg_dn.iter_mut(),
                 vxcg_dn.iter(),
-                vhg.iter(),
-                vpslocg.iter(),
+                ws.vhg.iter(),
+                ws.vpslocg.iter(),
             )) {
                 *v_loc = *v_xc + *v_ha + *v_psloc;
             }
@@ -192,17 +246,7 @@ impl SCF for SCFSpin {
 
         let mut mixing_spin = mixing::new(control);
 
-        //
-        let mut vloc_3d_up = Array3::<c64>::new([n1, n2, n3]);
-        let mut vloc_3d_dn = Array3::<c64>::new([n1, n2, n3]);
-
         let ntot_elec = crystal.get_n_total_electrons(pots);
-
-        let mut rhog_out = RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]);
-
-        let mut rhog_diff = vec![c64::zero(); npw_rho];
-        let mut rhog_total = vec![c64::zero(); npw_rho];
-        let mut rhog_spin = vec![c64::zero(); npw_rho];
 
         let mut energy_diff = 0.0;
 
@@ -217,8 +261,8 @@ impl SCF for SCFSpin {
             // transform v_loc from G to r
 
             {
-                rgtrans.g1d_to_r3d(gvec, pwden, &vlocg_up, vloc_3d_up.as_mut_slice());
-                rgtrans.g1d_to_r3d(gvec, pwden, &vlocg_dn, vloc_3d_dn.as_mut_slice());
+                rgtrans.g1d_to_r3d(gvec, pwden, &ws.vlocg_up, ws.vloc_3d_up.as_mut_slice());
+                rgtrans.g1d_to_r3d(gvec, pwden, &ws.vlocg_dn, ws.vloc_3d_dn.as_mut_slice());
             }
 
             // set the epsilon for eigenvalue for this iteration
@@ -241,7 +285,7 @@ impl SCF for SCFSpin {
                             for (ik, kscf) in vkscf_up.iter().enumerate() {
                                 let (_n_band_converged, _n_hpsi) = kscf.run(
                                     rgtrans,
-                                    &vloc_3d_up,
+                                    &ws.vloc_3d_up,
                                     eigvalue_epsilon,
                                     geom_iter,
                                     scf_iter,
@@ -255,7 +299,7 @@ impl SCF for SCFSpin {
                             for (ik, kscf) in vkscf_dn.iter().enumerate() {
                                 let (_n_band_converged, _n_hpsi) = kscf.run(
                                     rgtrans,
-                                    &vloc_3d_dn,
+                                    &ws.vloc_3d_dn,
                                     eigvalue_epsilon,
                                     geom_iter,
                                     scf_iter,
@@ -274,18 +318,21 @@ impl SCF for SCFSpin {
 
             // calculate Harris energy
 
+            let (rhog_up, rhog_dn) = rhog.as_spin().unwrap();
             let energy_harris = compute_total_energy(
                 pwden,
                 crystal.get_latt(),
-                rhog,
+                rhog_up,
+                rhog_dn,
                 &vkscf,
                 &vkevals,
                 rho_3d,
                 rhocore_3d,
-                &exc_3d,
-                &vxc_3d,
+                &ws.exc_3d,
+                &ws.vxc_3d,
                 ewald.get_energy(),
                 hubbard_energy,
+                &mut ws.rhog_tot_scratch,
             );
 
             // build the density based on the new wavefunctions
@@ -311,11 +358,9 @@ impl SCF for SCFSpin {
 
             // rho r -> G
 
-            if let RHOG::Spin(ref mut rhog_out_up, ref mut rhog_out_dn) = &mut rhog_out {
-                if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
-                    rgtrans.r3d_to_g1d(gvec, pwden, rho_3d_up.as_slice(), rhog_out_up);
-                    rgtrans.r3d_to_g1d(gvec, pwden, rho_3d_dn.as_slice(), rhog_out_dn);
-                }
+            if let RHOR::Spin(rho_3d_up, rho_3d_dn) = rho_3d {
+                rgtrans.r3d_to_g1d(gvec, pwden, rho_3d_up.as_slice(), &mut ws.rhog_out_up);
+                rgtrans.r3d_to_g1d(gvec, pwden, rho_3d_dn.as_slice(), &mut ws.rhog_out_dn);
             }
 
             // if symmetry enabled, the charge density need to be symmetrized
@@ -334,7 +379,7 @@ impl SCF for SCFSpin {
             }
 
             // Full GGA-consistent v_xc and eps_xc.
-            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
+            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);
 
             // Restore valence-only rho after XC.
 
@@ -350,15 +395,17 @@ impl SCF for SCFSpin {
             let energy_scf = compute_total_energy(
                 pwden,
                 crystal.get_latt(),
-                &rhog_out,
+                &ws.rhog_out_up,
+                &ws.rhog_out_dn,
                 &vkscf,
                 &vkevals,
                 rho_3d,
                 rhocore_3d,
-                &exc_3d,
-                &vxc_3d,
+                &ws.exc_3d,
+                &ws.vxc_3d,
                 ewald.get_energy(),
                 hubbard_energy,
+                &mut ws.rhog_tot_scratch,
             );
 
             energy_diff = (energy_scf - energy_harris).abs();
@@ -410,42 +457,48 @@ impl SCF for SCFSpin {
                 let rho_3d_up = rho_3d_up.as_mut_slice();
                 let rho_3d_dn = rho_3d_dn.as_mut_slice();
 
-                if let RHOG::Spin(ref rhog_out_up, ref rhog_out_dn) = &rhog_out {
-                    if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
-                        for ipw in 0..npw_rho {
-                            rhog_total[ipw] = rhog_up[ipw] + rhog_dn[ipw];
-                            rhog_spin[ipw] = rhog_up[ipw] - rhog_dn[ipw];
-                        }
-
-                        // total rho
-
-                        for ipw in 0..npw_rho {
-                            rhog_diff[ipw] = (rhog_out_up[ipw] + rhog_out_dn[ipw])
-                                - (rhog_up[ipw] + rhog_dn[ipw]);
-                        }
-
-                        mixing_rho.compute_next_density(pwden.get_g(), &mut rhog_total, &rhog_diff);
-
-                        // spin rho
-
-                        for ipw in 0..npw_rho {
-                            rhog_diff[ipw] = (rhog_out_up[ipw] - rhog_out_dn[ipw])
-                                - (rhog_up[ipw] - rhog_dn[ipw]);
-                        }
-
-                        mixing_spin.compute_next_density(pwden.get_g(), &mut rhog_spin, &rhog_diff);
-
-                        for ipw in 0..npw_rho {
-                            rhog_up[ipw] = (rhog_total[ipw] + rhog_spin[ipw]) / 2.0;
-                        }
-
-                        for ipw in 0..npw_rho {
-                            rhog_dn[ipw] = (rhog_total[ipw] - rhog_spin[ipw]) / 2.0;
-                        }
-
-                        rgtrans.g1d_to_r3d(gvec, pwden, rhog_up, rho_3d_up);
-                        rgtrans.g1d_to_r3d(gvec, pwden, rhog_dn, rho_3d_dn);
+                if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
+                    for ipw in 0..npw_rho {
+                        ws.rhog_total[ipw] = rhog_up[ipw] + rhog_dn[ipw];
+                        ws.rhog_spin[ipw] = rhog_up[ipw] - rhog_dn[ipw];
                     }
+
+                    // total rho
+
+                    for ipw in 0..npw_rho {
+                        ws.rhog_diff[ipw] = (ws.rhog_out_up[ipw] + ws.rhog_out_dn[ipw])
+                            - (rhog_up[ipw] + rhog_dn[ipw]);
+                    }
+
+                    mixing_rho.compute_next_density(
+                        pwden.get_g(),
+                        &mut ws.rhog_total,
+                        &ws.rhog_diff,
+                    );
+
+                    // spin rho
+
+                    for ipw in 0..npw_rho {
+                        ws.rhog_diff[ipw] = (ws.rhog_out_up[ipw] - ws.rhog_out_dn[ipw])
+                            - (rhog_up[ipw] - rhog_dn[ipw]);
+                    }
+
+                    mixing_spin.compute_next_density(
+                        pwden.get_g(),
+                        &mut ws.rhog_spin,
+                        &ws.rhog_diff,
+                    );
+
+                    for ipw in 0..npw_rho {
+                        rhog_up[ipw] = (ws.rhog_total[ipw] + ws.rhog_spin[ipw]) / 2.0;
+                    }
+
+                    for ipw in 0..npw_rho {
+                        rhog_dn[ipw] = (ws.rhog_total[ipw] - ws.rhog_spin[ipw]) / 2.0;
+                    }
+
+                    rgtrans.g1d_to_r3d(gvec, pwden, rhog_up, rho_3d_up);
+                    rgtrans.g1d_to_r3d(gvec, pwden, rhog_dn, rho_3d_dn);
                 }
             }
 
@@ -454,12 +507,10 @@ impl SCF for SCFSpin {
             // v_h
 
             if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
-                for i in 0..npw_rho {
-                    rhog_tot[i] = rhog_up[i] + rhog_dn[i];
-                }
+                sum_spin_channels(rhog_up, rhog_dn, &mut ws.rhog_tot);
             }
 
-            hartree::potential(pwden.get_g(), &rhog_tot, &mut vhg);
+            hartree::potential(pwden.get_g(), &ws.rhog_tot, &mut ws.vhg);
 
             // v_xc
 
@@ -476,7 +527,7 @@ impl SCF for SCFSpin {
             }
 
             // Full GGA-consistent XC refresh for next SCF iteration.
-            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut vxc_3d, &mut exc_3d);
+            xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);
 
             // Restore valence-only rho for SCF state/mixing.
 
@@ -491,8 +542,8 @@ impl SCF for SCFSpin {
             }
 
             {
-                let (vxc_3d_up, vxc_3d_dn) = vxc_3d.as_spin().unwrap();
-                let (vxcg_up, vxcg_dn) = vxcg.as_spin_mut().unwrap();
+                let (vxc_3d_up, vxc_3d_dn) = ws.vxc_3d.as_spin().unwrap();
+                let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin_mut().unwrap();
 
                 rgtrans.r3d_to_g1d(gvec, pwden, vxc_3d_up.as_slice(), vxcg_up);
                 rgtrans.r3d_to_g1d(gvec, pwden, vxc_3d_dn.as_slice(), vxcg_dn);
@@ -500,15 +551,15 @@ impl SCF for SCFSpin {
 
             // v_xc + v_h + v_psloc in G space
             {
-                let (vxcg_up, vxcg_dn) = vxcg.as_spin().unwrap();
+                let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
 
                 // spin up
 
                 for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-                    vlocg_up.iter_mut(),
+                    ws.vlocg_up.iter_mut(),
                     vxcg_up.iter(),
-                    vhg.iter(),
-                    vpslocg.iter(),
+                    ws.vhg.iter(),
+                    ws.vpslocg.iter(),
                 )) {
                     *v_loc = *v_xc + *v_ha + *v_psloc;
                 }
@@ -516,10 +567,10 @@ impl SCF for SCFSpin {
                 // spin dn
 
                 for (v_loc, v_xc, v_ha, v_psloc) in multizip((
-                    vlocg_dn.iter_mut(),
+                    ws.vlocg_dn.iter_mut(),
                     vxcg_dn.iter(),
-                    vhg.iter(),
-                    vpslocg.iter(),
+                    ws.vhg.iter(),
+                    ws.vpslocg.iter(),
                 )) {
                     *v_loc = *v_xc + *v_ha + *v_psloc;
                 }
@@ -564,7 +615,7 @@ impl SCF for SCFSpin {
         let mut force_vnl_local = vec![Vector3f64::zeros(); natoms];
         let mut force_vnl = vec![Vector3f64::zeros(); natoms];
 
-        force::vpsloc(pots, crystal, gvec, pwden, &rhog_tot, &mut force_loc);
+        force::vpsloc(pots, crystal, gvec, pwden, &ws.rhog_tot, &mut force_loc);
 
         if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
             if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
@@ -589,7 +640,7 @@ impl SCF for SCFSpin {
         let mut force_nlcc = vec![Vector3f64::zeros(); natoms];
 
         {
-            let (vxcg_up, vxcg_dn) = vxcg.as_spin().unwrap();
+            let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
 
             let mut force_nlcc_up = vec![Vector3f64::zeros(); natoms];
             let mut force_nlcc_dn = vec![Vector3f64::zeros(); natoms];
@@ -659,11 +710,11 @@ impl SCF for SCFSpin {
         dwmpi::bcast_slice(stress_kin.as_mut_slice(), MPI_COMM_WORLD);
         dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
 
-        let mut stress_hartree = stress::hartree(gvec, pwden, &rhog_tot);
+        let mut stress_hartree = stress::hartree(gvec, pwden, &ws.rhog_tot);
         let mut stress_xc =
-            stress::xc_spin(crystal.get_latt(), rho_3d, rhocore_3d, &vxc_3d, &exc_3d);
+            stress::xc_spin(crystal.get_latt(), rho_3d, rhocore_3d, &ws.vxc_3d, &ws.exc_3d);
 
-        let (vxcg_up, vxcg_dn) = vxcg.as_spin().unwrap();
+        let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
 
         let stress_xc_nlcc_up = stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg_up);
         let stress_xc_nlcc_dn = stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg_dn);
@@ -677,7 +728,7 @@ impl SCF for SCFSpin {
             }
         }
 
-        let mut stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, &rhog_tot);
+        let mut stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, &ws.rhog_tot);
         let mut stress_ewald = ewald.get_stress().clone();
 
         if control.get_symmetry() {
@@ -720,7 +771,8 @@ impl SCF for SCFSpin {
 pub fn compute_total_energy(
     pwden: &PWDensity,
     latt: &Lattice,
-    rhog: &RHOG,
+    rhog_up: &[c64],
+    rhog_dn: &[c64],
     vkscf: &VKSCF,
     vevals: &VKEigenValue,
     rho_3d: &mut RHOR,
@@ -729,19 +781,18 @@ pub fn compute_total_energy(
     vxc_3d: &VXCR,
     ew_total: f64,
     hubbard_energy: f64,
+    rhog_tot_scratch: &mut [c64],
 ) -> f64 {
     let npw_rho = pwden.get_n_plane_waves();
 
     // hartree energy
 
-    let mut rhog_tot = vec![c64::zero(); npw_rho];
+    debug_assert_eq!(rhog_up.len(), npw_rho);
+    debug_assert_eq!(rhog_dn.len(), npw_rho);
+    debug_assert_eq!(rhog_tot_scratch.len(), npw_rho);
+    sum_spin_channels(rhog_up, rhog_dn, rhog_tot_scratch);
 
-    let (rhog_up, rhog_dn) = rhog.as_spin().unwrap();
-    for i in 0..npw_rho {
-        rhog_tot[i] = rhog_up[i] + rhog_dn[i];
-    }
-
-    let etot_hartree = energy::hartree(pwden, latt, &rhog_tot);
+    let etot_hartree = energy::hartree(pwden, latt, rhog_tot_scratch);
 
     //
 

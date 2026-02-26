@@ -36,6 +36,50 @@ impl SCFNonspin {
     }
 }
 
+// Scratch/work buffers reused across the non-spin SCF loop.
+// All sizes are derived once from (npw_rho, fft_shape) and reused in-place.
+struct NonSpinScfWorkspace {
+    vhg: Vec<c64>,
+    vxcg: VXCG,
+    vxc_3d: VXCR,
+    exc_3d: Array3<c64>,
+    vpslocg: Vec<c64>,
+    vlocg: Vec<c64>,
+    vloc_3d: Array3<c64>,
+    rhog_out: Vec<c64>,
+    rhog_diff: Vec<c64>,
+}
+
+impl NonSpinScfWorkspace {
+    fn new(npw_rho: usize, fft_shape: [usize; 3]) -> Self {
+        Self {
+            vhg: vec![c64::zero(); npw_rho],
+            vxcg: VXCG::NonSpin(vec![c64::zero(); npw_rho]),
+            vxc_3d: VXCR::NonSpin(Array3::<c64>::new(fft_shape)),
+            exc_3d: Array3::<c64>::new(fft_shape),
+            vpslocg: vec![c64::zero(); npw_rho],
+            vlocg: vec![c64::zero(); npw_rho],
+            vloc_3d: Array3::<c64>::new(fft_shape),
+            rhog_out: vec![c64::zero(); npw_rho],
+            rhog_diff: vec![c64::zero(); npw_rho],
+        }
+    }
+
+    fn validate(&self, npw_rho: usize, fft_shape: [usize; 3]) {
+        let nfft = fft_shape[0] * fft_shape[1] * fft_shape[2];
+
+        debug_assert_eq!(self.vhg.len(), npw_rho);
+        debug_assert_eq!(self.vpslocg.len(), npw_rho);
+        debug_assert_eq!(self.vlocg.len(), npw_rho);
+        debug_assert_eq!(self.rhog_out.len(), npw_rho);
+        debug_assert_eq!(self.rhog_diff.len(), npw_rho);
+        debug_assert_eq!(self.vxcg.as_non_spin().unwrap().len(), npw_rho);
+        debug_assert_eq!(self.vxc_3d.as_non_spin().unwrap().as_slice().len(), nfft);
+        debug_assert_eq!(self.exc_3d.as_slice().len(), nfft);
+        debug_assert_eq!(self.vloc_3d.as_slice().len(), nfft);
+    }
+}
+
 impl SCF for SCFNonspin {
     fn run(
         &self,
@@ -73,29 +117,18 @@ impl SCF for SCFNonspin {
         let fft_shape = fftgrid.get_size();
         let npw_rho = pwden.get_n_plane_waves();
 
-        //
-
-        // Hartree potential buffer in reciprocal space.
-        let mut vhg = vec![c64::zero(); npw_rho];
-
-        //
+        let mut ws = NonSpinScfWorkspace::new(npw_rho, fft_shape);
+        ws.validate(npw_rho, fft_shape);
 
         let xc = xc::new(control.get_xc_scheme());
 
-        let mut vxcg = VXCG::NonSpin(vec![c64::zero(); npw_rho]);
-
-        let mut vxc_3d = VXCR::NonSpin(Array3::<c64>::new(fft_shape));
-
-        let mut exc_3d = Array3::<c64>::new(fft_shape);
-
         // v_psloc in G space; this will not change for a fixed set of ion positions
 
-        let mut vpslocg = vec![c64::zero(); npw_rho];
-        vloc::from_atomic_super_position(pots, crystal, gvec, pwden, &mut vpslocg);
+        vloc::from_atomic_super_position(pots, crystal, gvec, pwden, &mut ws.vpslocg);
 
         // v_ha and v_xc change with density
 
-        utils::compute_v_hartree(pwden, rhog, &mut vhg);
+        utils::compute_v_hartree(pwden, rhog, &mut ws.vhg);
 
         utils::compute_v_e_xc_of_r(
             xc.as_ref(),
@@ -104,30 +137,22 @@ impl SCF for SCFNonspin {
             rgtrans,
             rho_3d,
             rhocore_3d,
-            &mut vxc_3d,
-            &mut exc_3d,
+            &mut ws.vxc_3d,
+            &mut ws.exc_3d,
         );
 
-        utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &vxc_3d, &mut vxcg);
+        utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &ws.vxc_3d, &mut ws.vxcg);
 
         //
 
         // Total local KS potential in reciprocal space.
-        let mut vlocg = vec![c64::zero(); npw_rho];
-        utils::add_up_v(&vpslocg, &vhg, &vxcg, &mut vlocg);
+        utils::add_up_v(&ws.vpslocg, &ws.vhg, &ws.vxcg, &mut ws.vlocg);
 
         // density mixing
 
         let mut mixing = mixing::new(control);
 
-        //
-
-        let mut vloc_3d = Array3::<c64>::new(fft_shape);
-
         let ntot_elec = crystal.get_n_total_electrons(pots);
-
-        let mut rhog_out = vec![c64::zero(); npw_rho];
-        let mut rhog_diff = vec![c64::zero(); npw_rho];
 
         let mut energy_diff = 0.0;
 
@@ -148,7 +173,7 @@ impl SCF for SCFNonspin {
         loop {
             // Step 1: transform local KS potential from G-space to real-space.
 
-            rgtrans.g1d_to_r3d(gvec, pwden, &vlocg, vloc_3d.as_mut_slice());
+            rgtrans.g1d_to_r3d(gvec, pwden, &ws.vlocg, ws.vloc_3d.as_mut_slice());
 
             //
 
@@ -163,7 +188,7 @@ impl SCF for SCFNonspin {
 
             utils::solve_eigen_equations(
                 rgtrans,
-                &vloc_3d,
+                &ws.vloc_3d,
                 eigvalue_epsilon,
                 geom_iter,
                 scf_iter,
@@ -198,8 +223,8 @@ impl SCF for SCFNonspin {
                 vkevals.as_non_spin().unwrap(),
                 rho_3d.as_non_spin_mut().unwrap(),
                 rhocore_3d,
-                &exc_3d,
-                vxc_3d.as_non_spin().unwrap(),
+                &ws.exc_3d,
+                ws.vxc_3d.as_non_spin().unwrap(),
                 ewald.get_energy(),
                 hubbard_energy,
             );
@@ -232,7 +257,7 @@ impl SCF for SCFNonspin {
 
             // Step 6: transform new rho(r) back to rho(G).
 
-            utils::compute_rho_of_g(gvec, pwden, rgtrans, rho_3d, &mut rhog_out);
+            utils::compute_rho_of_g(gvec, pwden, rgtrans, rho_3d, &mut ws.rhog_out);
 
             // up to here
             // rhog_out: out rho in G
@@ -245,8 +270,8 @@ impl SCF for SCFNonspin {
                 rgtrans,
                 rho_3d,
                 rhocore_3d,
-                &mut vxc_3d,
-                &mut exc_3d,
+                &mut ws.vxc_3d,
+                &mut ws.exc_3d,
             );
 
             // Step 7: evaluate self-consistent total energy.
@@ -254,13 +279,13 @@ impl SCF for SCFNonspin {
             let energy_scf = utils::compute_total_energy(
                 pwden,
                 crystal,
-                &rhog_out,
+                &ws.rhog_out,
                 vkscf.as_non_spin().unwrap(),
                 vkevals.as_non_spin().unwrap(),
                 rho_3d.as_non_spin_mut().unwrap(),
                 rhocore_3d,
-                &exc_3d,
-                vxc_3d.as_non_spin().unwrap(),
+                &ws.exc_3d,
+                ws.vxc_3d.as_non_spin().unwrap(),
                 ewald.get_energy(),
                 hubbard_energy,
             );
@@ -317,7 +342,13 @@ impl SCF for SCFNonspin {
 
             // Step 9: mix densities in reciprocal space.
 
-            utils::compute_next_density(pwden, mixing.as_mut(), &rhog_out, &mut rhog_diff, rhog);
+            utils::compute_next_density(
+                pwden,
+                mixing.as_mut(),
+                &ws.rhog_out,
+                &mut ws.rhog_diff,
+                rhog,
+            );
 
             // Step 10: convert mixed rho(G) back to rho(r).
 
@@ -333,7 +364,7 @@ impl SCF for SCFNonspin {
 
             // Hartree part.
 
-            utils::compute_v_hartree(pwden, rhog, &mut vhg);
+            utils::compute_v_hartree(pwden, rhog, &mut ws.vhg);
 
             // XC part in real space.
 
@@ -344,17 +375,17 @@ impl SCF for SCFNonspin {
                 rgtrans,
                 rho_3d,
                 rhocore_3d,
-                &mut vxc_3d,
-                &mut exc_3d,
+                &mut ws.vxc_3d,
+                &mut ws.exc_3d,
             );
 
             // XC part transformed to reciprocal space.
 
-            utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &vxc_3d, &mut vxcg);
+            utils::compute_v_xc_of_g(gvec, pwden, rgtrans, &ws.vxc_3d, &mut ws.vxcg);
 
             // Assemble total local potential in reciprocal space.
 
-            utils::add_up_v(&vpslocg, &vhg, &vxcg, &mut vlocg);
+            utils::add_up_v(&ws.vpslocg, &ws.vhg, &ws.vxcg, &mut ws.vlocg);
 
             ///////////////////////////////////////////////////
 
@@ -379,7 +410,7 @@ impl SCF for SCFNonspin {
             vkscf,
             vkevecs,
             rhog,
-            &vxcg,
+            &ws.vxcg,
             symdrv,
             force_total,
         );
@@ -398,9 +429,9 @@ impl SCF for SCFNonspin {
             rhog,
             rho_3d,
             rhocore_3d,
-            &vxcg,
-            &vxc_3d,
-            &exc_3d,
+            &ws.vxcg,
+            &ws.vxc_3d,
+            &ws.exc_3d,
             symdrv,
             stress_total,
         );

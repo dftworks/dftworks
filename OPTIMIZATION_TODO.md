@@ -56,7 +56,7 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E2 - Workspace Architecture for Hot Paths
 **Priority**: P2  
-**Status**: Open  
+**Status**: In Progress (2026-02-26)  
 **Files**: `scf/`, `kscf/`, `density/`, `eigensolver/`, `force/`, `stress/`, `dwfft3d/`, `pw/src/main.rs`
 
 - Standardize `Context + State + Workspace` contracts across SCF and related kernels
@@ -68,6 +68,12 @@ The previous list contained intentional overlap to capture related themes. The i
 - Allocation-heavy hot loops are allocation-free in profiling traces
 - Workspace APIs are documented and adopted in SCF and eigensolver paths
 - No behavior regressions in reference SCF cases
+
+**Implementation Update (2026-02-26)**
+- [x] Added explicit reusable SCF workspaces for nonspin and spin paths (`scf/src/nonspin.rs`, `scf/src/spin.rs`) with one-shot size construction and validation
+- [x] Refactored SCF hot-loop scratch storage (`vhg`, `vxc`, `vloc`, `rho(G)` mix buffers) into workspace-owned buffers instead of ad-hoc locals
+- [x] Removed spin per-iteration `rhog_tot` allocation in total-energy evaluation by introducing reusable scratch buffers
+- [ ] Extend workspace pattern to `kscf`, density kernels, eigensolver scratch, and `pw` orchestration contexts
 
 ### E3 - Remove Serialized Eigenvalue Output Delay
 **Priority**: P2  

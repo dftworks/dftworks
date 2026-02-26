@@ -64,8 +64,16 @@ parse_nonspin_energy_fermi() {
 parse_spin_energy_fermi() {
     local log_file="$1"
     local energy fermi
-    energy="$(awk '/scf_energy \(Ry\)/{val=$NF} END{print val}' "$log_file")"
-    fermi="$(awk '/Fermi_level/{val=$NF} END{print val}' "$log_file")"
+    # New spin output uses the same SCF iteration summary table as nonspin.
+    energy="$(awk '/^[[:space:]]*[0-9]+:/{val=$(NF-1)} END{print val}' "$log_file")"
+    fermi="$(awk '/^[[:space:]]*[0-9]+:/{val=$3} END{print val}' "$log_file")"
+
+    # Backward-compatible fallback for older spin logs.
+    if [[ -z "${energy:-}" || -z "${fermi:-}" ]]; then
+        energy="$(awk '/scf_energy \(Ry\)/{val=$NF} END{print val}' "$log_file")"
+        fermi="$(awk '/Fermi_level/{val=$NF} END{print val}' "$log_file")"
+    fi
+
     echo "${energy} ${fermi}"
 }
 
