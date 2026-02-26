@@ -83,7 +83,10 @@ The previous list contained intentional overlap to capture related themes. The i
 - [x] Added reusable density-kernel workspaces for nonspin/spin charge-density builds (`density/src/nonspin.rs`, `density/src/spin.rs`)
 - [x] Added eigensolver scratch reuse for Gram-Schmidt/projection paths to avoid per-band short-lived `Vec` allocations (`eigensolver/src/pcg.rs`)
 - [x] Introduced typed `GeometryStepContext` and reusable `OrchestrationWorkspace` in `pw` to centralize per-step setup and core-charge/symmetry scratch buffers (`pw/src/main.rs`)
-- [ ] Extend workspace coverage to force/stress spectral kernels and FFT-gradient operators; confirm steady-state allocation profile via benchmark traces
+- [x] Extended workspace coverage to force/stress spectral kernels with reusable species-formfactor caches and workspace-aware entry points (`force/src/lib.rs`, `stress/src/lib.rs`, `scf/src/utils.rs`, `scf/src/spin.rs`)
+- [x] Refactored FFT-gradient operators (`gradient_r3d`, `gradient_norm_r3d`, `divergence_r3d`) to reuse thread-local spectral scratch buffers (`rgtransform/src/lib.rs`)
+- [x] Added allocation-trace benchmark binary and helper script (`pw/src/bin/workspace_alloc_trace.rs`, `scripts/run_workspace_allocation_trace.sh`)
+- [x] Confirmed steady-state allocation profile in Docker (`cargo run -p pw --bin workspace_alloc_trace`): zero alloc/realloc calls across traced kernels after warmup
 
 ### E3 - Remove Serialized Eigenvalue Output Delay
 **Priority**: P2  

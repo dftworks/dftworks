@@ -16,6 +16,73 @@ use types::*;
 use vector3::*;
 
 use itertools::multizip;
+use std::collections::HashMap;
+
+pub struct SpectralWorkspace {
+    npw_rho: usize,
+    volume: f64,
+    atom_species_stamp: Vec<String>,
+    vpsloc_by_species: HashMap<String, Vec<f64>>,
+    rhocore_by_species: HashMap<String, Vec<f64>>,
+}
+
+impl SpectralWorkspace {
+    pub fn new() -> Self {
+        Self {
+            npw_rho: 0,
+            volume: f64::NAN,
+            atom_species_stamp: Vec::new(),
+            vpsloc_by_species: HashMap::new(),
+            rhocore_by_species: HashMap::new(),
+        }
+    }
+
+    fn prepare(&mut self, atpsps: &PSPot, crystal: &Crystal, pwden: &PWDensity) {
+        let volume = crystal.get_latt().volume();
+        let npw_rho = pwden.get_n_plane_waves();
+        let atom_species = crystal.get_atom_species();
+
+        let needs_refresh = self.npw_rho != npw_rho
+            || (self.volume - volume).abs() > 1.0e-12
+            || self.atom_species_stamp.len() != atom_species.len()
+            || !self
+                .atom_species_stamp
+                .iter()
+                .zip(atom_species.iter())
+                .all(|(lhs, rhs)| lhs == rhs);
+
+        if !needs_refresh {
+            return;
+        }
+
+        self.vpsloc_by_species.clear();
+        self.rhocore_by_species.clear();
+
+        let mut unique_species: Vec<String> = Vec::new();
+        for sp in atom_species.iter() {
+            if unique_species.iter().any(|seen| seen == sp) {
+                continue;
+            }
+            unique_species.push(sp.clone());
+        }
+
+        for sp in unique_species.iter() {
+            let atpsp = atpsps.get_psp(sp);
+
+            let mut vpslocg = vec![0.0; npw_rho];
+            vpsloc_of_g_one_atom(atpsp, pwden, volume, &mut vpslocg);
+            self.vpsloc_by_species.insert(sp.clone(), vpslocg);
+
+            let mut rhocoreg = vec![0.0; npw_rho];
+            rhocore_of_g_one_atom(atpsp, pwden, volume, &mut rhocoreg);
+            self.rhocore_by_species.insert(sp.clone(), rhocoreg);
+        }
+
+        self.npw_rho = npw_rho;
+        self.volume = volume;
+        self.atom_species_stamp = atom_species.to_vec();
+    }
+}
 
 // Force decomposition utilities.
 //
@@ -36,6 +103,19 @@ pub fn nlcc_xc(
     vxcg: &[c64],
     force: &mut [Vector3f64],
 ) {
+    let mut workspace = SpectralWorkspace::new();
+    nlcc_xc_with_workspace(atpsps, crystal, gvec, pwden, &mut workspace, vxcg, force);
+}
+
+pub fn nlcc_xc_with_workspace(
+    atpsps: &PSPot,
+    crystal: &Crystal,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    workspace: &mut SpectralWorkspace,
+    vxcg: &[c64],
+    force: &mut [Vector3f64],
+) {
     // NLCC force starts from zero and accumulates per atom.
     force.iter_mut().for_each(|x| x.set_zeros());
 
@@ -46,8 +126,8 @@ pub fn nlcc_xc(
 
     let gidx = pwden.get_gindex();
 
-    let npw_rho = pwden.get_n_plane_waves();
-    let mut atrhocoreg = vec![0.0; npw_rho];
+    workspace.prepare(atpsps, crystal, pwden);
+    let npw_rho = workspace.npw_rho;
 
     let natoms = crystal.get_n_atoms();
     let atom_positions = crystal.get_atom_positions();
@@ -60,9 +140,10 @@ pub fn nlcc_xc(
 
         let atom = atom_positions[iat];
 
-        let atpsp = atpsps.get_psp(&species[iat]);
-
-        rhocore_of_g_one_atom(atpsp, pwden, volume, &mut atrhocoreg);
+        let atrhocoreg = workspace
+            .rhocore_by_species
+            .get(&species[iat])
+            .unwrap_or_else(|| panic!("missing NLCC spectral cache for species '{}'", species[iat]));
 
         for i in 1..npw_rho {
             let mill = miller[gidx[i]];
@@ -100,6 +181,19 @@ pub fn vpsloc(
     rhog: &[c64],
     force: &mut [Vector3f64],
 ) {
+    let mut workspace = SpectralWorkspace::new();
+    vpsloc_with_workspace(atpsps, crystal, gvec, pwden, &mut workspace, rhog, force);
+}
+
+pub fn vpsloc_with_workspace(
+    atpsps: &PSPot,
+    crystal: &Crystal,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    workspace: &mut SpectralWorkspace,
+    rhog: &[c64],
+    force: &mut [Vector3f64],
+) {
     // Local ionic force in reciprocal space.
     force.iter_mut().for_each(|x| x.set_zeros());
 
@@ -110,8 +204,8 @@ pub fn vpsloc(
 
     let gidx = pwden.get_gindex();
 
-    let npw_rho = pwden.get_n_plane_waves();
-    let mut vatlocg = vec![0.0; npw_rho];
+    workspace.prepare(atpsps, crystal, pwden);
+    let npw_rho = workspace.npw_rho;
 
     let natoms = crystal.get_n_atoms();
     let atom_positions = crystal.get_atom_positions();
@@ -124,9 +218,10 @@ pub fn vpsloc(
 
         let atom = atom_positions[iat];
 
-        let atpsp = atpsps.get_psp(&species[iat]);
-
-        vpsloc_of_g_one_atom(atpsp, pwden, volume, &mut vatlocg);
+        let vatlocg = workspace
+            .vpsloc_by_species
+            .get(&species[iat])
+            .unwrap_or_else(|| panic!("missing local-potential spectral cache for species '{}'", species[iat]));
 
         for i in 1..npw_rho {
             let mill = miller[gidx[i]];

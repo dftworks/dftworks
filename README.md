@@ -261,6 +261,12 @@ If the change touches spin/MPI behavior, also run:
 docker run --rm -v "$PWD":/usr/src/app -w /usr/src/app rust-dev bash -lc 'source $HOME/.cargo/env && FORCE_BUILD=0 bash ./scripts/run_spin_mpi_parity.sh'
 ```
 
+For workspace/performance refactors, also run allocation trace:
+
+```bash
+docker run --rm -v "$PWD":/usr/src/app -w /usr/src/app rust-dev bash -lc 'source $HOME/.cargo/env && cargo run -p pw --bin workspace_alloc_trace'
+```
+
 # Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.

@@ -17,6 +17,86 @@ use pwbasis::*;
 use pwdensity::*;
 use types::*;
 use vector3::*;
+use std::collections::HashMap;
+
+pub struct SpectralWorkspace {
+    npw_rho: usize,
+    volume: f64,
+    atom_species_stamp: Vec<String>,
+    vpsloc_by_species: HashMap<String, Vec<f64>>,
+    dvpsloc_by_species: HashMap<String, Vec<f64>>,
+    rhocore_by_species: HashMap<String, Vec<f64>>,
+    drhocore_by_species: HashMap<String, Vec<f64>>,
+}
+
+impl SpectralWorkspace {
+    pub fn new() -> Self {
+        Self {
+            npw_rho: 0,
+            volume: f64::NAN,
+            atom_species_stamp: Vec::new(),
+            vpsloc_by_species: HashMap::new(),
+            dvpsloc_by_species: HashMap::new(),
+            rhocore_by_species: HashMap::new(),
+            drhocore_by_species: HashMap::new(),
+        }
+    }
+
+    fn prepare(&mut self, atpsps: &PSPot, crystal: &Crystal, pwden: &PWDensity) {
+        let volume = crystal.get_latt().volume();
+        let npw_rho = pwden.get_n_plane_waves();
+        let atom_species = crystal.get_atom_species();
+
+        let needs_refresh = self.npw_rho != npw_rho
+            || (self.volume - volume).abs() > 1.0e-12
+            || self.atom_species_stamp.len() != atom_species.len()
+            || !self
+                .atom_species_stamp
+                .iter()
+                .zip(atom_species.iter())
+                .all(|(lhs, rhs)| lhs == rhs);
+        if !needs_refresh {
+            return;
+        }
+
+        self.vpsloc_by_species.clear();
+        self.dvpsloc_by_species.clear();
+        self.rhocore_by_species.clear();
+        self.drhocore_by_species.clear();
+
+        let mut unique_species: Vec<String> = Vec::new();
+        for sp in atom_species.iter() {
+            if unique_species.iter().any(|seen| seen == sp) {
+                continue;
+            }
+            unique_species.push(sp.clone());
+        }
+
+        for sp in unique_species.iter() {
+            let atpsp = atpsps.get_psp(sp);
+
+            let mut vpslocg = vec![0.0; npw_rho];
+            vpsloc_of_g_one_atom(atpsp, pwden, volume, &mut vpslocg);
+            self.vpsloc_by_species.insert(sp.clone(), vpslocg);
+
+            let mut dvpslocg = vec![0.0; npw_rho];
+            dvpsloc_of_g_one_atom(atpsp, pwden, volume, &mut dvpslocg);
+            self.dvpsloc_by_species.insert(sp.clone(), dvpslocg);
+
+            let mut rhocoreg = vec![0.0; npw_rho];
+            rhocore_of_g_one_atom(atpsp, pwden, volume, &mut rhocoreg);
+            self.rhocore_by_species.insert(sp.clone(), rhocoreg);
+
+            let mut drhocoreg = vec![0.0; npw_rho];
+            drhocore_of_g_one_atom(atpsp, pwden, volume, &mut drhocoreg);
+            self.drhocore_by_species.insert(sp.clone(), drhocoreg);
+        }
+
+        self.npw_rho = npw_rho;
+        self.volume = volume;
+        self.atom_species_stamp = atom_species.to_vec();
+    }
+}
 
 // Stress decomposition utilities.
 //
@@ -32,8 +112,23 @@ pub fn nlcc_xc(
     pwden: &PWDensity,
     vxcg: &Vec<c64>,
 ) -> Matrix<f64> {
+    let mut workspace = SpectralWorkspace::new();
+    let mut out = Matrix::<f64>::new(3, 3);
+    nlcc_xc_with_workspace(atpsps, crystal, gvec, pwden, &mut workspace, vxcg, &mut out);
+    out
+}
+
+pub fn nlcc_xc_with_workspace(
+    atpsps: &PSPot,
+    crystal: &Crystal,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    workspace: &mut SpectralWorkspace,
+    vxcg: &[c64],
+    out: &mut Matrix<f64>,
+) {
     // NLCC stress correction from core-charge response to XC potential.
-    let mut stress_c64 = Matrix::<c64>::new(3, 3);
+    let mut stress_c64 = [[c64 { re: 0.0, im: 0.0 }; 3]; 3];
 
     let volume = crystal.get_latt().volume();
 
@@ -42,23 +137,24 @@ pub fn nlcc_xc(
 
     let gidx = pwden.get_gindex();
 
-    let npw_rho = pwden.get_n_plane_waves();
-    let mut rhocoreg = vec![0.0; npw_rho];
-    let mut drhocoreg = vec![0.0; npw_rho];
+    workspace.prepare(atpsps, crystal, pwden);
+    let npw_rho = workspace.npw_rho;
 
     let natoms = crystal.get_n_atoms();
     let atom_positions = crystal.get_atom_positions();
     let species = crystal.get_atom_species();
 
-    let unit_mat = Matrix::<f64>::unit(3);
-
     for iat in 0..natoms {
         let atom = atom_positions[iat];
 
-        let atpsp = atpsps.get_psp(&species[iat]);
-
-        rhocore_of_g_one_atom(atpsp, pwden, volume, &mut rhocoreg);
-        drhocore_of_g_one_atom(atpsp, pwden, volume, &mut drhocoreg);
+        let rhocoreg = workspace
+            .rhocore_by_species
+            .get(&species[iat])
+            .unwrap_or_else(|| panic!("missing NLCC spectral cache for species '{}'", species[iat]));
+        let drhocoreg = workspace
+            .drhocore_by_species
+            .get(&species[iat])
+            .unwrap_or_else(|| panic!("missing NLCC derivative spectral cache for species '{}'", species[iat]));
 
         for ipw in 0..npw_rho {
             let mill = miller[gidx[ipw]];
@@ -72,29 +168,35 @@ pub fn nlcc_xc(
                 re: ngd.cos(),
                 im: ngd.sin(),
             } * vxcg[ipw].conj();
-
-            let gcoord = cart[gidx[ipw]].to_vec();
+            let gcoord = cart[gidx[ipw]];
 
             for i in 0..3 {
                 for j in 0..3 {
                     // Isotropic + anisotropic pieces from radial derivative term.
-                    stress_c64[[j, i]] += comm
-                        * (rhocoreg[ipw] * unit_mat[[j, i]]
-                            + drhocoreg[ipw] * 2.0 * gcoord[j] * gcoord[i]);
+                    let unit = if i == j { 1.0 } else { 0.0 };
+                    let gi = match i {
+                        0 => gcoord.x,
+                        1 => gcoord.y,
+                        _ => gcoord.z,
+                    };
+                    let gj = match j {
+                        0 => gcoord.x,
+                        1 => gcoord.y,
+                        _ => gcoord.z,
+                    };
+                    stress_c64[j][i] +=
+                        comm * (rhocoreg[ipw] * unit + drhocoreg[ipw] * 2.0 * gj * gi);
                 }
             }
         }
     }
 
-    let mut stress = Matrix::<f64>::new(3, 3);
-
+    out.set_zeros();
     for i in 0..3 {
         for j in 0..3 {
-            stress[[i, j]] = stress_c64[[i, j]].re;
+            out[[i, j]] = stress_c64[i][j].re;
         }
     }
-
-    stress
 }
 
 pub fn vpsloc(
@@ -104,8 +206,31 @@ pub fn vpsloc(
     pwden: &PWDensity,
     rhog: &[c64],
 ) -> Matrix<f64> {
+    let mut workspace = SpectralWorkspace::new();
+    let mut out = Matrix::<f64>::new(3, 3);
+    vpsloc_with_workspace(
+        atpsps,
+        crystal,
+        gvec,
+        pwden,
+        &mut workspace,
+        rhog,
+        &mut out,
+    );
+    out
+}
+
+pub fn vpsloc_with_workspace(
+    atpsps: &PSPot,
+    crystal: &Crystal,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    workspace: &mut SpectralWorkspace,
+    rhog: &[c64],
+    out: &mut Matrix<f64>,
+) {
     // Local ionic stress from reciprocal-space local potential form factor.
-    let mut stress_c64 = Matrix::<c64>::new(3, 3);
+    let mut stress_c64 = [[c64 { re: 0.0, im: 0.0 }; 3]; 3];
 
     let volume = crystal.get_latt().volume();
 
@@ -114,23 +239,24 @@ pub fn vpsloc(
 
     let gidx = pwden.get_gindex();
 
-    let npw_rho = pwden.get_n_plane_waves();
-    let mut vatlocg = vec![0.0; npw_rho];
-    let mut dvatlocg = vec![0.0; npw_rho];
+    workspace.prepare(atpsps, crystal, pwden);
+    let npw_rho = workspace.npw_rho;
 
     let natoms = crystal.get_n_atoms();
     let atom_positions = crystal.get_atom_positions();
     let species = crystal.get_atom_species();
 
-    let unit_mat = Matrix::<f64>::unit(3);
-
     for iat in 0..natoms {
         let atom = atom_positions[iat];
 
-        let atpsp = atpsps.get_psp(&species[iat]);
-
-        vpsloc_of_g_one_atom(atpsp, pwden, volume, &mut vatlocg);
-        dvpsloc_of_g_one_atom(atpsp, pwden, volume, &mut dvatlocg);
+        let vatlocg = workspace
+            .vpsloc_by_species
+            .get(&species[iat])
+            .unwrap_or_else(|| panic!("missing local-potential spectral cache for species '{}'", species[iat]));
+        let dvatlocg = workspace
+            .dvpsloc_by_species
+            .get(&species[iat])
+            .unwrap_or_else(|| panic!("missing local-potential derivative spectral cache for species '{}'", species[iat]));
 
         for ipw in 0..npw_rho {
             let mill = miller[gidx[ipw]];
@@ -144,29 +270,35 @@ pub fn vpsloc(
                 re: ngd.cos(),
                 im: ngd.sin(),
             } * rhog[ipw].conj();
-
-            let gcoord = cart[gidx[ipw]].to_vec();
+            let gcoord = cart[gidx[ipw]];
 
             for i in 0..3 {
                 for j in 0..3 {
                     // Isotropic + anisotropic pieces from radial derivative term.
-                    stress_c64[[j, i]] += comm
-                        * (vatlocg[ipw] * unit_mat[[j, i]]
-                            + dvatlocg[ipw] * 2.0 * gcoord[j] * gcoord[i]);
+                    let unit = if i == j { 1.0 } else { 0.0 };
+                    let gi = match i {
+                        0 => gcoord.x,
+                        1 => gcoord.y,
+                        _ => gcoord.z,
+                    };
+                    let gj = match j {
+                        0 => gcoord.x,
+                        1 => gcoord.y,
+                        _ => gcoord.z,
+                    };
+                    stress_c64[j][i] +=
+                        comm * (vatlocg[ipw] * unit + dvatlocg[ipw] * 2.0 * gj * gi);
                 }
             }
         }
     }
 
-    let mut stress = Matrix::<f64>::new(3, 3);
-
+    out.set_zeros();
     for i in 0..3 {
         for j in 0..3 {
-            stress[[i, j]] = stress_c64[[i, j]].re;
+            out[[i, j]] = stress_c64[i][j].re;
         }
     }
-
-    stress
 }
 
 pub fn xc(

@@ -614,8 +614,17 @@ impl SCF for SCFSpin {
         let mut force_loc = vec![Vector3f64::zeros(); natoms];
         let mut force_vnl_local = vec![Vector3f64::zeros(); natoms];
         let mut force_vnl = vec![Vector3f64::zeros(); natoms];
+        let mut force_spectral_ws = force::SpectralWorkspace::new();
 
-        force::vpsloc(pots, crystal, gvec, pwden, &ws.rhog_tot, &mut force_loc);
+        force::vpsloc_with_workspace(
+            pots,
+            crystal,
+            gvec,
+            pwden,
+            &mut force_spectral_ws,
+            &ws.rhog_tot,
+            &mut force_loc,
+        );
 
         if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
             if let VKEigenVector::Spin(vkevecs_up, vkevecs_dn) = vkevecs {
@@ -645,8 +654,24 @@ impl SCF for SCFSpin {
             let mut force_nlcc_up = vec![Vector3f64::zeros(); natoms];
             let mut force_nlcc_dn = vec![Vector3f64::zeros(); natoms];
 
-            force::nlcc_xc(pots, crystal, gvec, pwden, vxcg_up, &mut force_nlcc_up);
-            force::nlcc_xc(pots, crystal, gvec, pwden, vxcg_dn, &mut force_nlcc_dn);
+            force::nlcc_xc_with_workspace(
+                pots,
+                crystal,
+                gvec,
+                pwden,
+                &mut force_spectral_ws,
+                vxcg_up,
+                &mut force_nlcc_up,
+            );
+            force::nlcc_xc_with_workspace(
+                pots,
+                crystal,
+                gvec,
+                pwden,
+                &mut force_spectral_ws,
+                vxcg_dn,
+                &mut force_nlcc_dn,
+            );
 
             for iat in 0..natoms {
                 force_nlcc[iat] = (force_nlcc_up[iat] + force_nlcc_dn[iat]) / 2.0;
@@ -713,11 +738,30 @@ impl SCF for SCFSpin {
         let mut stress_hartree = stress::hartree(gvec, pwden, &ws.rhog_tot);
         let mut stress_xc =
             stress::xc_spin(crystal.get_latt(), rho_3d, rhocore_3d, &ws.vxc_3d, &ws.exc_3d);
+        let mut stress_spectral_ws = stress::SpectralWorkspace::new();
 
         let (vxcg_up, vxcg_dn) = ws.vxcg.as_spin().unwrap();
 
-        let stress_xc_nlcc_up = stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg_up);
-        let stress_xc_nlcc_dn = stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg_dn);
+        let mut stress_xc_nlcc_up = Matrix::<f64>::new(3, 3);
+        let mut stress_xc_nlcc_dn = Matrix::<f64>::new(3, 3);
+        stress::nlcc_xc_with_workspace(
+            pots,
+            crystal,
+            gvec,
+            pwden,
+            &mut stress_spectral_ws,
+            vxcg_up,
+            &mut stress_xc_nlcc_up,
+        );
+        stress::nlcc_xc_with_workspace(
+            pots,
+            crystal,
+            gvec,
+            pwden,
+            &mut stress_spectral_ws,
+            vxcg_dn,
+            &mut stress_xc_nlcc_dn,
+        );
 
         let mut stress_xc_nlcc = Matrix::<f64>::new(3, 3);
 
@@ -728,7 +772,16 @@ impl SCF for SCFSpin {
             }
         }
 
-        let mut stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, &ws.rhog_tot);
+        let mut stress_loc = Matrix::<f64>::new(3, 3);
+        stress::vpsloc_with_workspace(
+            pots,
+            crystal,
+            gvec,
+            pwden,
+            &mut stress_spectral_ws,
+            &ws.rhog_tot,
+            &mut stress_loc,
+        );
         let mut stress_ewald = ewald.get_stress().clone();
 
         if control.get_symmetry() {

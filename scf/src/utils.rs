@@ -461,12 +461,14 @@ pub fn compute_force(
     let mut force_loc = vec![Vector3f64::zeros(); natoms];
     let mut force_vnl_local = vec![Vector3f64::zeros(); natoms];
     let mut force_vnl = vec![Vector3f64::zeros(); natoms];
+    let mut force_spectral_ws = force::SpectralWorkspace::new();
 
-    force::vpsloc(
+    force::vpsloc_with_workspace(
         pots,
         crystal,
         gvec,
         pwden,
+        &mut force_spectral_ws,
         rhog.as_non_spin().unwrap(),
         &mut force_loc,
     );
@@ -493,11 +495,12 @@ pub fn compute_force(
 
     let mut force_nlcc = vec![Vector3f64::zeros(); natoms];
 
-    force::nlcc_xc(
+    force::nlcc_xc_with_workspace(
         pots,
         crystal,
         gvec,
         pwden,
+        &mut force_spectral_ws,
         vxcg.as_non_spin().unwrap(),
         &mut force_nlcc,
     );
@@ -576,7 +579,17 @@ pub fn compute_stress(
     dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
 
     let mut stress_hartree = stress::hartree(gvec, pwden, rhog.as_non_spin().unwrap());
-    let mut stress_loc = stress::vpsloc(pots, crystal, gvec, pwden, rhog.as_non_spin().unwrap());
+    let mut stress_spectral_ws = stress::SpectralWorkspace::new();
+    let mut stress_loc = Matrix::new(3, 3);
+    stress::vpsloc_with_workspace(
+        pots,
+        crystal,
+        gvec,
+        pwden,
+        &mut stress_spectral_ws,
+        rhog.as_non_spin().unwrap(),
+        &mut stress_loc,
+    );
 
     let mut stress_xc = stress::xc(
         crystal.get_latt(),
@@ -586,8 +599,16 @@ pub fn compute_stress(
         &exc_3d,
     );
 
-    let mut stress_xc_nlcc =
-        stress::nlcc_xc(pots, crystal, gvec, pwden, vxcg.as_non_spin().unwrap());
+    let mut stress_xc_nlcc = Matrix::new(3, 3);
+    stress::nlcc_xc_with_workspace(
+        pots,
+        crystal,
+        gvec,
+        pwden,
+        &mut stress_spectral_ws,
+        vxcg.as_non_spin().unwrap(),
+        &mut stress_xc_nlcc,
+    );
 
     let mut stress_ewald = ewald.get_stress().clone();
 
