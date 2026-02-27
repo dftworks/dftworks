@@ -454,13 +454,21 @@ New canonical refactoring items are added below to unblock future feature expans
 
 ### E25 - K-Point Domain Model and Index Safety
 **Priority**: P2  
-**Status**: Open  
-**Files**: `kpts_distribution/src/lib.rs`, `pw/src/main.rs`, `scf/src/spin.rs`, `scf/src/nonspin.rs`
+**Status**: In Progress (2026-02-26)  
+**Files**: `kpts_distribution/src/lib.rs`, `pw/src/main.rs`, `scf/src/spin.rs`, `scf/src/utils.rs`
 
 - Introduce explicit `KPointDomain` (`global_index`, `local_slot`, `weight`, `basis_ref`) to avoid index drift bugs
 - Eliminate duplicated k-point loops for up/down channel setup and checkpoint file naming
 - Provide stable helpers for local/global index transforms used by logging, restart, and parity scripts
 - Add assertions and tests that cover uneven rank partitioning and empty-local-k cases
+
+**Implementation Update (2026-02-26)**
+- [x] Extended `KPointDomain` with explicit slot helpers (`slot`, `slot_from_global`, `contains_global`, `global_last_or_first_minus_one`) and renamed slot field to `local_slot` for clearer local/global semantics
+- [x] Added k-domain invariants tests covering uneven partitioning, oversubscribed ranks, empty-local domains, and reversible local/global transforms
+- [x] Refactored `pw` wavefunction restart/checkpoint paths to use typed `KPointDomain` iteration instead of manual `ik_first..=ik_last` loops for file existence and metadata checks
+- [x] Consolidated spin/nonspin checkpoint filename traversal via shared helpers driven by `(spin_scheme, global_k_index)`
+- [x] Reworked SCF eigenvalue display loops to zip channel/basis/eigenvalue slices (nonspin + spin) to avoid index drift from manual `ik_local` indexing
+- [ ] Docker correctness gates pending rerun (Docker Desktop API instability in this session: repeated `500` on `_ping`/container create and unexpected EOF while waiting for container)
 
 **Acceptance Criteria**
 - K-point loops use typed domain iterators instead of manual index math

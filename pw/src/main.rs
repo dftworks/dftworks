@@ -6,6 +6,7 @@ use dwconsts::*;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
+use kpts_distribution::KPointDomain;
 use kscf::KSCF;
 use matrix::*;
 use mpi_sys::MPI_COMM_WORLD;
@@ -369,10 +370,10 @@ impl<'a> RuntimeContext<'a> {
         }
     }
 
-    fn kpoint_domain(&self) -> kpts_distribution::KPointDomain {
+    fn kpoint_domain(&self) -> KPointDomain {
         let nkpt = self.kpts.get_n_kpts();
         let nrank = dwmpi::get_comm_world_size() as usize;
-        kpts_distribution::KPointDomain::for_current_rank(nkpt, nrank)
+        KPointDomain::for_current_rank(nkpt, nrank)
     }
 
     fn checkpoint_meta(&self) -> CheckpointMeta {
@@ -381,7 +382,7 @@ impl<'a> RuntimeContext<'a> {
 }
 
 struct ElectronicStepContext {
-    k_domain: kpts_distribution::KPointDomain,
+    k_domain: KPointDomain,
     vpwwfc: Vec<PWBasis>,
     vvnl: Vec<VNL>,
 }
@@ -402,7 +403,7 @@ impl ElectronicStepContext {
         let mut vvnl = Vec::<VNL>::with_capacity(k_domain.len());
         for slot in k_domain.iter() {
             let ik = slot.global_index;
-            let ilocal = slot.local_index;
+            let ilocal = slot.local_slot;
             let vnl = VNL::new(ik, runtime.pots, &vpwwfc[ilocal], runtime.crystal);
             vvnl.push(vnl);
         }
@@ -414,12 +415,12 @@ impl ElectronicStepContext {
         }
     }
 
-    fn global_k_range(&self) -> Option<(usize, usize)> {
-        self.k_domain.global_range()
-    }
-
     fn global_k_first_or_zero(&self) -> usize {
         self.k_domain.global_first_or_zero()
+    }
+
+    fn kpoint_domain(&self) -> &KPointDomain {
+        &self.k_domain
     }
 
     fn local_nkpt(&self) -> usize {
@@ -468,7 +469,7 @@ fn build_kscf_channel<'a>(
 
     for slot in electronic_ctx.k_domain.iter() {
         let ik = slot.global_index;
-        let ilocal = slot.local_index;
+        let ilocal = slot.local_slot;
         let k_frac = runtime.kpts.get_k_frac(ik);
         let k_cart = runtime.kpts.frac_to_cart(&k_frac, &blatt);
         let k_weight = runtime.kpts.get_k_weight(ik);
@@ -812,26 +813,23 @@ fn main() {
             electronic_ctx.build_scf_state(&runtime_ctx, gvec, pwden, fftgrid.get_size());
 
         if geom_iter == 1 && control.get_restart() {
-            if let Some((ik_first_local, ik_last_local)) = electronic_ctx.global_k_range() {
-                match try_load_wavefunction_checkpoint(
-                    spin_scheme,
-                    ik_first_local,
-                    ik_last_local,
-                    blatt,
-                    &expected_checkpoint_meta,
-                    &electronic_ctx.vpwwfc,
-                    &mut vkevecs,
-                ) {
-                    Ok(message) => {
-                        if dwmpi::is_root() {
-                            println!("   {}", message);
-                        }
+            match try_load_wavefunction_checkpoint(
+                spin_scheme,
+                electronic_ctx.kpoint_domain(),
+                blatt,
+                &expected_checkpoint_meta,
+                &electronic_ctx.vpwwfc,
+                &mut vkevecs,
+            ) {
+                Ok(message) => {
+                    if dwmpi::is_root() {
+                        println!("   {}", message);
                     }
-                    Err(err) => {
-                        if dwmpi::is_root() {
-                            println!("   NOTE: {}", err);
-                            println!("   NOTE: continue with default wavefunction initialization");
-                        }
+                }
+                Err(err) => {
+                    if dwmpi::is_root() {
+                        println!("   NOTE: {}", err);
+                        println!("   NOTE: continue with default wavefunction initialization");
                     }
                 }
             }
@@ -1070,18 +1068,17 @@ fn try_load_density_checkpoint(
 
 fn try_load_wavefunction_checkpoint(
     spin_scheme: SpinScheme,
-    ik_first: usize,
-    ik_last: usize,
+    k_domain: &KPointDomain,
     expected_blatt: &lattice::Lattice,
     expected_meta: &CheckpointMeta,
     vpwwfc: &[PWBasis],
     vkevecs: &mut VKEigenVector,
 ) -> Result<String, String> {
-    if ik_last < ik_first || vpwwfc.is_empty() {
+    if k_domain.is_empty() || vpwwfc.is_empty() {
         return Err("skip wavefunction restart: no local k-points on this rank".to_string());
     }
 
-    let local_nk = ik_last - ik_first + 1;
+    let local_nk = k_domain.len();
     if local_nk != vpwwfc.len() {
         return Err(format!(
             "wavefunction restart mismatch: local_nk={} but local basis count={}",
@@ -1090,24 +1087,24 @@ fn try_load_wavefunction_checkpoint(
         ));
     }
 
-    for ik in ik_first..=ik_last {
-        let ready = match spin_scheme {
-            SpinScheme::NonSpin => Path::new(&format!("out.wfc.k.{}.hdf5", ik)).exists(),
-            SpinScheme::Spin => {
-                Path::new(&format!("out.wfc.up.k.{}.hdf5", ik)).exists()
-                    && Path::new(&format!("out.wfc.dn.k.{}.hdf5", ik)).exists()
+    for slot in k_domain.iter() {
+        for filename in checkpoint_wavefunction_filenames(spin_scheme, slot.global_index)? {
+            if !Path::new(&filename).exists() {
+                return Err(format!(
+                    "wavefunction restart files are incomplete for local slot {} (global k-index {}): missing '{}'",
+                    slot.local_slot,
+                    slot.global_index,
+                    filename
+                ));
             }
-            SpinScheme::Ncl => false,
-        };
-        if !ready {
-            return Err(format!(
-                "wavefunction restart files are incomplete for local k-index {}",
-                ik
-            ));
         }
     }
 
-    validate_wavefunction_checkpoint_metadata(spin_scheme, ik_first, ik_last, expected_meta)?;
+    validate_wavefunction_checkpoint_metadata(spin_scheme, k_domain, expected_meta)?;
+
+    let (ik_first, ik_last) = k_domain
+        .global_range()
+        .ok_or_else(|| "skip wavefunction restart: no local k-points on this rank".to_string())?;
 
     let (loaded_pwbasis, checkpoint_blatt, loaded_evecs) =
         VKEigenVector::try_load_hdf5(matches!(spin_scheme, SpinScheme::Spin), ik_first, ik_last)?;
@@ -1127,13 +1124,24 @@ fn try_load_wavefunction_checkpoint(
         ));
     }
 
-    for (i, (loaded, expected)) in loaded_pwbasis.iter().zip(vpwwfc.iter()).enumerate() {
-        if loaded.get_k_index() != expected.get_k_index() {
+    for (slot, (loaded, expected)) in k_domain
+        .iter()
+        .zip(loaded_pwbasis.iter().zip(vpwwfc.iter()))
+    {
+        if loaded.get_k_index() != slot.global_index {
             return Err(format!(
-                "wavefunction restart mismatch at local k-slot {}: loaded k_index={} expected={}",
-                i,
+                "wavefunction restart mismatch at local slot {}: loaded k_index={} expected={}",
+                slot.local_slot,
                 loaded.get_k_index(),
-                expected.get_k_index()
+                slot.global_index
+            ));
+        }
+        if expected.get_k_index() != slot.global_index {
+            return Err(format!(
+                "wavefunction setup mismatch at local slot {}: expected basis k_index={} but domain expects {}",
+                slot.local_slot,
+                expected.get_k_index(),
+                slot.global_index
             ));
         }
         if loaded.get_n_plane_waves() != expected.get_n_plane_waves() {
@@ -1146,40 +1154,39 @@ fn try_load_wavefunction_checkpoint(
         }
     }
 
-    validate_loaded_wavefunction_shapes(&loaded_evecs, vkevecs, ik_first)?;
+    validate_loaded_wavefunction_shapes(&loaded_evecs, vkevecs, k_domain)?;
 
     *vkevecs = loaded_evecs;
 
     Ok(format!(
-        "loaded restart wavefunctions for local k-range [{}..={}]",
-        ik_first, ik_last
+        "loaded restart wavefunctions for local k-range [{}..={}] (local_nk={})",
+        ik_first, ik_last, local_nk
     ))
+}
+
+fn checkpoint_wavefunction_filenames(
+    spin_scheme: SpinScheme,
+    ik_global: usize,
+) -> Result<Vec<String>, String> {
+    match spin_scheme {
+        SpinScheme::NonSpin => Ok(vec![format!("out.wfc.k.{}.hdf5", ik_global)]),
+        SpinScheme::Spin => Ok(vec![
+            format!("out.wfc.up.k.{}.hdf5", ik_global),
+            format!("out.wfc.dn.k.{}.hdf5", ik_global),
+        ]),
+        SpinScheme::Ncl => Err("restart requested for unsupported spin_scheme='ncl'".to_string()),
+    }
 }
 
 fn validate_wavefunction_checkpoint_metadata(
     spin_scheme: SpinScheme,
-    ik_first: usize,
-    ik_last: usize,
+    k_domain: &KPointDomain,
     expected_meta: &CheckpointMeta,
 ) -> Result<(), String> {
-    for ik in ik_first..=ik_last {
-        match spin_scheme {
-            SpinScheme::NonSpin => {
-                let filename = format!("out.wfc.k.{}.hdf5", ik);
-                let checkpoint_meta = read_checkpoint_meta_required(&filename)?;
-                checkpoint_meta.validate_against(expected_meta, RESTART_META_TOL)?;
-            }
-            SpinScheme::Spin => {
-                let filename_up = format!("out.wfc.up.k.{}.hdf5", ik);
-                let filename_dn = format!("out.wfc.dn.k.{}.hdf5", ik);
-                let checkpoint_meta_up = read_checkpoint_meta_required(&filename_up)?;
-                let checkpoint_meta_dn = read_checkpoint_meta_required(&filename_dn)?;
-                checkpoint_meta_up.validate_against(expected_meta, RESTART_META_TOL)?;
-                checkpoint_meta_dn.validate_against(expected_meta, RESTART_META_TOL)?;
-            }
-            SpinScheme::Ncl => {
-                return Err("restart requested for unsupported spin_scheme='ncl'".to_string())
-            }
+    for slot in k_domain.iter() {
+        for filename in checkpoint_wavefunction_filenames(spin_scheme, slot.global_index)? {
+            let checkpoint_meta = read_checkpoint_meta_required(&filename)?;
+            checkpoint_meta.validate_against(expected_meta, RESTART_META_TOL)?;
         }
     }
 
@@ -1199,7 +1206,7 @@ fn read_checkpoint_meta_required(filename: &str) -> Result<CheckpointMeta, Strin
 fn validate_loaded_wavefunction_shapes(
     loaded: &VKEigenVector,
     expected: &VKEigenVector,
-    ik_first: usize,
+    k_domain: &KPointDomain,
 ) -> Result<(), String> {
     match (loaded, expected) {
         (VKEigenVector::NonSpin(loaded_ns), VKEigenVector::NonSpin(expected_ns)) => {
@@ -1210,13 +1217,17 @@ fn validate_loaded_wavefunction_shapes(
                     expected_ns.len()
                 ));
             }
-            for (i, (loaded_mat, expected_mat)) in loaded_ns.iter().zip(expected_ns.iter()).enumerate()
+            for (local_slot, (loaded_mat, expected_mat)) in
+                loaded_ns.iter().zip(expected_ns.iter()).enumerate()
             {
                 if loaded_mat.nrow() != expected_mat.nrow() || loaded_mat.ncol() != expected_mat.ncol()
                 {
+                    let k_index = k_domain
+                        .global_index(local_slot)
+                        .unwrap_or(k_domain.global_first_or_zero() + local_slot);
                     return Err(format!(
                         "wavefunction restart shape mismatch at k_index {}: loaded {}x{}, expected {}x{}",
-                        ik_first + i,
+                        k_index,
                         loaded_mat.nrow(),
                         loaded_mat.ncol(),
                         expected_mat.nrow(),
@@ -1235,13 +1246,17 @@ fn validate_loaded_wavefunction_shapes(
                     expected_dn.len()
                 ));
             }
-            for (i, (loaded_mat, expected_mat)) in loaded_up.iter().zip(expected_up.iter()).enumerate()
+            for (local_slot, (loaded_mat, expected_mat)) in
+                loaded_up.iter().zip(expected_up.iter()).enumerate()
             {
                 if loaded_mat.nrow() != expected_mat.nrow() || loaded_mat.ncol() != expected_mat.ncol()
                 {
+                    let k_index = k_domain
+                        .global_index(local_slot)
+                        .unwrap_or(k_domain.global_first_or_zero() + local_slot);
                     return Err(format!(
                         "wavefunction restart shape mismatch (up) at k_index {}: loaded {}x{}, expected {}x{}",
-                        ik_first + i,
+                        k_index,
                         loaded_mat.nrow(),
                         loaded_mat.ncol(),
                         expected_mat.nrow(),
@@ -1249,13 +1264,17 @@ fn validate_loaded_wavefunction_shapes(
                     ));
                 }
             }
-            for (i, (loaded_mat, expected_mat)) in loaded_dn.iter().zip(expected_dn.iter()).enumerate()
+            for (local_slot, (loaded_mat, expected_mat)) in
+                loaded_dn.iter().zip(expected_dn.iter()).enumerate()
             {
                 if loaded_mat.nrow() != expected_mat.nrow() || loaded_mat.ncol() != expected_mat.ncol()
                 {
+                    let k_index = k_domain
+                        .global_index(local_slot)
+                        .unwrap_or(k_domain.global_first_or_zero() + local_slot);
                     return Err(format!(
                         "wavefunction restart shape mismatch (dn) at k_index {}: loaded {}x{}, expected {}x{}",
-                        ik_first + i,
+                        k_index,
                         loaded_mat.nrow(),
                         loaded_mat.ncol(),
                         expected_mat.nrow(),

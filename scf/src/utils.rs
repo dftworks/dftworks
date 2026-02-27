@@ -217,15 +217,22 @@ pub fn display_eigen_values(
         dwmpi::barrier(MPI_COMM_WORLD);
 
         if irank == rank {
-            for (ik, evals) in t_vkevals.iter().enumerate() {
-                let g_ik = t_vkscf[ik].get_ik();
+            debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
+            debug_assert_eq!(t_vkscf.len(), vpwwfc.len());
+
+            for (kscf_k, evals, pwwfc_k) in itertools::multizip((
+                t_vkscf.iter(),
+                t_vkevals.iter(),
+                vpwwfc.iter(),
+            )) {
+                let g_ik = kscf_k.get_ik();
                 let k_frac = kpts.get_k_frac(g_ik);
                 let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                let npw_wfc = vpwwfc[ik].get_n_plane_waves();
+                let npw_wfc = pwwfc_k.get_n_plane_waves();
 
                 print_k_point(g_ik, k_frac, k_cart, npw_wfc);
 
-                let occ = t_vkscf[ik].get_occ();
+                let occ = kscf_k.get_occ();
 
                 print_eigen_values(evals, occ);
             }

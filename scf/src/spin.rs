@@ -583,19 +583,30 @@ impl SCF for SCFSpin {
         if dwmpi::is_root() {
             if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
                 if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
-                    for ik_local in 0..vkscf_up.len() {
-                        let ik_global = vkscf_up[ik_local].get_ik();
+                    debug_assert_eq!(vkscf_up.len(), vkscf_dn.len());
+                    debug_assert_eq!(vkscf_up.len(), vkevals_up.len());
+                    debug_assert_eq!(vkscf_up.len(), vkevals_dn.len());
+                    debug_assert_eq!(vkscf_up.len(), vpwwfc.len());
+
+                    for (kscf_up_k, kscf_dn_k, evals_up, evals_dn, pwwfc_k) in itertools::multizip(
+                        (
+                            vkscf_up.iter(),
+                            vkscf_dn.iter(),
+                            vkevals_up.iter(),
+                            vkevals_dn.iter(),
+                            vpwwfc.iter(),
+                        ),
+                    )
+                    {
+                        let ik_global = kscf_up_k.get_ik();
                         let k_frac = kpts.get_k_frac(ik_global);
                         let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                        let npw_wfc = vpwwfc[ik_local].get_n_plane_waves();
+                        let npw_wfc = pwwfc_k.get_n_plane_waves();
 
                         print_k_point(ik_global, k_frac, k_cart, npw_wfc);
 
-                        let occ_up = vkscf_up[ik_local].get_occ();
-                        let occ_dn = vkscf_dn[ik_local].get_occ();
-
-                        let evals_up = &vkevals_up[ik_local];
-                        let evals_dn = &vkevals_dn[ik_local];
+                        let occ_up = kscf_up_k.get_occ();
+                        let occ_dn = kscf_dn_k.get_occ();
 
                         print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
                     }

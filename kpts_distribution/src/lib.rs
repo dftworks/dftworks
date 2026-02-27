@@ -70,8 +70,15 @@ fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KPointSlot {
-    pub local_index: usize,
+    pub local_slot: usize,
     pub global_index: usize,
+}
+
+impl KPointSlot {
+    #[inline]
+    pub fn local_index(&self) -> usize {
+        self.local_slot
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +128,34 @@ impl KPointDomain {
     }
 
     #[inline]
+    pub fn global_last_or_first_minus_one(&self) -> usize {
+        self.global_range()
+            .map(|(_, last)| last)
+            .unwrap_or_else(|| self.first.saturating_sub(1))
+    }
+
+    #[inline]
+    pub fn contains_global(&self, global_index: usize) -> bool {
+        self.local_index(global_index).is_some()
+    }
+
+    #[inline]
+    pub fn slot(&self, local_slot: usize) -> Option<KPointSlot> {
+        self.global_index(local_slot).map(|global_index| KPointSlot {
+            local_slot,
+            global_index,
+        })
+    }
+
+    #[inline]
+    pub fn slot_from_global(&self, global_index: usize) -> Option<KPointSlot> {
+        self.local_index(global_index).map(|local_slot| KPointSlot {
+            local_slot,
+            global_index,
+        })
+    }
+
+    #[inline]
     pub fn global_index(&self, local_index: usize) -> Option<usize> {
         if local_index < self.total {
             Some(self.first + local_index)
@@ -161,12 +196,12 @@ impl Iterator for KPointDomainIter {
             return None;
         }
 
-        let local_index = self.next_local;
+        let local_slot = self.next_local;
         self.next_local += 1;
 
         Some(KPointSlot {
-            local_index,
-            global_index: self.first + local_index,
+            local_slot,
+            global_index: self.first + local_slot,
         })
     }
 }
@@ -281,18 +316,26 @@ fn test_kpoint_domain_iteration_and_mapping() {
         slots,
         vec![
             KPointSlot {
-                local_index: 0,
+                local_slot: 0,
                 global_index: 4
             },
             KPointSlot {
-                local_index: 1,
+                local_slot: 1,
                 global_index: 5
             },
             KPointSlot {
-                local_index: 2,
+                local_slot: 2,
                 global_index: 6
             },
         ]
+    );
+    assert_eq!(domain.slot(1), Some(KPointSlot { local_slot: 1, global_index: 5 }));
+    assert_eq!(
+        domain.slot_from_global(6),
+        Some(KPointSlot {
+            local_slot: 2,
+            global_index: 6
+        })
     );
     assert_eq!(domain.global_index(0), Some(4));
     assert_eq!(domain.global_index(2), Some(6));
@@ -301,4 +344,57 @@ fn test_kpoint_domain_iteration_and_mapping() {
     assert_eq!(domain.local_index(6), Some(2));
     assert_eq!(domain.local_index(3), None);
     assert_eq!(domain.local_index(7), None);
+    assert!(domain.contains_global(5));
+    assert!(!domain.contains_global(7));
+}
+
+#[test]
+fn test_empty_local_domain_invariants() {
+    let domain = KPointDomain::new(3, 5, 4);
+    assert!(domain.is_empty());
+    assert_eq!(domain.len(), 0);
+    assert_eq!(domain.global_range(), None);
+    assert_eq!(domain.global_first_or_zero(), 0);
+    assert_eq!(domain.slot(0), None);
+    assert_eq!(domain.slot_from_global(0), None);
+    assert_eq!(domain.global_index(0), None);
+    assert_eq!(domain.local_index(0), None);
+    assert_eq!(domain.iter().count(), 0);
+}
+
+#[test]
+fn test_partition_invariants_uneven_and_oversubscribed() {
+    let test_cases = [(17usize, 6usize), (3usize, 8usize)];
+
+    for (nkpt, nrank) in test_cases {
+        let mut seen = vec![false; nkpt];
+        let mut seen_count = 0usize;
+
+        for rank in 0..nrank {
+            let domain = KPointDomain::new(nkpt, nrank, rank);
+
+            // Range length and iterator length always agree.
+            let expected_len = domain
+                .global_range()
+                .map(|(first, last)| last - first + 1)
+                .unwrap_or(0);
+            assert_eq!(domain.len(), expected_len);
+
+            for slot in domain.iter() {
+                // local->global and global->local transforms must be reversible.
+                assert_eq!(domain.global_index(slot.local_slot), Some(slot.global_index));
+                assert_eq!(domain.local_index(slot.global_index), Some(slot.local_slot));
+                assert_eq!(domain.slot(slot.local_slot), Some(slot));
+                assert_eq!(domain.slot_from_global(slot.global_index), Some(slot));
+
+                // Each global k-point belongs to exactly one rank.
+                assert!(!seen[slot.global_index]);
+                seen[slot.global_index] = true;
+                seen_count += 1;
+            }
+        }
+
+        assert_eq!(seen_count, nkpt);
+        assert!(seen.into_iter().all(|v| v));
+    }
 }
