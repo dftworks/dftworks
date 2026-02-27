@@ -542,8 +542,17 @@ fn main() {
 
     // read in control parameters
 
-    let mut control = Control::new();
-    control.read_file("in.ctrl");
+    let control = match Control::from_file("in.ctrl") {
+        Ok(control) => control,
+        Err(err) => {
+            if dwmpi::is_root() {
+                eprintln!("failed to load control file: {}", err);
+            }
+            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::finalize();
+            std::process::exit(1);
+        }
+    };
 
     // dwfft3d
     dwfft3d::init_backend();
@@ -577,7 +586,17 @@ fn main() {
 
     // read in kpts
 
-    let kpts = kpts::new(control.get_kpts_scheme(), &crystal, control.get_symmetry());
+    let kpts = match kpts::try_new(control.get_kpts_scheme(), &crystal, control.get_symmetry()) {
+        Ok(kpts) => kpts,
+        Err(err) => {
+            if dwmpi::is_root() {
+                eprintln!("failed to initialize k-points: {}", err);
+            }
+            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::finalize();
+            std::process::exit(1);
+        }
+    };
 
     if dwmpi::is_root() {
         kpts.display();

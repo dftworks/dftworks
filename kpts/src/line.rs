@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
-use crate::KPTS;
+use crate::{KPTS, KptsError};
 
 pub struct KptsLine {
     k_frac: Vec<Vector3f64>,
@@ -15,8 +15,15 @@ pub struct KptsLine {
 
 impl KptsLine {
     pub fn new() -> KptsLine {
+        Self::try_new().unwrap_or_else(|err| panic!("failed to build line k-points: {}", err))
+    }
+
+    pub fn try_new() -> Result<KptsLine, KptsError> {
         // Read explicit high-symmetry path from in.kline.
-        let k_frac = read_k_line();
+        let k_frac = read_k_line()?;
+        if k_frac.is_empty() {
+            return Err(KptsError::new("in.kline did not produce any k-points"));
+        }
 
         let nk = k_frac.len();
 
@@ -24,11 +31,11 @@ impl KptsLine {
 
         let k_degeneracy = vec![1; nk];
 
-        KptsLine {
+        Ok(KptsLine {
             k_frac,
             k_degeneracy,
             k_weight,
-        }
+        })
     }
 }
 
@@ -36,7 +43,6 @@ impl KPTS for KptsLine {
     fn get_k_mesh(&self) -> [i32; 3] {
         // Line mode does not represent a regular 3D mesh.
         println!("get_k_mesh not implemented");
-        //std::process::exit(1);
 
         [0, 0, 0]
     }
@@ -102,30 +108,75 @@ impl KPTS for KptsLine {
     }
 }
 
-fn read_k_line() -> Vec<Vector3f64> {
+fn parse_f64_token(tokens: &[&str], idx: usize, line_no: usize, label: &str) -> Result<f64, KptsError> {
+    let value = tokens.get(idx).ok_or_else(|| {
+        KptsError::new(format!(
+            "in.kline:{}: missing '{}' token at column {}",
+            line_no, label, idx
+        ))
+    })?;
+    value.parse::<f64>().map_err(|e| {
+        KptsError::new(format!(
+            "in.kline:{}: invalid {} '{}': {}",
+            line_no, label, value, e
+        ))
+    })
+}
+
+fn read_k_line() -> Result<Vec<Vector3f64>, KptsError> {
     // in.kline format:
     // line 1: "npts <N>"
     // next lines: label1 k1x k1y k1z label2 k2x k2y k2z
     // Each segment is linearly interpolated with N points.
-    let lines = read_file_data_to_vec("in.kline");
+    let lines = read_file_data_to_vec("in.kline")?;
+    if lines.is_empty() {
+        return Err(KptsError::new("in.kline is empty"));
+    }
 
-    let s: Vec<&str> = lines[0].split_whitespace().collect();
-    let npts: usize = s[1].parse().unwrap();
+    let header: Vec<&str> = lines[0].split_whitespace().collect();
+    if header.len() != 2 || header[0] != "npts" {
+        return Err(KptsError::new(
+            "in.kline:1: expected header format 'npts <N>'",
+        ));
+    }
+    let npts: usize = header[1].parse().map_err(|e| {
+        KptsError::new(format!(
+            "in.kline:1: invalid npts '{}': {}",
+            header[1], e
+        ))
+    })?;
+    if npts < 2 {
+        return Err(KptsError::new(format!(
+            "in.kline:1: npts must be >= 2, got {}",
+            npts
+        )));
+    }
 
     let mut kpts = Vec::new();
 
     // Example segment:
     // L 0.5 0.5 0.5 G 0.0 0.0 0.0
-    for line in lines[1..].iter() {
+    for (line_idx, line) in lines[1..].iter().enumerate() {
+        let line_no = line_idx + 2;
         let s: Vec<&str> = line.split_whitespace().collect();
+        if s.is_empty() {
+            continue;
+        }
+        if s.len() != 8 {
+            return Err(KptsError::new(format!(
+                "in.kline:{}: expected 8 tokens '<label1> k1x k1y k1z <label2> k2x k2y k2z', got {}",
+                line_no,
+                s.len()
+            )));
+        }
 
-        let x1: f64 = s[1].parse().unwrap();
-        let y1: f64 = s[2].parse().unwrap();
-        let z1: f64 = s[3].parse().unwrap();
+        let x1 = parse_f64_token(s.as_slice(), 1, line_no, "k1x")?;
+        let y1 = parse_f64_token(s.as_slice(), 2, line_no, "k1y")?;
+        let z1 = parse_f64_token(s.as_slice(), 3, line_no, "k1z")?;
 
-        let x2: f64 = s[5].parse().unwrap();
-        let y2: f64 = s[6].parse().unwrap();
-        let z2: f64 = s[7].parse().unwrap();
+        let x2 = parse_f64_token(s.as_slice(), 5, line_no, "k2x")?;
+        let y2 = parse_f64_token(s.as_slice(), 6, line_no, "k2y")?;
+        let z2 = parse_f64_token(s.as_slice(), 7, line_no, "k2z")?;
 
         let xspace = (x2 - x1) / ((npts - 1) as f64);
         let yspace = (y2 - y1) / ((npts - 1) as f64);
@@ -142,14 +193,28 @@ fn read_k_line() -> Vec<Vector3f64> {
         }
     }
 
-    kpts
+    if kpts.is_empty() {
+        return Err(KptsError::new("in.kline did not define any path segments"));
+    }
+
+    Ok(kpts)
 }
 
-fn read_file_data_to_vec(kfile: &str) -> Vec<String> {
+fn read_file_data_to_vec(kfile: &str) -> Result<Vec<String>, KptsError> {
     // Lightweight line reader used by k-point input parsers.
-    let file = File::open(kfile).unwrap();
-    let lines = BufReader::new(file).lines();
-    let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();
-
-    lines
+    let file = File::open(kfile)
+        .map_err(|e| KptsError::new(format!("failed to open '{}': {}", kfile, e)))?;
+    let mut lines = Vec::new();
+    for (line_idx, line_res) in BufReader::new(file).lines().enumerate() {
+        let line = line_res.map_err(|e| {
+            KptsError::new(format!(
+                "failed to read '{}', line {}: {}",
+                kfile,
+                line_idx + 1,
+                e
+            ))
+        })?;
+        lines.push(line);
+    }
+    Ok(lines)
 }

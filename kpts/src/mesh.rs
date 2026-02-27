@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
-use crate::KPTS;
+use crate::{KPTS, KptsError};
 
 pub struct KptsMesh {
     k_frac: Vec<Vector3f64>,
@@ -20,8 +20,13 @@ pub struct KptsMesh {
 
 impl KptsMesh {
     pub fn new(crystal: &Crystal, use_symmetry: bool) -> KptsMesh {
+        Self::try_new(crystal, use_symmetry)
+            .unwrap_or_else(|err| panic!("failed to build mesh k-points: {}", err))
+    }
+
+    pub fn try_new(crystal: &Crystal, use_symmetry: bool) -> Result<KptsMesh, KptsError> {
         // Read Monkhorst-Pack mesh + shift from in.kmesh.
-        let (k_mesh, is_shift) = read_k_mesh();
+        let (k_mesh, is_shift) = read_k_mesh()?;
 
         // Convert crystal data to the format expected by the symmetry helper.
         let mut lattice = crystal.get_latt().as_2d_array_row_major();
@@ -90,14 +95,14 @@ impl KptsMesh {
             }
         }
 
-        KptsMesh {
+        Ok(KptsMesh {
             k_frac,
             k_degeneracy,
             k_weight,
             k_mesh,
             nk_total,
             is_symmetry_reduced: use_reduced,
-        }
+        })
     }
 }
 
@@ -177,30 +182,87 @@ impl KPTS for KptsMesh {
     }
 }
 
-fn read_k_mesh() -> ([i32; 3], [i32; 3]) {
+fn parse_i32_token(tokens: &[&str], idx: usize, line_no: usize, label: &str) -> Result<i32, KptsError> {
+    let value = tokens.get(idx).ok_or_else(|| {
+        KptsError::new(format!(
+            "in.kmesh:{}: missing '{}' token at column {}",
+            line_no, label, idx
+        ))
+    })?;
+    value.parse::<i32>().map_err(|e| {
+        KptsError::new(format!(
+            "in.kmesh:{}: invalid {} '{}': {}",
+            line_no, label, value, e
+        ))
+    })
+}
+
+fn read_k_mesh() -> Result<([i32; 3], [i32; 3]), KptsError> {
     // in.kmesh format:
     // line 1: nk1 nk2 nk3
     // line 2: shift1 shift2 shift3 (0/1)
-    let lines = read_file_data_to_vec("in.kmesh");
+    let lines = read_file_data_to_vec("in.kmesh")?;
+    if lines.len() < 2 {
+        return Err(KptsError::new(
+            "in.kmesh: expected at least 2 lines: mesh and shift",
+        ));
+    }
 
     let s: Vec<&str> = lines[0].split_whitespace().collect();
-    let nk1 = s[0].parse().unwrap();
-    let nk2 = s[1].parse().unwrap();
-    let nk3 = s[2].parse().unwrap();
+    if s.len() != 3 {
+        return Err(KptsError::new(format!(
+            "in.kmesh:1: expected 3 mesh integers, got {}",
+            s.len()
+        )));
+    }
+    let nk1 = parse_i32_token(s.as_slice(), 0, 1, "nk1")?;
+    let nk2 = parse_i32_token(s.as_slice(), 1, 1, "nk2")?;
+    let nk3 = parse_i32_token(s.as_slice(), 2, 1, "nk3")?;
+    if nk1 <= 0 || nk2 <= 0 || nk3 <= 0 {
+        return Err(KptsError::new(format!(
+            "in.kmesh:1: mesh sizes must be > 0, got [{}, {}, {}]",
+            nk1, nk2, nk3
+        )));
+    }
 
     let s: Vec<&str> = lines[1].split_whitespace().collect();
-    let k1_shift = s[0].parse().unwrap();
-    let k2_shift = s[1].parse().unwrap();
-    let k3_shift = s[2].parse().unwrap();
+    if s.len() != 3 {
+        return Err(KptsError::new(format!(
+            "in.kmesh:2: expected 3 shift integers, got {}",
+            s.len()
+        )));
+    }
+    let k1_shift = parse_i32_token(s.as_slice(), 0, 2, "k1_shift")?;
+    let k2_shift = parse_i32_token(s.as_slice(), 1, 2, "k2_shift")?;
+    let k3_shift = parse_i32_token(s.as_slice(), 2, 2, "k3_shift")?;
 
-    ([nk1, nk2, nk3], [k1_shift, k2_shift, k3_shift])
+    for (axis, shift) in [("k1_shift", k1_shift), ("k2_shift", k2_shift), ("k3_shift", k3_shift)] {
+        if shift != 0 && shift != 1 {
+            return Err(KptsError::new(format!(
+                "in.kmesh:2: {} must be 0 or 1, got {}",
+                axis, shift
+            )));
+        }
+    }
+
+    Ok(([nk1, nk2, nk3], [k1_shift, k2_shift, k3_shift]))
 }
 
-fn read_file_data_to_vec(kfile: &str) -> Vec<String> {
+fn read_file_data_to_vec(kfile: &str) -> Result<Vec<String>, KptsError> {
     // Lightweight line reader used by k-point input parsers.
-    let file = File::open(kfile).unwrap();
-    let lines = BufReader::new(file).lines();
-    let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();
-
-    lines
+    let file = File::open(kfile)
+        .map_err(|e| KptsError::new(format!("failed to open '{}': {}", kfile, e)))?;
+    let mut lines = Vec::new();
+    for (line_idx, line_res) in BufReader::new(file).lines().enumerate() {
+        let line = line_res.map_err(|e| {
+            KptsError::new(format!(
+                "failed to read '{}', line {}: {}",
+                kfile,
+                line_idx + 1,
+                e
+            ))
+        })?;
+        lines.push(line);
+    }
+    Ok(lines)
 }

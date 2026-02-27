@@ -1,7 +1,9 @@
 //#![allow(warnings)]
 
 use dwconsts;
+use std::error::Error;
 use std::f64::consts;
+use std::fmt;
 use types::*;
 use vector3::*;
 
@@ -15,7 +17,28 @@ pub fn erfc(x: f64) -> f64 {
 
 // https://en.wikipedia.org/wiki/Bessel_function#Spherical_Bessel_functions:_jn,_yn
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecialError {
+    UnsupportedSphericalBesselOrder { n: usize },
+}
+
+impl fmt::Display for SpecialError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SpecialError::UnsupportedSphericalBesselOrder { n } => {
+                write!(f, "spherical bessel function for n = {} is not implemented", n)
+            }
+        }
+    }
+}
+
+impl Error for SpecialError {}
+
 pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
+    try_spherical_bessel_jn(n, x).unwrap_or_else(|err| panic!("{}", err))
+}
+
+pub fn try_spherical_bessel_jn(n: usize, x: f64) -> Result<f64, SpecialError> {
     if x < dwconsts::EPS6 {
         match n {
             0 => {
@@ -29,11 +52,11 @@ pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
                 let x16 = x2 * x14;
                 let x18 = x2 * x16;
 
-                1.0 - x2 / 6.0 + x4 / 120.0 - x6 / 5040.0 + x8 / 362880.0 - x10 / 39916800.0
+                Ok(1.0 - x2 / 6.0 + x4 / 120.0 - x6 / 5040.0 + x8 / 362880.0 - x10 / 39916800.0
                     + x12 / 6227020800.0
                     - x14 / 1307674368000.0
                     + x16 / 355687428096000.0
-                    - x18 / 121645100408832000.0
+                    - x18 / 121645100408832000.0)
 
                 // 1 - x**2/6 + x**4/120 - x**6/5040 + x**8/362880 - x**10/39916800 + x**12/6227020800 - x**14/1307674368000 + x**16/355687428096000 - x**18/121645100408832000 + O(x**20)
             }
@@ -46,7 +69,10 @@ pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
                 let x9 = x2 * x7;
                 let x11 = x2 * x9;
 
-                x / 3.0 - x3 / 30.0 + x5 / 840.0 - x7 / 45360.0 + x9 / 3991680.0 - x11 / 518918400.0
+                Ok(
+                    x / 3.0 - x3 / 30.0 + x5 / 840.0 - x7 / 45360.0 + x9 / 3991680.0
+                        - x11 / 518918400.0,
+                )
                 // x/3 - x**3/30 + x**5/840 - x**7/45360 + x**9/3991680 - x**11/518918400 + O(x**12)
             }
 
@@ -57,7 +83,7 @@ pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
                 let x8 = x2 * x6;
                 let x10 = x2 * x8;
 
-                x2 / 15.0 - x4 / 210.0 + x6 / 7560.0 - x8 / 498960.0 + x10 / 51891840.0
+                Ok(x2 / 15.0 - x4 / 210.0 + x6 / 7560.0 - x8 / 498960.0 + x10 / 51891840.0)
                 // x**2/15 - x**4/210 + x**6/7560 - x**8/498960 + x**10/51891840 + O(x**12)
             }
 
@@ -69,7 +95,7 @@ pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
                 let x9 = x2 * x7;
                 let x11 = x2 * x9;
 
-                x3 / 105.0 - x5 / 1890.0 + x7 / 83160.0 - x9 / 6486480.0 + x11 / 778377600.0
+                Ok(x3 / 105.0 - x5 / 1890.0 + x7 / 83160.0 - x9 / 6486480.0 + x11 / 778377600.0)
                 // x**3/105 - x**5/1890 + x**7/83160 - x**9/6486480 + x**11/778377600 + O(x**12)
             }
 
@@ -80,36 +106,31 @@ pub fn spherical_bessel_jn(n: usize, x: f64) -> f64 {
                 let x8 = x4 * x4;
                 let x10 = x2 * x8;
 
-                x4 / 945.0 - x6 / 20790.0 + x8 / 1081080.0 - x10 / 97297200.0
+                Ok(x4 / 945.0 - x6 / 20790.0 + x8 / 1081080.0 - x10 / 97297200.0)
                 // x**4/945 - x**6/20790 + x**8/1081080 - x**10/97297200 + O(x**12)
             }
 
-            _ => {
-                println!("spherical bessel function for n = {} is not implemented", n);
-                std::process::exit(-1);
-            }
+            _ => Err(SpecialError::UnsupportedSphericalBesselOrder { n }),
         }
     } else {
         match n {
-            0 => x.sin() / x,
+            0 => Ok(x.sin() / x),
 
-            1 => x.sin() / x / x - x.cos() / x,
+            1 => Ok(x.sin() / x / x - x.cos() / x),
 
-            2 => (3.0 / x / x - 1.0) * x.sin() / x - 3.0 * x.cos() / x / x,
+            2 => Ok((3.0 / x / x - 1.0) * x.sin() / x - 3.0 * x.cos() / x / x),
 
-            3 => {
+            3 => Ok(
                 (15.0 / x.powf(4.0) - 6.0 / x.powf(2.0)) * x.sin()
                     - (15.0 / x.powf(3.0) - 1.0 / x) * x.cos()
-            }
+            ),
 
-            4 => {
+            4 => Ok(
                 (105.0 / x.powf(5.0) - 45.0 / x.powf(3.0) + 1.0 / x) * x.sin()
                     - (105.0 / x.powf(4.0) - 10.0 / x.powf(2.0)) * x.cos()
-            }
+            ),
 
-            _ => {
-                panic!("spherical bessel function for n = {} is not implemented", n);
-            }
+            _ => Err(SpecialError::UnsupportedSphericalBesselOrder { n }),
         }
     }
 }
@@ -408,4 +429,13 @@ fn test_spherical_bessel_jn() {
         let y = spherical_bessel_jn(n, x);
         println!("n = {}\t x = {}\t y = {:.30E}", n, x, y);
     }
+}
+
+#[test]
+fn test_try_spherical_bessel_jn_rejects_unsupported_order() {
+    let err = try_spherical_bessel_jn(7, 0.0).unwrap_err();
+    assert_eq!(
+        err,
+        SpecialError::UnsupportedSphericalBesselOrder { n: 7 }
+    );
 }

@@ -6,7 +6,34 @@ use mesh::*;
 
 use crystal::Crystal;
 use lattice::Lattice;
+use std::error::Error;
+use std::fmt;
 use vector3::Vector3f64;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KptsError {
+    message: String,
+}
+
+impl KptsError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    pub fn with_context(context: &str, message: impl Into<String>) -> Self {
+        Self::new(format!("{}: {}", context, message.into()))
+    }
+}
+
+impl fmt::Display for KptsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for KptsError {}
 
 // K-point provider interface.
 //
@@ -31,5 +58,16 @@ pub fn new(scheme: &str, crystal: &Crystal, symmetry: bool) -> Box<dyn KPTS> {
         "kmesh" => Box::new(KptsMesh::new(crystal, symmetry)),
         "kline" => Box::new(KptsLine::new()),
         other => panic!("unsupported k-point scheme '{}'", other),
+    }
+}
+
+pub fn try_new(scheme: &str, crystal: &Crystal, symmetry: bool) -> Result<Box<dyn KPTS>, KptsError> {
+    match scheme {
+        "kmesh" => Ok(Box::new(KptsMesh::try_new(crystal, symmetry)?)),
+        "kline" => Ok(Box::new(KptsLine::try_new()?)),
+        other => Err(KptsError::new(format!(
+            "unsupported k-point scheme '{}'",
+            other
+        ))),
     }
 }

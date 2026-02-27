@@ -103,7 +103,7 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E4 - Result-Based Error Model and Process Boundary
 **Priority**: P2/P3  
-**Status**: Open  
+**Status**: In Progress (2026-02-27)  
 **Files**: `control/src/lib.rs`, `kpts/src/line.rs`, `special/src/lib.rs`, Wannier90 binaries and related callers
 
 - Remove `process::exit` usage from library crates
@@ -114,6 +114,14 @@ The previous list contained intentional overlap to capture related themes. The i
 - No `process::exit` in library crates
 - Library APIs propagate typed errors with context
 - CLI binaries keep user-friendly exit behavior
+
+**Implementation Update (2026-02-27)**
+- [x] Added typed `KptsError` plus fallible constructors/factory (`KptsLine::try_new`, `KptsMesh::try_new`, `kpts::try_new`) with structured parse/validation errors for `in.kline` and `in.kmesh`
+- [x] Added `SpecialError` and `try_spherical_bessel_jn`; removed `process::exit` from `special` library error paths
+- [x] Moved input/k-point initialization failure policy to binary boundaries in `pw`, `w90-win`, and `w90-amn` using `Control::from_file` + `kpts::try_new` with root-rank diagnostics and clean MPI finalize+exit
+- [x] Audited codebase: remaining `process::exit` usage is confined to binary entry points (`pw`, `wannier90` bins, `workflow`)
+- [x] Docker correctness gates passed after E4 changes (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
+- [ ] Follow-up: migrate remaining compatibility wrappers (`control.read_file`, `kpts::new`, `special::spherical_bessel_jn`) to fully result-based callsites where practical
 
 ### E5 - Typed Configuration and Runtime Mode Safety
 **Priority**: P3/P5  
