@@ -280,7 +280,7 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E14 - FFT Planning and Spectral-Operator Workspace Tuning
 **Priority**: P2  
-**Status**: Open  
+**Status**: In Progress (2026-02-27)  
 **Files**: `dwfft3d/src/lib.rs`, `rgtransform/src/lib.rs`, SCF/XC callers
 
 - Remove hard-coded FFT thread count and add controlled runtime selection
@@ -292,6 +292,14 @@ The previous list contained intentional overlap to capture related themes. The i
 - FFT thread policy is configurable and documented
 - Repeated transforms avoid redundant planning overhead
 - Gradient/divergence paths are allocation-free in steady-state profiling
+
+**Implementation Update (2026-02-27)**
+- [x] Added typed FFT runtime knobs in `control` (`fft_threads`, `fft_planner`, `fft_wisdom_file`) with parser support, defaults, validation, and display output
+- [x] Added runtime FFT backend policy in `dwfft3d` (`BackendOptions`) with configurable thread count and planning mode (`estimate`/`measure`) applied at plan construction time
+- [x] Added optional FFTW wisdom import/export hook in `dwfft3d` (best-effort load during runtime configuration and save after plan creation when `fft_wisdom_file` is set)
+- [x] Wired `pw` runtime setup (and `workspace_alloc_trace`) to pass typed FFT policy from `Control` into `dwfft3d` before plan creation
+- [x] Benchmarked planning/execution policy deltas via `dwfft3d` benchmark harness (`fft_bench`, compare mode): `estimate` plan_s=0.018138, exec_avg_ms=17.0383; `measure` plan_s=0.021537, exec_avg_ms=24.7725 on 96^3/8-iters case
+- [x] Confirmed steady-state allocation profile for spectral operators remains allocation-free after warmup (`workspace_alloc_trace`: 0 alloc/realloc calls for `gradient_r3d`, `gradient_norm_r3d`, `divergence_r3d`)
 
 ### E15 - Cost-Aware K-Point Scheduling and Spin Cache Deduplication
 **Priority**: P2/P3  

@@ -208,6 +208,35 @@ impl KptsScheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FftPlannerScheme {
+    Estimate,
+    Measure,
+}
+
+impl Default for FftPlannerScheme {
+    fn default() -> Self {
+        FftPlannerScheme::Estimate
+    }
+}
+
+impl FftPlannerScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FftPlannerScheme::Estimate => "estimate",
+            FftPlannerScheme::Measure => "measure",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "estimate" => Some(FftPlannerScheme::Estimate),
+            "measure" => Some(FftPlannerScheme::Measure),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Control {
     // Runtime/solver settings parsed from in.ctrl with defaults.
@@ -245,6 +274,9 @@ pub struct Control {
 
     spin_scheme: SpinScheme, // nonspin, spin, ncl
     task: String,            // scf, band
+    fft_threads: usize,
+    fft_planner: FftPlannerScheme,
+    fft_wisdom_file: String,
     restart: bool,
     save_rho: bool,
     save_wfc: bool,
@@ -468,6 +500,8 @@ set_bool_field!(set_eigval_same_epsilon, eigval_same_epsilon);
 set_bool_field!(set_restart, restart);
 set_bool_field!(set_save_rho, save_rho);
 set_bool_field!(set_save_wfc, save_wfc);
+set_usize_field!(set_fft_threads, fft_threads);
+set_string_field!(set_fft_wisdom_file, fft_wisdom_file);
 set_usize_field!(set_davidson_ndim, davidson_ndim);
 set_string_field!(set_dos_scheme, dos_scheme);
 set_usize_field!(set_dos_ne, dos_ne);
@@ -553,6 +587,12 @@ fn set_smearing_scheme(control: &mut Control, value: &str) -> Result<(), String>
 fn set_eigen_solver(control: &mut Control, value: &str) -> Result<(), String> {
     control.eigen_solver = EigenSolverScheme::parse(value)
         .ok_or_else(|| "expected one of: sd, psd, cg, pcg, arpack, davidson".to_string())?;
+    Ok(())
+}
+
+fn set_fft_planner(control: &mut Control, value: &str) -> Result<(), String> {
+    control.fft_planner = FftPlannerScheme::parse(value)
+        .ok_or_else(|| "expected one of: estimate, measure".to_string())?;
     Ok(())
 }
 
@@ -710,6 +750,18 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "restart",
         setter: set_restart,
+    },
+    KeySpec {
+        key: "fft_threads",
+        setter: set_fft_threads,
+    },
+    KeySpec {
+        key: "fft_planner",
+        setter: set_fft_planner,
+    },
+    KeySpec {
+        key: "fft_wisdom_file",
+        setter: set_fft_wisdom_file,
     },
     KeySpec {
         key: "save_rho",
@@ -1027,6 +1079,22 @@ impl Control {
         &self.task
     }
 
+    pub fn get_fft_threads(&self) -> usize {
+        self.fft_threads
+    }
+
+    pub fn get_fft_planner(&self) -> &str {
+        self.fft_planner.as_str()
+    }
+
+    pub fn get_fft_planner_enum(&self) -> FftPlannerScheme {
+        self.fft_planner
+    }
+
+    pub fn get_fft_wisdom_file(&self) -> &str {
+        &self.fft_wisdom_file
+    }
+
     pub fn get_eigen_solver(&self) -> &str {
         self.eigen_solver.as_str()
     }
@@ -1139,6 +1207,9 @@ impl Control {
     fn reset_defaults(&mut self) {
         self.task = "scf".to_string();
         self.spin_scheme = SpinScheme::NonSpin;
+        self.fft_threads = 1;
+        self.fft_planner = FftPlannerScheme::Estimate;
+        self.fft_wisdom_file = String::new();
 
         self.geom_optim_cell = false;
         self.geom_optim_scheme = "bfgs".to_string();
@@ -1308,6 +1379,13 @@ impl Control {
             ));
         }
 
+        if self.fft_threads == 0 {
+            return Err(ControlError::validation(
+                "fft_threads",
+                "must be >= 1",
+            ));
+        }
+
         if !matches!(self.eigen_solver, EigenSolverScheme::Pcg) {
             return Err(ControlError::validation(
                 "eigen_solver",
@@ -1452,6 +1530,31 @@ impl Control {
             self.get_spin_scheme(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "fft_threads",
+            self.get_fft_threads(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "fft_planner",
+            self.get_fft_planner(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        let wisdom_file = if self.get_fft_wisdom_file().trim().is_empty() {
+            "(none)"
+        } else {
+            self.get_fft_wisdom_file()
+        };
+        println!(
+            "   {:<width1$} = {}",
+            "fft_wisdom_file",
+            wisdom_file,
+            width1 = OUT_WIDTH1
         );
         println!(
             "   {:<width1$} = {:>width2$}",
@@ -1725,7 +1828,10 @@ impl Control {
 
 #[cfg(test)]
 mod tests {
-    use super::{Control, ControlError, KptsScheme, PotScheme, SmearingScheme, SpinScheme, XcScheme};
+    use super::{
+        Control, ControlError, FftPlannerScheme, KptsScheme, PotScheme, SmearingScheme, SpinScheme,
+        XcScheme,
+    };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
         let mut control = Control::new();
@@ -1840,6 +1946,7 @@ mod tests {
             "pot_scheme = upf-fr",
             "smearing_scheme = fd",
             "xc_scheme = pbe",
+            "fft_planner = measure",
         ])
         .expect("control parse should succeed");
 
@@ -1847,6 +1954,7 @@ mod tests {
         assert_eq!(control.get_pot_scheme_enum(), PotScheme::UpfFr);
         assert_eq!(control.get_smearing_scheme_enum(), SmearingScheme::Fd);
         assert_eq!(control.get_xc_scheme_enum(), XcScheme::Pbe);
+        assert_eq!(control.get_fft_planner_enum(), FftPlannerScheme::Measure);
     }
 
     #[test]
@@ -1854,5 +1962,26 @@ mod tests {
         let err = parse_control(&["eigen_solver = davidson"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("eigen_solver"));
         assert!(err.message.contains("not implemented yet"));
+    }
+
+    #[test]
+    fn test_parser_accepts_fft_runtime_policy() {
+        let control = parse_control(&[
+            "fft_threads = 4",
+            "fft_planner = estimate",
+            "fft_wisdom_file = cache/fftw.wisdom",
+        ])
+        .expect("control parse should succeed");
+
+        assert_eq!(control.get_fft_threads(), 4);
+        assert_eq!(control.get_fft_planner_enum(), FftPlannerScheme::Estimate);
+        assert_eq!(control.get_fft_wisdom_file(), "cache/fftw.wisdom");
+    }
+
+    #[test]
+    fn test_validation_rejects_zero_fft_threads() {
+        let err = parse_control(&["fft_threads = 0"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("fft_threads"));
+        assert!(err.message.contains(">= 1"));
     }
 }

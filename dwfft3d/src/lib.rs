@@ -23,7 +23,9 @@ cfg_if::cfg_if! {
 }
 
 use ndarray::*;
+use std::ffi::CString;
 use std::os::raw::*;
+use std::sync::{Mutex, OnceLock};
 use types::c64; // This is num_complex::Complex<f64>
 
 use crate::fftw::*;
@@ -35,8 +37,90 @@ pub struct DWFFT3D {
 
 use cfg_if::cfg_if;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FftPlanningMode {
+    Estimate,
+    Measure,
+}
+
+impl Default for FftPlanningMode {
+    fn default() -> Self {
+        FftPlanningMode::Estimate
+    }
+}
+
+impl FftPlanningMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FftPlanningMode::Estimate => "estimate",
+            FftPlanningMode::Measure => "measure",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendOptions {
+    pub threads: usize,
+    pub planning_mode: FftPlanningMode,
+    pub wisdom_file: Option<String>,
+}
+
+impl Default for BackendOptions {
+    fn default() -> Self {
+        Self {
+            threads: 1,
+            planning_mode: FftPlanningMode::Estimate,
+            wisdom_file: None,
+        }
+    }
+}
+
+impl BackendOptions {
+    fn normalized(mut self) -> Self {
+        if self.threads == 0 {
+            self.threads = 1;
+        }
+        self.wisdom_file = self
+            .wisdom_file
+            .and_then(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            });
+        self
+    }
+}
+
+fn backend_options_cell() -> &'static Mutex<BackendOptions> {
+    static CELL: OnceLock<Mutex<BackendOptions>> = OnceLock::new();
+    CELL.get_or_init(|| Mutex::new(BackendOptions::default()))
+}
+
 pub fn init_backend() {
-    // Backend selection is compile-time. Initialization is currently a no-op.
+    // Keep backward-compatible no-arg initialization semantics.
+    let _ = backend_options();
+}
+
+pub fn configure_runtime(options: BackendOptions) {
+    let normalized = options.normalized();
+    if let Some(path) = normalized.wisdom_file.as_deref() {
+        try_import_wisdom(path);
+    }
+
+    let mut guard = backend_options_cell()
+        .lock()
+        .expect("dwfft3d backend options mutex poisoned");
+    *guard = normalized;
+}
+
+pub fn backend_options() -> BackendOptions {
+    backend_options_cell()
+        .lock()
+        .expect("dwfft3d backend options mutex poisoned")
+        .clone()
 }
 
 pub fn backend_name() -> &'static str {
@@ -53,9 +137,16 @@ pub fn backend_name() -> &'static str {
 
 impl DWFFT3D {
     pub fn new(n1: usize, n2: usize, n3: usize) -> DWFFT3D {
+        let options = backend_options();
+        let nthreads = options.threads.max(1).min(i32::MAX as usize) as c_int;
+        let planner_flag = match options.planning_mode {
+            FftPlanningMode::Estimate => FFTW_ESTIMATE,
+            FftPlanningMode::Measure => FFTW_MEASURE,
+        };
+
         unsafe {
             fftw_init_threads(std::ptr::null());
-            fftw_plan_with_nthreads(1);
+            fftw_plan_with_nthreads(nthreads);
         }
 
         // Create zero-initialized arrays
@@ -82,7 +173,7 @@ impl DWFFT3D {
                 slice_in.as_ptr(),
                 slice_out.as_mut_ptr(),
                 FFTW_FORWARD,
-                FFTW_ESTIMATE,
+                planner_flag,
             );
 
             plan_bwd = fftw_plan_dft_3d(
@@ -92,8 +183,12 @@ impl DWFFT3D {
                 slice_in.as_ptr(),
                 slice_out.as_mut_ptr(),
                 FFTW_BACKWARD,
-                FFTW_ESTIMATE,
+                planner_flag,
             );
+        }
+
+        if let Some(path) = options.wisdom_file.as_deref() {
+            try_export_wisdom(path);
         }
 
         DWFFT3D { plan_fwd, plan_bwd }
@@ -119,6 +214,22 @@ impl Drop for DWFFT3D {
             if !plan.is_null() {
                 unsafe { fftw_destroy_plan(*plan) };
             }
+        }
+    }
+}
+
+fn try_import_wisdom(path: &str) {
+    if let Ok(cpath) = CString::new(path) {
+        unsafe {
+            let _ = fftw_import_wisdom_from_filename(cpath.as_ptr());
+        }
+    }
+}
+
+fn try_export_wisdom(path: &str) {
+    if let Ok(cpath) = CString::new(path) {
+        unsafe {
+            let _ = fftw_export_wisdom_to_filename(cpath.as_ptr());
         }
     }
 }

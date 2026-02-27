@@ -1,4 +1,4 @@
-use control::Control;
+use control::{Control, FftPlannerScheme};
 use crystal::Crystal;
 use fftgrid::FFTGrid;
 use force;
@@ -117,6 +117,20 @@ fn main() {
 
     let mut control = Control::new();
     control.read_file("in.ctrl");
+    let fft_planning_mode = match control.get_fft_planner_enum() {
+        FftPlannerScheme::Estimate => dwfft3d::FftPlanningMode::Estimate,
+        FftPlannerScheme::Measure => dwfft3d::FftPlanningMode::Measure,
+    };
+    let fft_wisdom_file = control.get_fft_wisdom_file().trim();
+    dwfft3d::configure_runtime(dwfft3d::BackendOptions {
+        threads: control.get_fft_threads(),
+        planning_mode: fft_planning_mode,
+        wisdom_file: if fft_wisdom_file.is_empty() {
+            None
+        } else {
+            Some(fft_wisdom_file.to_string())
+        },
+    });
 
     let mut crystal = Crystal::new();
     crystal.read_file("in.crystal");

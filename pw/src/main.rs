@@ -1,5 +1,5 @@
 #![allow(warnings)]
-use control::{Control, SpinScheme};
+use control::{Control, FftPlannerScheme, SpinScheme};
 use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
@@ -75,6 +75,7 @@ fn display_system_information() {
     const OUT_WIDTH2: usize = 18;
 
     let backend = dwfft3d::backend_name();
+    let fft_runtime = dwfft3d::backend_options();
     let mpi_rank = dwmpi::get_comm_world_rank();
     let mpi_ranks = dwmpi::get_comm_world_size();
     let rayon_threads = rayon::current_num_threads();
@@ -102,6 +103,26 @@ fn display_system_information() {
         backend,
         width1 = OUT_WIDTH1,
         width2 = OUT_WIDTH2
+    );
+    println!(
+        "   {:<width1$} = {:>width2$}",
+        "fft_threads",
+        fft_runtime.threads,
+        width1 = OUT_WIDTH1,
+        width2 = OUT_WIDTH2
+    );
+    println!(
+        "   {:<width1$} = {:>width2$}",
+        "fft_planner",
+        fft_runtime.planning_mode.as_str(),
+        width1 = OUT_WIDTH1,
+        width2 = OUT_WIDTH2
+    );
+    println!(
+        "   {:<width1$} = {}",
+        "fft_wisdom_file",
+        fft_runtime.wisdom_file.as_deref().unwrap_or("(none)"),
+        width1 = OUT_WIDTH1
     );
     println!(
         "   {:<width1$} = {:>width2$}",
@@ -876,6 +897,20 @@ fn main() {
 
     // dwfft3d
     dwfft3d::init_backend();
+    let fft_planning_mode = match control.get_fft_planner_enum() {
+        FftPlannerScheme::Estimate => dwfft3d::FftPlanningMode::Estimate,
+        FftPlannerScheme::Measure => dwfft3d::FftPlanningMode::Measure,
+    };
+    let fft_wisdom_file = control.get_fft_wisdom_file().trim();
+    dwfft3d::configure_runtime(dwfft3d::BackendOptions {
+        threads: control.get_fft_threads(),
+        planning_mode: fft_planning_mode,
+        wisdom_file: if fft_wisdom_file.is_empty() {
+            None
+        } else {
+            Some(fft_wisdom_file.to_string())
+        },
+    });
 
     if dwmpi::is_root() {
         display_program_header();

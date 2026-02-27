@@ -65,4 +65,8 @@ extern "C" {
     pub fn fftw_init_threads(p: *const c_void) -> c_int;
 
     pub fn fftw_plan_with_nthreads(nthreads: c_int) -> *mut c_void;
+
+    pub fn fftw_import_wisdom_from_filename(filename: *const c_char) -> c_int;
+
+    pub fn fftw_export_wisdom_to_filename(filename: *const c_char) -> c_int;
 }

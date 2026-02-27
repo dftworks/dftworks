@@ -9,6 +9,7 @@ use types::c64;
 pub static FFTW_FORWARD: c_int = -1;
 pub static FFTW_BACKWARD: c_int = 1;
 pub static FFTW_ESTIMATE: c_uint = 64;
+pub static FFTW_MEASURE: c_uint = 0;
 
 // ---------------------------
 // cuFFT types and constants
@@ -49,6 +50,14 @@ pub unsafe fn fftw_init_threads(_: *const c_void) -> c_int {
 
 pub unsafe fn fftw_plan_with_nthreads(_: c_int) -> *mut c_void {
     ptr::null_mut()
+}
+
+pub unsafe fn fftw_import_wisdom_from_filename(_: *const c_char) -> c_int {
+    0
+}
+
+pub unsafe fn fftw_export_wisdom_to_filename(_: *const c_char) -> c_int {
+    0
 }
 
 pub unsafe fn fftw_plan_dft_3d(
