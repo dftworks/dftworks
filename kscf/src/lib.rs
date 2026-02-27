@@ -104,6 +104,7 @@ pub struct KSCF<'a> {
     sparse_solver: RefCell<Box<dyn eigensolver::EigenSolver>>,
 
     k_weight: f64,
+    random_stream_id: u64,
 }
 
 impl<'a> KSCF<'a> {
@@ -140,6 +141,7 @@ impl<'a> KSCF<'a> {
         ik: usize,
         k_cart: Vector3f64,
         k_weight: f64,
+        random_stream_id: u64,
     ) -> KSCF<'a> {
         // Real spherical harmonics Y_lm(k+G) table for this k-point.
         let kgylm = KGYLM::new(k_cart, pspot.get_max_lmax(), gvec, pwwfc);
@@ -196,6 +198,7 @@ impl<'a> KSCF<'a> {
             workspace: RefCell::new(workspace),
             sparse_solver: RefCell::new(sparse_solver),
             k_weight,
+            random_stream_id,
         }
     }
 
@@ -358,7 +361,18 @@ impl<'a> KSCF<'a> {
                     continue;
                 }
 
-                utility::make_normalized_rand_vector(&mut evec);
+                if let Some(base_seed) = self.control.get_random_seed() {
+                    let deterministic_seed = utility::derive_deterministic_seed(
+                        base_seed,
+                        self.random_stream_id,
+                        self.ik as u64,
+                        scf_iter as u64,
+                        ib as u64,
+                    );
+                    utility::make_normalized_rand_vector_with_seed(&mut evec, deterministic_seed);
+                } else {
+                    utility::make_normalized_rand_vector(&mut evec);
+                }
 
                 for i in 0..evec.len() {
                     evec[i] /= 0.5 * kg[i] * kg[i] + 1.0;

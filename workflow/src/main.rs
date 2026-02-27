@@ -1115,6 +1115,10 @@ fn run_stage(
         println!("Run directory: {}", run_dir.display());
         println!("Log file: {}", log_path.display());
         println!("Properties: {}", run_dir.join("properties").display());
+        let provenance_path = run_dir.join("run.provenance.json");
+        if provenance_path.is_file() {
+            println!("Provenance: {}", provenance_path.display());
+        }
         Ok(run_dir)
     } else {
         write_text(&run_dir.join("status.txt"), "failed\n")?;

@@ -136,6 +136,7 @@ pub fn export_stage_properties_with_options(
 
     write_summary_json(
         &properties_dir.join("summary.json"),
+        run_dir,
         stage,
         log_path,
         &parsed,
@@ -1004,6 +1005,13 @@ fn json_opt_usize(v: Option<usize>) -> String {
     }
 }
 
+fn json_opt_string(v: Option<&str>) -> String {
+    match v {
+        Some(value) => format!("\"{}\"", escape_json_string(value)),
+        None => "null".to_string(),
+    }
+}
+
 fn json_band_edge(edge: Option<&BandEdge>) -> String {
     match edge {
         Some(edge) => format!(
@@ -1079,6 +1087,7 @@ fn strip_comments(line: &str) -> &str {
 
 fn write_summary_json(
     path: &Path,
+    run_dir: &Path,
     stage: &str,
     log_path: &Path,
     parsed: &ParsedPwLog,
@@ -1117,12 +1126,16 @@ fn write_summary_json(
     let energy_scf_ry = parsed.energy.as_ref().map(|e| e.scf_ry);
     let energy_scf_ev = parsed.energy.as_ref().map(|e| ry_to_ev(e.scf_ry));
     let energy_delta_ev = parsed.energy.as_ref().map(|e| e.delta_ev);
+    let (provenance_manifest, provenance_replay_fingerprint) =
+        read_provenance_metadata(run_dir);
 
     let content = format!(
-        "{{\n  \"schema_version\": \"{}\",\n  \"stage\": \"{}\",\n  \"source_log\": \"{}\",\n  \"energy\": {{\n    \"harris_ry\": {},\n    \"scf_ry\": {},\n    \"scf_ev\": {},\n    \"delta_ev\": {}\n  }},\n  \"force\": {{\n    \"n_atoms\": {},\n    \"max_abs_component_ev_per_a\": {}\n  }},\n  \"stress\": {{\n    \"max_abs_component_kbar\": {}\n  }},\n  \"timing\": {{\n    \"workflow_wall_seconds\": {:.6},\n    \"pw_total_seconds\": {},\n    \"user_cpu_seconds\": {},\n    \"system_cpu_seconds\": {},\n    \"max_rss_kb\": {}\n  }}\n}}\n",
+        "{{\n  \"schema_version\": \"{}\",\n  \"stage\": \"{}\",\n  \"source_log\": \"{}\",\n  \"provenance\": {{\n    \"manifest\": {},\n    \"replay_fingerprint\": {}\n  }},\n  \"energy\": {{\n    \"harris_ry\": {},\n    \"scf_ry\": {},\n    \"scf_ev\": {},\n    \"delta_ev\": {}\n  }},\n  \"force\": {{\n    \"n_atoms\": {},\n    \"max_abs_component_ev_per_a\": {}\n  }},\n  \"stress\": {{\n    \"max_abs_component_kbar\": {}\n  }},\n  \"timing\": {{\n    \"workflow_wall_seconds\": {:.6},\n    \"pw_total_seconds\": {},\n    \"user_cpu_seconds\": {},\n    \"system_cpu_seconds\": {},\n    \"max_rss_kb\": {}\n  }}\n}}\n",
         SCHEMA_VERSION,
         escape_json_string(stage),
         escape_json_string(source_log),
+        json_opt_string(provenance_manifest.as_deref()),
+        json_opt_string(provenance_replay_fingerprint.as_deref()),
         json_opt_f64(energy_harris_ry),
         json_opt_f64(energy_scf_ry),
         json_opt_f64(energy_scf_ev),
@@ -1138,6 +1151,29 @@ fn write_summary_json(
     );
 
     fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
+}
+
+fn read_provenance_metadata(run_dir: &Path) -> (Option<String>, Option<String>) {
+    let manifest_name = "run.provenance.json";
+    let manifest_path = run_dir.join(manifest_name);
+    if !manifest_path.is_file() {
+        return (None, None);
+    }
+
+    let fingerprint = fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|content| extract_json_string_field(&content, "replay_fingerprint"));
+
+    (Some(manifest_name.to_string()), fingerprint)
+}
+
+fn extract_json_string_field(text: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{}\": \"", field);
+    let start = text.find(needle.as_str())?;
+    let value_start = start + needle.len();
+    let tail = &text[value_start..];
+    let value_end = tail.find('"')?;
+    Some(tail[..value_end].to_string())
 }
 
 fn write_timings_csv(

@@ -3,7 +3,7 @@
 use itertools::multizip;
 use matrix::*;
 use ndarray::*;
-use rand::{thread_rng, Rng};
+use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use std::f64::consts;
 use types::*;
 use vector3::*;
@@ -186,9 +186,7 @@ pub fn make_matrix(n: usize) -> Matrix<c64> {
     m
 }
 
-pub fn make_normalized_rand_vector(v: &mut [c64]) {
-    let mut rng = thread_rng();
-
+fn fill_normalized_rand_vector<R: Rng + ?Sized>(v: &mut [c64], rng: &mut R) {
     for y in v.iter_mut() {
         let t = rng.gen_range(-0.5f64, 0.5f64);
         let theta = t * 2.0 * consts::PI;
@@ -200,6 +198,39 @@ pub fn make_normalized_rand_vector(v: &mut [c64]) {
     }
 
     normalize_vector_c64(v);
+}
+
+pub fn make_normalized_rand_vector(v: &mut [c64]) {
+    let mut rng = thread_rng();
+    fill_normalized_rand_vector(v, &mut rng);
+}
+
+pub fn make_normalized_rand_vector_with_seed(v: &mut [c64], seed: u64) {
+    let mut rng = StdRng::seed_from_u64(seed);
+    fill_normalized_rand_vector(v, &mut rng);
+}
+
+#[inline]
+pub fn derive_deterministic_seed(
+    base_seed: u64,
+    stream: u64,
+    k_index: u64,
+    scf_iter: u64,
+    band_index: u64,
+) -> u64 {
+    // SplitMix64-style mixing for deterministic independent random streams.
+    fn mix(mut x: u64) -> u64 {
+        x = x.wrapping_add(0x9E3779B97F4A7C15);
+        x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        x = (x ^ (x >> 27)).wrapping_mul(0x94D049BB133111EB);
+        x ^ (x >> 31)
+    }
+
+    let mut seed = mix(base_seed ^ 0xA5A5_A5A5_A5A5_A5A5);
+    seed = mix(seed ^ stream);
+    seed = mix(seed ^ k_index);
+    seed = mix(seed ^ scf_iter);
+    mix(seed ^ band_index)
 }
 
 pub fn vec_norm(v: &[c64]) -> f64 {

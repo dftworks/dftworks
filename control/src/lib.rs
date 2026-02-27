@@ -59,6 +59,7 @@ pub struct Control {
     scf_min_iter: usize,
     scf_max_iter_rand_wfc: usize,
     scf_max_iter_wfc: usize,
+    random_seed: Option<u64>,
     scf_rho_mix_scheme: String,
     scf_rho_mix_alpha: f64, // old*alpha + new*(1-alpha)
     scf_rho_mix_beta: f64,  // alpha * G2/(G2+beta)
@@ -93,6 +94,8 @@ pub struct Control {
     dos_ne: usize,
 
     kpts_scheme: String,
+    provenance_manifest: String,
+    provenance_check: bool,
 
     symmetry: bool,
 
@@ -207,6 +210,14 @@ fn parse_i32_value(value: &str) -> Result<i32, String> {
 }
 
 #[inline]
+fn parse_u64_value(value: &str) -> Result<u64, String> {
+    value
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| "expected a non-negative 64-bit integer".to_string())
+}
+
+#[inline]
 fn parse_f64_value(value: &str) -> Result<f64, String> {
     value
         .trim()
@@ -305,6 +316,8 @@ set_usize_field!(set_davidson_ndim, davidson_ndim);
 set_string_field!(set_dos_scheme, dos_scheme);
 set_usize_field!(set_dos_ne, dos_ne);
 set_string_field!(set_kpts_scheme, kpts_scheme);
+set_string_field!(set_provenance_manifest, provenance_manifest);
+set_bool_field!(set_provenance_check, provenance_check);
 set_f64_field!(set_occ_inversion, occ_inversion);
 set_bool_field!(set_wannier90_export, wannier90_export);
 set_string_field!(set_wannier90_seedname, wannier90_seedname);
@@ -363,6 +376,19 @@ fn set_task(control: &mut Control, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn set_random_seed(control: &mut Control, value: &str) -> Result<(), String> {
+    let raw = value.trim();
+    if raw.eq_ignore_ascii_case("none")
+        || raw.eq_ignore_ascii_case("auto")
+        || raw.eq_ignore_ascii_case("unset")
+    {
+        control.random_seed = None;
+        return Ok(());
+    }
+    control.random_seed = Some(parse_u64_value(raw)?);
+    Ok(())
+}
+
 const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "verbosity",
@@ -379,6 +405,10 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "scf_max_iter_rand_wfc",
         setter: set_scf_max_iter_rand_wfc,
+    },
+    KeySpec {
+        key: "random_seed",
+        setter: set_random_seed,
     },
     KeySpec {
         key: "pot_scheme",
@@ -529,6 +559,14 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
         setter: set_kpts_scheme,
     },
     KeySpec {
+        key: "provenance_manifest",
+        setter: set_provenance_manifest,
+    },
+    KeySpec {
+        key: "provenance_check",
+        setter: set_provenance_check,
+    },
+    KeySpec {
         key: "occ_inversion",
         setter: set_occ_inversion,
     },
@@ -652,6 +690,14 @@ impl Control {
         &self.kpts_scheme
     }
 
+    pub fn get_provenance_manifest(&self) -> &str {
+        &self.provenance_manifest
+    }
+
+    pub fn get_provenance_check(&self) -> bool {
+        self.provenance_check
+    }
+
     pub fn get_scf_min_iter(&self) -> usize {
         self.scf_min_iter
     }
@@ -662,6 +708,10 @@ impl Control {
 
     pub fn get_scf_max_iter_rand_wfc(&self) -> usize {
         self.scf_max_iter_rand_wfc
+    }
+
+    pub fn get_random_seed(&self) -> Option<u64> {
+        self.random_seed
     }
 
     pub fn get_pot_scheme(&self) -> &str {
@@ -918,12 +968,15 @@ impl Control {
         self.scf_max_iter = 60;
         self.scf_max_iter_rand_wfc = 1;
         self.scf_max_iter_wfc = 30;
+        self.random_seed = None;
 
         self.dos_scheme = "gauss".to_string();
         self.dos_ne = 500;
         self.dos_sigma = 0.1;
 
         self.kpts_scheme = "kmesh".to_string();
+        self.provenance_manifest = "run.provenance.json".to_string();
+        self.provenance_check = false;
         self.verbosity = "high".to_string();
         self.occ_inversion = 0.0;
 
@@ -1040,6 +1093,13 @@ impl Control {
             }
         }
 
+        if self.provenance_manifest.trim().is_empty() {
+            return Err(ControlError::validation(
+                "provenance_manifest",
+                "must not be empty",
+            ));
+        }
+
         Ok(())
     }
 
@@ -1141,6 +1201,31 @@ impl Control {
             self.get_restart(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
+        );
+
+        let random_seed_text = self
+            .get_random_seed()
+            .map(|seed| seed.to_string())
+            .unwrap_or_else(|| "auto".to_string());
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "random_seed",
+            random_seed_text,
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "provenance_check",
+            self.get_provenance_check(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {}",
+            "provenance_manifest",
+            self.get_provenance_manifest(),
+            width1 = OUT_WIDTH1
         );
 
         println!(
@@ -1507,5 +1592,26 @@ mod tests {
         let err = parse_control(&["restart = true", "spin_scheme = ncl"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("restart/spin_scheme"));
         assert!(err.message.contains("supports only nonspin/spin"));
+    }
+
+    #[test]
+    fn test_parser_accepts_random_seed_and_provenance_fields() {
+        let control = parse_control(&[
+            "random_seed = 42",
+            "provenance_manifest = provenance/run.json",
+            "provenance_check = true",
+        ])
+        .expect("control parse should succeed");
+
+        assert_eq!(control.get_random_seed(), Some(42));
+        assert_eq!(control.get_provenance_manifest(), "provenance/run.json");
+        assert!(control.get_provenance_check());
+    }
+
+    #[test]
+    fn test_validation_rejects_empty_provenance_manifest() {
+        let err = parse_control(&["provenance_manifest ="]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("provenance_manifest"));
+        assert!(err.message.contains("must not be empty"));
     }
 }

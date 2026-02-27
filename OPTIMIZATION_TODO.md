@@ -302,8 +302,8 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E16 - Deterministic Initialization and Run Provenance
 **Priority**: P2/P4  
-**Status**: Open  
-**Files**: `utility/src/lib.rs`, `control/src/lib.rs`, `pw/src/main.rs`, `workflow/src/main.rs`
+**Status**: In Progress (2026-02-27)  
+**Files**: `utility/src/lib.rs`, `control/src/lib.rs`, `kscf/src/lib.rs`, `pw/src/main.rs`, `property/src/lib.rs`, `workflow/src/main.rs`
 
 - Add explicit RNG seed control for wavefunction random initialization
 - Record full run manifest (seed, git commit, crate features, MPI/rayon settings, input hashes)
@@ -314,6 +314,15 @@ The previous list contained intentional overlap to capture related themes. The i
 - Fixed seed runs are bitwise or numerically stable under fixed runtime settings
 - Every run directory contains a machine-readable provenance manifest
 - Reproducibility checks can be automated in CI for at least one reference case
+
+**Implementation Update (2026-02-27)**
+- [x] Added explicit `random_seed` control parsing (`u64` or `none/auto`) and provenance controls (`provenance_manifest`, `provenance_check`) in `control`
+- [x] Added deterministic seeded wavefunction random initialization path in `kscf` (`stream + global_k + scf_iter + band` seed derivation) while preserving legacy stochastic behavior when seed is unset
+- [x] Added root-authored machine-readable `run.provenance.json` manifest emission in `pw` with build/runtime context (git commit, build features, FFT backend, MPI/rayon), initialization seed info, and hashed inputs (including `in.pot` mapped pseudopotentials)
+- [x] Added replay guard (`provenance_check=true`) that validates schema + replay fingerprint against existing manifest and fails fast on incompatible reruns
+- [x] Surfaced provenance in downstream outputs (`workflow` stage summary prints provenance path; `property` summary JSON includes provenance manifest reference and replay fingerprint when available)
+- [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
+- [ ] Add CI replay test that runs fixed-seed reference SCF twice and enforces numeric/manifest stability policy
 
 ### E17 - Scalable Checkpoint I/O and Artifact Schema Governance
 **Priority**: P3/P4  
