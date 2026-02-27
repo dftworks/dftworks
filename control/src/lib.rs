@@ -1,9 +1,10 @@
 use dwconsts::*;
 
 use std::{
+    error::Error,
+    fmt,
     fs::File,
     io::{BufRead, BufReader},
-    ops::Not,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +111,488 @@ pub struct Control {
 
     hse06_alpha: f64,
     hse06_omega: f64, // bohr^-1
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlError {
+    pub line: Option<usize>,
+    pub key: Option<String>,
+    pub message: String,
+}
+
+impl ControlError {
+    fn io(path: &str, err: std::io::Error) -> Self {
+        Self {
+            line: None,
+            key: None,
+            message: format!("failed to read '{}': {}", path, err),
+        }
+    }
+
+    fn syntax(line: usize, message: impl Into<String>) -> Self {
+        Self {
+            line: Some(line),
+            key: None,
+            message: message.into(),
+        }
+    }
+
+    fn unknown_key(line: usize, key: &str) -> Self {
+        Self {
+            line: Some(line),
+            key: Some(key.to_string()),
+            message: "unknown parameter".to_string(),
+        }
+    }
+
+    fn invalid_value(line: usize, key: &str, value: &str, details: impl Into<String>) -> Self {
+        Self {
+            line: Some(line),
+            key: Some(key.to_string()),
+            message: format!("invalid value '{}': {}", value, details.into()),
+        }
+    }
+
+    fn validation(key: &str, message: impl Into<String>) -> Self {
+        Self {
+            line: None,
+            key: Some(key.to_string()),
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for ControlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.line, self.key.as_deref()) {
+            (Some(line), Some(key)) => write!(f, "in.ctrl:{}:{}: {}", line, key, self.message),
+            (Some(line), None) => write!(f, "in.ctrl:{}: {}", line, self.message),
+            (None, Some(key)) => write!(f, "in.ctrl:{}: {}", key, self.message),
+            (None, None) => write!(f, "in.ctrl: {}", self.message),
+        }
+    }
+}
+
+impl Error for ControlError {}
+
+type SetterFn = fn(&mut Control, &str) -> Result<(), String>;
+
+struct KeySpec {
+    key: &'static str,
+    setter: SetterFn,
+}
+
+#[inline]
+fn parse_bool_value(value: &str) -> Result<bool, String> {
+    value
+        .trim()
+        .parse::<bool>()
+        .map_err(|_| "expected a boolean ('true' or 'false')".to_string())
+}
+
+#[inline]
+fn parse_usize_value(value: &str) -> Result<usize, String> {
+    value
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| "expected an unsigned integer".to_string())
+}
+
+#[inline]
+fn parse_i32_value(value: &str) -> Result<i32, String> {
+    value
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| "expected an integer".to_string())
+}
+
+#[inline]
+fn parse_f64_value(value: &str) -> Result<f64, String> {
+    value
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "expected a floating-point number".to_string())
+}
+
+macro_rules! set_string_field {
+    ($fn_name:ident, $field:ident) => {
+        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
+            control.$field = value.trim().to_string();
+            Ok(())
+        }
+    };
+}
+
+macro_rules! set_lower_string_field {
+    ($fn_name:ident, $field:ident) => {
+        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
+            control.$field = value.trim().to_lowercase();
+            Ok(())
+        }
+    };
+}
+
+macro_rules! set_bool_field {
+    ($fn_name:ident, $field:ident) => {
+        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
+            control.$field = parse_bool_value(value)?;
+            Ok(())
+        }
+    };
+}
+
+macro_rules! set_usize_field {
+    ($fn_name:ident, $field:ident) => {
+        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
+            control.$field = parse_usize_value(value)?;
+            Ok(())
+        }
+    };
+}
+
+macro_rules! set_i32_field {
+    ($fn_name:ident, $field:ident) => {
+        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
+            control.$field = parse_i32_value(value)?;
+            Ok(())
+        }
+    };
+}
+
+macro_rules! set_f64_field {
+    ($fn_name:ident, $field:ident) => {
+        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
+            control.$field = parse_f64_value(value)?;
+            Ok(())
+        }
+    };
+}
+
+set_string_field!(set_verbosity, verbosity);
+set_bool_field!(set_scf_harris, scf_harris);
+set_usize_field!(set_scf_max_iter_wfc, scf_max_iter_wfc);
+set_usize_field!(set_scf_max_iter_rand_wfc, scf_max_iter_rand_wfc);
+set_string_field!(set_pot_scheme, pot_scheme);
+set_bool_field!(set_output_atomic_density, output_atomic_density);
+set_lower_string_field!(set_xc_scheme, xc_scheme);
+set_bool_field!(set_geom_optim_cell, geom_optim_cell);
+set_string_field!(set_geom_optim_scheme, geom_optim_scheme);
+set_usize_field!(set_geom_optim_max_steps, geom_optim_max_steps);
+set_usize_field!(set_geom_optim_history_steps, geom_optim_history_steps);
+set_f64_field!(set_geom_optim_alpha, geom_optim_alpha);
+set_f64_field!(set_geom_optim_force_tolerance, geom_optim_force_tolerance);
+set_f64_field!(set_geom_optim_stress_tolerance, geom_optim_stress_tolerance);
+set_string_field!(set_smearing_scheme, smearing_scheme);
+set_f64_field!(set_temperature, temperature);
+set_usize_field!(set_scf_min_iter, scf_min_iter);
+set_usize_field!(set_scf_max_iter, scf_max_iter);
+set_usize_field!(set_nband, nband);
+set_f64_field!(set_scf_rho_mix_alpha, scf_rho_mix_alpha);
+set_f64_field!(set_scf_rho_mix_beta, scf_rho_mix_beta);
+set_f64_field!(set_rho_epsilon, rho_epsilon);
+set_string_field!(set_scf_rho_mix_scheme, scf_rho_mix_scheme);
+set_usize_field!(set_scf_rho_mix_history_steps, scf_rho_mix_history_steps);
+set_f64_field!(
+    set_scf_rho_mix_pulay_metric_weight,
+    scf_rho_mix_pulay_metric_weight
+);
+set_bool_field!(set_eigval_same_epsilon, eigval_same_epsilon);
+set_bool_field!(set_restart, restart);
+set_bool_field!(set_save_rho, save_rho);
+set_bool_field!(set_save_wfc, save_wfc);
+set_string_field!(set_eigen_solver, eigen_solver);
+set_usize_field!(set_davidson_ndim, davidson_ndim);
+set_string_field!(set_dos_scheme, dos_scheme);
+set_usize_field!(set_dos_ne, dos_ne);
+set_string_field!(set_kpts_scheme, kpts_scheme);
+set_f64_field!(set_occ_inversion, occ_inversion);
+set_bool_field!(set_wannier90_export, wannier90_export);
+set_string_field!(set_wannier90_seedname, wannier90_seedname);
+set_usize_field!(set_wannier90_num_wann, wannier90_num_wann);
+set_usize_field!(set_wannier90_num_iter, wannier90_num_iter);
+set_bool_field!(set_hubbard_u_enabled, hubbard_u_enabled);
+set_string_field!(set_hubbard_species, hubbard_species);
+set_i32_field!(set_hubbard_l, hubbard_l);
+set_f64_field!(set_hse06_alpha, hse06_alpha);
+set_f64_field!(set_hse06_omega, hse06_omega);
+set_bool_field!(set_symmetry, symmetry);
+
+fn set_ecut_wfc(control: &mut Control, value: &str) -> Result<(), String> {
+    control.ecut_wfc = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_ecut_rho(control: &mut Control, value: &str) -> Result<(), String> {
+    control.ecut_rho = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_energy_epsilon(control: &mut Control, value: &str) -> Result<(), String> {
+    control.energy_epsilon = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_eigval_epsilon(control: &mut Control, value: &str) -> Result<(), String> {
+    control.eigval_epsilon = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_dos_sigma(control: &mut Control, value: &str) -> Result<(), String> {
+    control.dos_sigma = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_hubbard_u(control: &mut Control, value: &str) -> Result<(), String> {
+    control.hubbard_u = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_hubbard_j(control: &mut Control, value: &str) -> Result<(), String> {
+    control.hubbard_j = parse_f64_value(value)? * EV_TO_HA;
+    Ok(())
+}
+
+fn set_spin_scheme(control: &mut Control, value: &str) -> Result<(), String> {
+    control.spin_scheme = SpinScheme::parse(value)
+        .ok_or_else(|| "expected one of: nonspin, spin, ncl".to_string())?;
+    Ok(())
+}
+
+fn set_task(control: &mut Control, value: &str) -> Result<(), String> {
+    control.task = value.trim().to_lowercase();
+    Ok(())
+}
+
+const CONTROL_KEY_SPECS: &[KeySpec] = &[
+    KeySpec {
+        key: "verbosity",
+        setter: set_verbosity,
+    },
+    KeySpec {
+        key: "scf_harris",
+        setter: set_scf_harris,
+    },
+    KeySpec {
+        key: "scf_max_iter_wfc",
+        setter: set_scf_max_iter_wfc,
+    },
+    KeySpec {
+        key: "scf_max_iter_rand_wfc",
+        setter: set_scf_max_iter_rand_wfc,
+    },
+    KeySpec {
+        key: "pot_scheme",
+        setter: set_pot_scheme,
+    },
+    KeySpec {
+        key: "output_atomic_density",
+        setter: set_output_atomic_density,
+    },
+    KeySpec {
+        key: "xc_scheme",
+        setter: set_xc_scheme,
+    },
+    KeySpec {
+        key: "geom_optim_cell",
+        setter: set_geom_optim_cell,
+    },
+    KeySpec {
+        key: "geom_optim_scheme",
+        setter: set_geom_optim_scheme,
+    },
+    KeySpec {
+        key: "geom_optim_max_steps",
+        setter: set_geom_optim_max_steps,
+    },
+    KeySpec {
+        key: "geom_optim_history_steps",
+        setter: set_geom_optim_history_steps,
+    },
+    KeySpec {
+        key: "geom_optim_alpha",
+        setter: set_geom_optim_alpha,
+    },
+    KeySpec {
+        key: "geom_optim_force_tolerance",
+        setter: set_geom_optim_force_tolerance,
+    },
+    KeySpec {
+        key: "geom_optim_stress_tolerance",
+        setter: set_geom_optim_stress_tolerance,
+    },
+    KeySpec {
+        key: "smearing_scheme",
+        setter: set_smearing_scheme,
+    },
+    KeySpec {
+        key: "temperature",
+        setter: set_temperature,
+    },
+    KeySpec {
+        key: "ecut_wfc",
+        setter: set_ecut_wfc,
+    },
+    KeySpec {
+        key: "ecut_rho",
+        setter: set_ecut_rho,
+    },
+    KeySpec {
+        key: "scf_min_iter",
+        setter: set_scf_min_iter,
+    },
+    KeySpec {
+        key: "scf_max_iter",
+        setter: set_scf_max_iter,
+    },
+    KeySpec {
+        key: "nband",
+        setter: set_nband,
+    },
+    KeySpec {
+        key: "scf_rho_mix_alpha",
+        setter: set_scf_rho_mix_alpha,
+    },
+    KeySpec {
+        key: "scf_rho_mix_beta",
+        setter: set_scf_rho_mix_beta,
+    },
+    KeySpec {
+        key: "energy_epsilon",
+        setter: set_energy_epsilon,
+    },
+    KeySpec {
+        key: "rho_epsilon",
+        setter: set_rho_epsilon,
+    },
+    KeySpec {
+        key: "scf_rho_mix_scheme",
+        setter: set_scf_rho_mix_scheme,
+    },
+    KeySpec {
+        key: "scf_rho_mix_history_steps",
+        setter: set_scf_rho_mix_history_steps,
+    },
+    KeySpec {
+        key: "scf_rho_mix_pulay_metric_weight",
+        setter: set_scf_rho_mix_pulay_metric_weight,
+    },
+    KeySpec {
+        key: "eigval_epsilon",
+        setter: set_eigval_epsilon,
+    },
+    KeySpec {
+        key: "eigval_same_epsilon",
+        setter: set_eigval_same_epsilon,
+    },
+    KeySpec {
+        key: "spin_scheme",
+        setter: set_spin_scheme,
+    },
+    KeySpec {
+        key: "task",
+        setter: set_task,
+    },
+    KeySpec {
+        key: "restart",
+        setter: set_restart,
+    },
+    KeySpec {
+        key: "save_rho",
+        setter: set_save_rho,
+    },
+    KeySpec {
+        key: "save_wfc",
+        setter: set_save_wfc,
+    },
+    KeySpec {
+        key: "eigen_solver",
+        setter: set_eigen_solver,
+    },
+    KeySpec {
+        key: "davidson_ndim",
+        setter: set_davidson_ndim,
+    },
+    KeySpec {
+        key: "dos_scheme",
+        setter: set_dos_scheme,
+    },
+    KeySpec {
+        key: "dos_sigma",
+        setter: set_dos_sigma,
+    },
+    KeySpec {
+        key: "dos_ne",
+        setter: set_dos_ne,
+    },
+    KeySpec {
+        key: "kpts_scheme",
+        setter: set_kpts_scheme,
+    },
+    KeySpec {
+        key: "occ_inversion",
+        setter: set_occ_inversion,
+    },
+    KeySpec {
+        key: "wannier90_export",
+        setter: set_wannier90_export,
+    },
+    KeySpec {
+        key: "wannier90_seedname",
+        setter: set_wannier90_seedname,
+    },
+    KeySpec {
+        key: "wannier90_num_wann",
+        setter: set_wannier90_num_wann,
+    },
+    KeySpec {
+        key: "wannier90_num_iter",
+        setter: set_wannier90_num_iter,
+    },
+    KeySpec {
+        key: "hubbard_u_enabled",
+        setter: set_hubbard_u_enabled,
+    },
+    KeySpec {
+        key: "hubbard_species",
+        setter: set_hubbard_species,
+    },
+    KeySpec {
+        key: "hubbard_l",
+        setter: set_hubbard_l,
+    },
+    KeySpec {
+        key: "hubbard_u",
+        setter: set_hubbard_u,
+    },
+    KeySpec {
+        key: "hubbard_j",
+        setter: set_hubbard_j,
+    },
+    KeySpec {
+        key: "hse06_alpha",
+        setter: set_hse06_alpha,
+    },
+    KeySpec {
+        key: "hse06_omega",
+        setter: set_hse06_omega,
+    },
+    KeySpec {
+        key: "symmetry",
+        setter: set_symmetry,
+    },
+];
+
+fn find_key_spec(key: &str) -> Option<&'static KeySpec> {
+    CONTROL_KEY_SPECS.iter().find(|spec| spec.key == key)
+}
+
+fn canonicalize_control_key(key: &str) -> &str {
+    match key {
+        // Deprecated aliases retained for backward compatibility.
+        "ecut" => "ecut_wfc",
+        "mixing_scheme" => "scf_rho_mix_scheme",
+        _ => key,
+    }
 }
 
 impl Control {
@@ -382,9 +865,24 @@ impl Control {
     }
 
     pub fn read_file(&mut self, inpfile: &str) {
-        // Initialize defaults first; user file selectively overrides values.
-        self.task = "scf".to_string();
+        if let Err(err) = self.try_read_file(inpfile) {
+            panic!("{}", err);
+        }
+    }
 
+    pub fn from_file(inpfile: &str) -> Result<Control, ControlError> {
+        let mut control = Control::new();
+        control.try_read_file(inpfile)?;
+        Ok(control)
+    }
+
+    pub fn try_read_file(&mut self, inpfile: &str) -> Result<(), ControlError> {
+        let lines = Self::read_file_data_to_vec(inpfile)?;
+        self.try_read_lines(lines.as_slice())
+    }
+
+    fn reset_defaults(&mut self) {
+        self.task = "scf".to_string();
         self.spin_scheme = SpinScheme::NonSpin;
 
         self.geom_optim_cell = false;
@@ -398,17 +896,15 @@ impl Control {
         self.save_rho = true;
         self.save_wfc = true;
 
-        self.ecut_wfc = 400.0 * EV_TO_HA; // ev in in.ctrl, need to convert to HA
+        self.ecut_wfc = 400.0 * EV_TO_HA; // eV in in.ctrl, stored as Ha
         self.ecut_rho = 4.0 * self.ecut_wfc;
 
         self.eigval_same_epsilon = false;
-        self.eigval_epsilon = 1.0E-6; // ev
+        self.eigval_epsilon = 1.0E-6;
         self.rho_epsilon = 1.0E-5;
-
-        self.energy_epsilon = EPS6; //eV
+        self.energy_epsilon = EPS6;
 
         self.eigen_solver = "pcg".to_string();
-
         self.davidson_ndim = 6;
 
         self.scf_rho_mix_scheme = "simple".to_string();
@@ -425,12 +921,10 @@ impl Control {
 
         self.dos_scheme = "gauss".to_string();
         self.dos_ne = 500;
-        self.dos_sigma = 0.1; // eV
+        self.dos_sigma = 0.1;
 
-        self.kpts_scheme = "kmesh".to_string(); // "kmesh", "kpath", "klist"
-
+        self.kpts_scheme = "kmesh".to_string();
         self.verbosity = "high".to_string();
-
         self.occ_inversion = 0.0;
 
         self.wannier90_export = false;
@@ -446,367 +940,192 @@ impl Control {
 
         self.hse06_alpha = 0.25;
         self.hse06_omega = 0.11;
+    }
 
-        let mut b_has_invalid_parameter = false;
+    fn parse_assignment_line(line: &str, line_no: usize) -> Result<Option<(String, String)>, ControlError> {
+        let line = line.split('#').next().unwrap_or(line);
+        let line = line.split('!').next().unwrap_or(line);
+        let trimmed = line.trim();
 
-        let mut b_ecut_rho_set = false;
-        let mut b_wannier90_num_wann_set = false;
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
 
-        let lines = self.read_file_data_to_vec(inpfile);
+        let Some((key, value)) = trimmed.split_once('=') else {
+            return Err(ControlError::syntax(
+                line_no,
+                "expected 'key = value' assignment",
+            ));
+        };
 
-        for line in lines.iter() {
-            // Parse key=value lines.
-            let s: Vec<&str> = line.split('=').map(|x| x.trim()).collect();
+        let key = key.trim().to_lowercase();
+        if key.is_empty() {
+            return Err(ControlError::syntax(line_no, "parameter name must not be empty"));
+        }
 
-            match s[0] {
-                "verbosity" => {
-                    self.verbosity = s[1].parse().unwrap();
-                }
+        Ok(Some((key, value.trim().to_string())))
+    }
 
-                "scf_harris" => {
-                    self.scf_harris = s[1].parse().unwrap();
-                }
+    fn try_read_lines(&mut self, lines: &[String]) -> Result<(), ControlError> {
+        self.reset_defaults();
 
-                "scf_max_iter_wfc" => {
-                    self.scf_max_iter_wfc = s[1].parse().unwrap();
-                }
+        let mut ecut_rho_set = false;
+        let mut wannier90_num_wann_set = false;
 
-                "scf_max_iter_rand_wfc" => {
-                    self.scf_max_iter_rand_wfc = s[1].parse().unwrap();
-                }
+        for (idx, raw_line) in lines.iter().enumerate() {
+            let line_no = idx + 1;
+            let Some((raw_key, raw_value)) = Self::parse_assignment_line(raw_line, line_no)? else {
+                continue;
+            };
 
-                "pot_scheme" => {
-                    self.pot_scheme = s[1].parse().unwrap();
-                }
+            let key = canonicalize_control_key(raw_key.as_str());
+            let spec = find_key_spec(key).ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?;
 
-                "output_atomic_density" => {
-                    self.output_atomic_density = s[1].parse().unwrap();
-                }
+            (spec.setter)(self, &raw_value)
+                .map_err(|details| ControlError::invalid_value(line_no, key, &raw_value, details))?;
 
-                "xc_scheme" => {
-                    self.xc_scheme = s[1]
-                        .parse::<String>()
-                        .unwrap()
-                        .trim()
-                        .to_lowercase()
-                        .to_string();
-                }
-
-                "geom_optim_cell" => {
-                    self.geom_optim_cell = s[1].parse().unwrap();
-                }
-
-                "geom_optim_scheme" => {
-                    self.geom_optim_scheme = s[1].parse().unwrap();
-                }
-
-                "geom_optim_max_steps" => {
-                    self.geom_optim_max_steps = s[1].parse().unwrap();
-                }
-
-                "geom_optim_history_steps" => {
-                    self.geom_optim_history_steps = s[1].parse().unwrap();
-                }
-
-                "geom_optim_alpha" => {
-                    self.geom_optim_alpha = s[1].parse().unwrap();
-                }
-
-                "geom_optim_force_tolerance" => {
-                    self.geom_optim_force_tolerance = s[1].parse().unwrap();
-                }
-
-                "geom_optim_stress_tolerance" => {
-                    self.geom_optim_stress_tolerance = s[1].parse().unwrap();
-                }
-
-                "smearing_scheme" => {
-                    self.smearing_scheme = s[1].parse().unwrap();
-                }
-
-                "temperature" => {
-                    self.temperature = s[1].parse().unwrap();
-                }
-
-                "ecut_wfc" => {
-                    self.ecut_wfc = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                }
-
-                "ecut_rho" => {
-                    self.ecut_rho = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                    b_ecut_rho_set = true;
-                }
-
-                "scf_min_iter" => {
-                    self.scf_min_iter = s[1].parse().unwrap();
-                }
-
-                "scf_max_iter" => {
-                    self.scf_max_iter = s[1].parse().unwrap();
-                }
-
-                "nband" => {
-                    self.nband = s[1].parse().unwrap();
-                }
-
-                "scf_rho_mix_alpha" => {
-                    self.scf_rho_mix_alpha = s[1].parse().unwrap();
-                }
-
-                "scf_rho_mix_beta" => {
-                    self.scf_rho_mix_beta = s[1].parse().unwrap();
-                }
-
-                "energy_epsilon" => {
-                    self.energy_epsilon = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                }
-
-                "rho_epsilon" => {
-                    self.rho_epsilon = s[1].parse().unwrap();
-                }
-
-                "scf_rho_mix_scheme" => {
-                    self.scf_rho_mix_scheme = s[1].parse().unwrap();
-                }
-
-                "scf_rho_mix_history_steps" => {
-                    self.scf_rho_mix_history_steps = s[1].parse().unwrap();
-                }
-
-                "scf_rho_mix_pulay_metric_weight" => {
-                    self.scf_rho_mix_pulay_metric_weight = s[1].parse().unwrap();
-                }
-
-                "eigval_epsilon" => {
-                    self.eigval_epsilon = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                }
-
-                "eigval_same_epsilon" => {
-                    self.eigval_same_epsilon = s[1].parse().unwrap();
-                }
-
-                "spin_scheme" => {
-                    if let Some(spin_scheme) = SpinScheme::parse(s[1]) {
-                        self.spin_scheme = spin_scheme;
-                    } else {
-                        println!("invalid spin_scheme : {}", s[1]);
-                        b_has_invalid_parameter = true;
-                    }
-                }
-
-                "task" => {
-                    self.task = s[1]
-                        .parse::<String>()
-                        .unwrap()
-                        .trim()
-                        .to_lowercase()
-                        .to_string();
-                }
-
-                "restart" => {
-                    self.restart = s[1].parse().unwrap();
-                }
-
-                "save_rho" => {
-                    self.save_rho = s[1].parse().unwrap();
-                }
-
-                "save_wfc" => {
-                    self.save_wfc = s[1].parse().unwrap();
-                }
-
-                "eigen_solver" => {
-                    self.eigen_solver = s[1].parse().unwrap();
-                }
-
-                "davidson_ndim" => {
-                    self.davidson_ndim = s[1].parse().unwrap();
-                }
-
-                "dos_scheme" => {
-                    self.dos_scheme = s[1].parse().unwrap();
-                }
-
-                "dos_sigma" => {
-                    self.dos_sigma = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                }
-
-                "dos_ne" => {
-                    self.dos_ne = s[1].parse().unwrap();
-                }
-
-                "kpts_scheme" => {
-                    self.kpts_scheme = s[1].parse().unwrap();
-                }
-
-                "occ_inversion" => {
-                    self.occ_inversion = s[1].parse::<f64>().unwrap();
-                }
-
-                "wannier90_export" => {
-                    self.wannier90_export = s[1].parse().unwrap();
-                }
-
-                "wannier90_seedname" => {
-                    self.wannier90_seedname = s[1].trim().to_string();
-                }
-
-                "wannier90_num_wann" => {
-                    self.wannier90_num_wann = s[1].parse().unwrap();
-                    b_wannier90_num_wann_set = true;
-                }
-
-                "wannier90_num_iter" => {
-                    self.wannier90_num_iter = s[1].parse().unwrap();
-                }
-
-                "hubbard_u_enabled" => {
-                    self.hubbard_u_enabled = s[1].parse().unwrap();
-                }
-
-                "hubbard_species" => {
-                    self.hubbard_species = s[1].trim().to_string();
-                }
-
-                "hubbard_l" => {
-                    self.hubbard_l = s[1].parse().unwrap();
-                }
-
-                "hubbard_u" => {
-                    self.hubbard_u = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                }
-
-                "hubbard_j" => {
-                    self.hubbard_j = s[1].parse::<f64>().unwrap() * EV_TO_HA;
-                }
-
-                "hse06_alpha" => {
-                    self.hse06_alpha = s[1].parse().unwrap();
-                }
-
-                "hse06_omega" => {
-                    self.hse06_omega = s[1].parse().unwrap();
-                }
-
-                "symmetry" => {
-                    self.symmetry = s[1].parse().unwrap();
-                    //println!(" symmetry = {}", self.get_symmetry());
-                    //println!(" {:?}", s);
-                }
-
-                "" => {}
-
-                _ => {
-                    // Unknown key is treated as an input error.
-                    println!("unknown parameter : {}", line);
-                    b_has_invalid_parameter = true;
-                }
+            if key == "ecut_rho" {
+                ecut_rho_set = true;
+            }
+            if key == "wannier90_num_wann" {
+                wannier90_num_wann_set = true;
             }
         }
 
-        if b_has_invalid_parameter {
-            println!("Program exited abnormally");
-
-            std::process::exit(-1);
-        }
-
-        // if the ecut_rho is not set, 4.0 * ecut_wfc is ok with norm-conserving pseudopotentials
-
-        if b_ecut_rho_set.not() {
+        if !ecut_rho_set {
             self.ecut_rho = 4.0 * self.ecut_wfc;
         }
-
-        if b_wannier90_num_wann_set.not() {
+        if !wannier90_num_wann_set {
             self.wannier90_num_wann = self.nband;
         }
 
+        self.validate_semantic_ranges()?;
+        self.validate_feature_compatibility()?;
+
+        Ok(())
+    }
+
+    fn validate_semantic_ranges(&self) -> Result<(), ControlError> {
+        if self.scf_min_iter > self.scf_max_iter {
+            return Err(ControlError::validation(
+                "scf_min_iter/scf_max_iter",
+                "scf_min_iter must be <= scf_max_iter",
+            ));
+        }
+
         if self.wannier90_export {
-            // Validate Wannier export settings early for clearer failures.
             if self.wannier90_seedname.trim().is_empty() {
-                println!("invalid wannier90_seedname: must not be empty");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "wannier90_seedname",
+                    "must not be empty when wannier90_export=true",
+                ));
             }
-
             if self.wannier90_num_wann == 0 {
-                println!("invalid wannier90_num_wann: must be > 0");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "wannier90_num_wann",
+                    "must be > 0 when wannier90_export=true",
+                ));
             }
-
             if self.nband == 0 {
-                println!("invalid nband: must be > 0 when wannier90_export=true");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "nband",
+                    "must be > 0 when wannier90_export=true",
+                ));
             }
-
             if self.wannier90_num_wann > self.nband {
-                println!(
-                    "invalid wannier90_num_wann: {} > nband ({})",
-                    self.wannier90_num_wann, self.nband
-                );
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "wannier90_num_wann",
+                    format!("{} > nband ({})", self.wannier90_num_wann, self.nband),
+                ));
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_feature_compatibility(&self) -> Result<(), ControlError> {
+        if self.restart && self.is_noncollinear() {
+            return Err(ControlError::validation(
+                "restart/spin_scheme",
+                "restart currently supports only nonspin/spin",
+            ));
         }
 
         if self.hubbard_u_enabled {
             if self.hubbard_species.trim().is_empty() {
-                println!("invalid hubbard_species: must not be empty when hubbard_u_enabled=true");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hubbard_species",
+                    "must not be empty when hubbard_u_enabled=true",
+                ));
             }
-
             if self.hubbard_l < 0 {
-                println!("invalid hubbard_l: must be >= 0 when hubbard_u_enabled=true");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hubbard_l",
+                    "must be >= 0 when hubbard_u_enabled=true",
+                ));
             }
-
             if self.hubbard_u < 0.0 {
-                println!("invalid hubbard_u: must be >= 0 eV when hubbard_u_enabled=true");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hubbard_u",
+                    "must be >= 0 eV when hubbard_u_enabled=true",
+                ));
             }
-
             if self.hubbard_j < 0.0 {
-                println!("invalid hubbard_j: must be >= 0 eV when hubbard_u_enabled=true");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hubbard_j",
+                    "must be >= 0 eV when hubbard_u_enabled=true",
+                ));
             }
-
             if self.hubbard_u < self.hubbard_j {
-                println!("invalid hubbard_u/hubbard_j: require hubbard_u >= hubbard_j");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hubbard_u/hubbard_j",
+                    "requires hubbard_u >= hubbard_j",
+                ));
             }
-
             if self.is_noncollinear() {
-                println!("invalid spin_scheme: hubbard_u_enabled=true currently supports only nonspin/spin");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "spin_scheme",
+                    "hubbard_u_enabled=true currently supports only nonspin/spin",
+                ));
             }
         }
 
         if self.xc_scheme == "hse06" {
             if self.hse06_alpha < 0.0 || self.hse06_alpha > 1.0 {
-                println!("invalid hse06_alpha: must be within [0, 1]");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hse06_alpha",
+                    "must be within [0, 1]",
+                ));
             }
-
             if self.hse06_omega <= 0.0 {
-                println!("invalid hse06_omega: must be > 0 (bohr^-1)");
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "hse06_omega",
+                    "must be > 0 (bohr^-1)",
+                ));
             }
-
             if self.is_noncollinear() {
-                println!(
-                    "invalid spin_scheme: xc_scheme='hse06' currently supports only nonspin/spin"
-                );
-                std::process::exit(-1);
+                return Err(ControlError::validation(
+                    "spin_scheme",
+                    "xc_scheme='hse06' currently supports only nonspin/spin",
+                ));
             }
         }
+
+        Ok(())
     }
 
-    pub fn read_file_data_to_vec(&mut self, pspfile: &str) -> Vec<String> {
-        // Plain text line reader used by read_file.
-        let file = File::open(pspfile).unwrap();
-
-        let lines = BufReader::new(file).lines();
-
-        let lines: Vec<String> = lines.map_while(std::io::Result::ok).collect();
-
-        lines
+    fn read_file_data_to_vec(path: &str) -> Result<Vec<String>, ControlError> {
+        let file = File::open(path).map_err(|e| ControlError::io(path, e))?;
+        let mut lines = Vec::new();
+        for (line_idx, line_res) in BufReader::new(file).lines().enumerate() {
+            let line = line_res.map_err(|e| ControlError {
+                line: Some(line_idx + 1),
+                key: None,
+                message: format!("failed to read line: {}", e),
+            })?;
+            lines.push(line);
+        }
+        Ok(lines)
     }
 
     pub fn display(&self) {
@@ -1103,7 +1422,14 @@ impl Control {
 
 #[cfg(test)]
 mod tests {
-    use super::SpinScheme;
+    use super::{Control, ControlError, SpinScheme};
+
+    fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
+        let mut control = Control::new();
+        let lines_owned: Vec<String> = lines.iter().map(|line| (*line).to_string()).collect();
+        control.try_read_lines(lines_owned.as_slice())?;
+        Ok(control)
+    }
 
     #[test]
     fn test_spin_scheme_parse_accepts_supported_values() {
@@ -1119,5 +1445,67 @@ mod tests {
         assert_eq!(SpinScheme::parse("collinear"), None);
         assert_eq!(SpinScheme::parse("spin-orbit"), None);
         assert_eq!(SpinScheme::parse("foo"), None);
+    }
+
+    #[test]
+    fn test_parser_reports_unknown_key_with_line_and_key() {
+        let err = parse_control(&["unknown_knob = 1"]).unwrap_err();
+        assert_eq!(err.line, Some(1));
+        assert_eq!(err.key.as_deref(), Some("unknown_knob"));
+        assert_eq!(err.message, "unknown parameter");
+    }
+
+    #[test]
+    fn test_parser_reports_typed_value_error() {
+        let err = parse_control(&["scf_max_iter = nope"]).unwrap_err();
+        assert_eq!(err.line, Some(1));
+        assert_eq!(err.key.as_deref(), Some("scf_max_iter"));
+        assert!(err.message.contains("expected an unsigned integer"));
+    }
+
+    #[test]
+    fn test_parser_accepts_deprecated_aliases() {
+        let control =
+            parse_control(&["ecut = 320.0", "mixing_scheme = pulay", "nband = 12"]).unwrap();
+
+        let ecut_ev = control.get_ecut() * dwconsts::HA_TO_EV;
+        assert!((ecut_ev - 320.0).abs() < 1.0e-12);
+        assert!((control.get_ecutrho() - 4.0 * control.get_ecut()).abs() < 1.0e-12);
+        assert_eq!(control.get_scf_rho_mix_scheme(), "pulay");
+    }
+
+    #[test]
+    fn test_validation_rejects_invalid_semantic_range() {
+        let err = parse_control(&["scf_min_iter = 5", "scf_max_iter = 4"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_min_iter/scf_max_iter"));
+        assert!(err.message.contains("must be <="));
+    }
+
+    #[test]
+    fn test_validation_rejects_hse06_with_ncl() {
+        let err = parse_control(&["xc_scheme = hse06", "spin_scheme = ncl"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("spin_scheme"));
+        assert!(err.message.contains("hse06"));
+    }
+
+    #[test]
+    fn test_validation_rejects_hubbard_incompatible_values() {
+        let err = parse_control(&[
+            "hubbard_u_enabled = true",
+            "hubbard_species = Fe",
+            "hubbard_l = 2",
+            "hubbard_u = 1.0",
+            "hubbard_j = 2.0",
+        ])
+        .unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("hubbard_u/hubbard_j"));
+        assert!(err.message.contains("requires hubbard_u >= hubbard_j"));
+    }
+
+    #[test]
+    fn test_validation_rejects_restart_with_ncl() {
+        let err = parse_control(&["restart = true", "spin_scheme = ncl"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("restart/spin_scheme"));
+        assert!(err.message.contains("supports only nonspin/spin"));
     }
 }

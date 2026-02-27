@@ -386,13 +386,21 @@ New canonical refactoring items are added below to unblock future feature expans
 
 ### E21 - Declarative Input Schema and Validation Pipeline
 **Priority**: P1  
-**Status**: Open  
+**Status**: Done (2026-02-26)  
 **Files**: `control/src/lib.rs`
 
 - Replace large manual `match` parser with declarative key schema (type parser + unit conversion + validation rule)
 - Return `Result<Control, ControlError>` with line-aware diagnostics instead of `unwrap()` / `process::exit`
 - Split validation into stages: syntax, semantic ranges, feature-compatibility matrix
 - Add parser tests for invalid keys, invalid values, deprecated aliases, and cross-field constraints
+
+**Implementation Update (2026-02-26)**
+- [x] Replaced manual key dispatch with declarative key schema (`KeySpec`) and typed setter functions (including unit-converting fields)
+- [x] Added structured `ControlError` diagnostics with line/key context and fallible APIs (`Control::from_file`, `try_read_file`)
+- [x] Split validation pipeline into staged checks (syntax parse -> semantic ranges -> feature compatibility)
+- [x] Added compatibility validation for restart/spin unsupported pair (`restart=true` with `spin_scheme=ncl`)
+- [x] Added parser/validator tests for unknown keys, typed value failures, deprecated aliases, and cross-field constraints (HSE/Hubbard/restart)
+- [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh` in `rust-dev`)
 
 **Acceptance Criteria**
 - `Control` loading has no `process::exit` and no parsing `unwrap()` in normal flow
