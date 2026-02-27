@@ -266,10 +266,9 @@ fn collect_input_hashes(control: &Control) -> Result<Vec<InputHashEntry>, String
         PathBuf::from("in.pot"),
     ];
 
-    match control.get_kpts_scheme() {
-        "kmesh" => files.push(PathBuf::from("in.kmesh")),
-        "kline" => files.push(PathBuf::from("in.kline")),
-        _ => {}
+    match control.get_kpts_scheme_enum() {
+        control::KptsScheme::Kmesh => files.push(PathBuf::from("in.kmesh")),
+        control::KptsScheme::Kline => files.push(PathBuf::from("in.kline")),
     }
 
     files.extend(parse_in_pot_paths(Path::new("in.pot"))?);
@@ -893,7 +892,7 @@ fn main() {
 
     // read in pots
 
-    let pots = PSPot::new(control.get_pot_scheme());
+    let pots = PSPot::new(control.get_pot_scheme_enum());
 
     if dwmpi::is_root() {
         pots.display();
@@ -907,7 +906,11 @@ fn main() {
 
     // read in kpts
 
-    let kpts = match kpts::try_new(control.get_kpts_scheme(), &crystal, control.get_symmetry()) {
+    let kpts = match kpts::try_new(
+        control.get_kpts_scheme_enum(),
+        &crystal,
+        control.get_symmetry(),
+    ) {
         Ok(kpts) => kpts,
         Err(err) => {
             if dwmpi::is_root() {

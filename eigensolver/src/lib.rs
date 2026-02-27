@@ -15,17 +15,22 @@ pub trait EigenSolver {
     ) -> (usize, usize);
 }
 
-pub fn new(solver_scheme: &str, n: usize, nev: usize) -> Box<dyn EigenSolver> {
+pub fn new(solver_scheme: EigenSolverScheme, n: usize, nev: usize) -> Box<dyn EigenSolver> {
     let sparse: Box<dyn EigenSolver>;
 
     match solver_scheme {
-        "pcg" => {
+        EigenSolverScheme::Pcg => {
             sparse = Box::new(EigenSolverPCG::new(n, nev));
         }
 
-        &_ => {
-            sparse = Box::new(EigenSolverPCG::new(n, nev));
-        }
+        EigenSolverScheme::Sd
+        | EigenSolverScheme::Psd
+        | EigenSolverScheme::Cg
+        | EigenSolverScheme::Arpack
+        | EigenSolverScheme::Davidson => panic!(
+            "eigen_solver='{}' is parsed but not implemented yet",
+            solver_scheme.as_str()
+        ),
     }
 
     sparse

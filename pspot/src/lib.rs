@@ -1,5 +1,6 @@
 use atompsp;
 use atompsp::AtomPSP;
+use control::PotScheme;
 
 use std::{
     collections::HashMap,
@@ -16,7 +17,7 @@ pub struct PSPot {
 }
 
 impl PSPot {
-    pub fn new(scheme: &str) -> PSPot {
+    pub fn new(scheme: PotScheme) -> PSPot {
         // Read species-to-file map from in.pot and instantiate parser by scheme.
         let pspfiles = get_psp_files("in.pot");
 
@@ -24,7 +25,7 @@ impl PSPot {
         let mut atpsp_file = HashMap::new();
 
         for (sp, spfile) in pspfiles.iter() {
-            let mut psp_one = atompsp::new(scheme);
+            let mut psp_one = atompsp::new(scheme.as_str());
 
             psp_one.read_file(&spfile);
 

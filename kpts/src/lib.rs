@@ -4,6 +4,7 @@ use line::*;
 mod mesh;
 use mesh::*;
 
+use control::KptsScheme;
 use crystal::Crystal;
 use lattice::Lattice;
 use std::error::Error;
@@ -53,21 +54,20 @@ pub trait KPTS {
 }
 
 // Factory for k-point generation modes.
-pub fn new(scheme: &str, crystal: &Crystal, symmetry: bool) -> Box<dyn KPTS> {
+pub fn new(scheme: KptsScheme, crystal: &Crystal, symmetry: bool) -> Box<dyn KPTS> {
     match scheme {
-        "kmesh" => Box::new(KptsMesh::new(crystal, symmetry)),
-        "kline" => Box::new(KptsLine::new()),
-        other => panic!("unsupported k-point scheme '{}'", other),
+        KptsScheme::Kmesh => Box::new(KptsMesh::new(crystal, symmetry)),
+        KptsScheme::Kline => Box::new(KptsLine::new()),
     }
 }
 
-pub fn try_new(scheme: &str, crystal: &Crystal, symmetry: bool) -> Result<Box<dyn KPTS>, KptsError> {
+pub fn try_new(
+    scheme: KptsScheme,
+    crystal: &Crystal,
+    symmetry: bool,
+) -> Result<Box<dyn KPTS>, KptsError> {
     match scheme {
-        "kmesh" => Ok(Box::new(KptsMesh::try_new(crystal, symmetry)?)),
-        "kline" => Ok(Box::new(KptsLine::try_new()?)),
-        other => Err(KptsError::new(format!(
-            "unsupported k-point scheme '{}'",
-            other
-        ))),
+        KptsScheme::Kmesh => Ok(Box::new(KptsMesh::try_new(crystal, symmetry)?)),
+        KptsScheme::Kline => Ok(Box::new(KptsLine::try_new()?)),
     }
 }

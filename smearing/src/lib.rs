@@ -6,6 +6,7 @@ mod mp1;
 use mp1::*;
 mod mp2;
 use mp2::*;
+use control::SmearingScheme;
 
 pub trait Smearing {
     fn get_occupation_number(
@@ -16,12 +17,11 @@ pub trait Smearing {
     ) -> f64;
 }
 
-pub fn new(smearing_scheme: &str) -> Box<dyn Smearing> {
+pub fn new(smearing_scheme: SmearingScheme) -> Box<dyn Smearing> {
     match smearing_scheme {
-        "fd" => Box::new(SmearingFD {}),
-        "gs" => Box::new(SmearingGS {}),
-        "mp1" => Box::new(SmearingMP1 {}),
-        "mp2" => Box::new(SmearingMP2 {}),
-        other => panic!("unsupported smearing_scheme '{}'", other),
+        SmearingScheme::Fd => Box::new(SmearingFD {}),
+        SmearingScheme::Gs => Box::new(SmearingGS {}),
+        SmearingScheme::Mp1 => Box::new(SmearingMP1 {}),
+        SmearingScheme::Mp2 => Box::new(SmearingMP2 {}),
     }
 }

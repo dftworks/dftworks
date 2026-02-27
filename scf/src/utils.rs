@@ -66,7 +66,7 @@ pub fn display_parallel_runtime_info() {
 }
 
 pub fn validate_hse06_runtime_constraints(control: &Control, kpts: &dyn KPTS) {
-    if control.get_xc_scheme() != "hse06" {
+    if !matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
         return;
     }
 

@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 dwconsts = { path = "../dwconsts" }
 special = { path = "../special" }
+control = { path = "../control" }

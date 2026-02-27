@@ -22,7 +22,11 @@ fn main() {
     let mut crystal = Crystal::new();
     crystal.read_file("in.crystal");
 
-    let kpts = match kpts::try_new(control.get_kpts_scheme(), &crystal, control.get_symmetry()) {
+    let kpts = match kpts::try_new(
+        control.get_kpts_scheme_enum(),
+        &crystal,
+        control.get_symmetry(),
+    ) {
         Ok(kpts) => Some(kpts),
         Err(err) => {
             if dwmpi::is_root() {

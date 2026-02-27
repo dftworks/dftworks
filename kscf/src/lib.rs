@@ -151,7 +151,7 @@ impl<'a> KSCF<'a> {
 
         let occ = vec![0.0; control.get_nband()];
 
-        let smearing = smearing::new(control.get_smearing_scheme());
+        let smearing = smearing::new(control.get_smearing_scheme_enum());
 
         let volume = crystal.get_latt().volume();
         // Cache FFT index mapping for fast v_loc application.
@@ -174,7 +174,11 @@ impl<'a> KSCF<'a> {
             control.get_nband(),
             hubbard.n_m(),
         );
-        let sparse_solver = eigensolver::new(control.get_eigen_solver(), npw_wfc, control.get_nband());
+        let sparse_solver = eigensolver::new(
+            control.get_eigen_solver_enum(),
+            npw_wfc,
+            control.get_nband(),
+        );
 
         KSCF {
             control,

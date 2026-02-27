@@ -303,7 +303,7 @@ impl SCF for SCFNonspin {
         let mut ws = NonSpinScfWorkspace::new(npw_rho, fft_shape);
         ws.validate(npw_rho, fft_shape);
 
-        let xc = xc::new(control.get_xc_scheme());
+        let xc = xc::new(control.get_xc_scheme_enum());
 
         // v_psloc in G space; this will not change for a fixed set of ion positions
 

@@ -1,4 +1,5 @@
 use control::Control;
+use control::XcScheme;
 use dwconsts::{EPS20, FOURPI};
 use gvector::GVector;
 use matrix::Matrix;
@@ -94,7 +95,7 @@ impl HybridPrepareWorkspace {
 
 impl HybridPotential {
     pub fn new(control: &Control, pwwfc: &PWBasis, pwden: &PWDensity) -> Self {
-        if control.get_xc_scheme() != "hse06" {
+        if !matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
             return Self {
                 enabled: false,
                 alpha: 0.0,

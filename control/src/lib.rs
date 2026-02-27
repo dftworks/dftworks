@@ -39,6 +39,175 @@ impl SpinScheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XcScheme {
+    LdaPz,
+    LsdaPz,
+    Pbe,
+    Hse06,
+}
+
+impl Default for XcScheme {
+    fn default() -> Self {
+        XcScheme::LdaPz
+    }
+}
+
+impl XcScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            XcScheme::LdaPz => "lda-pz",
+            XcScheme::LsdaPz => "lsda-pz",
+            XcScheme::Pbe => "pbe",
+            XcScheme::Hse06 => "hse06",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "lda-pz" => Some(XcScheme::LdaPz),
+            "lsda-pz" => Some(XcScheme::LsdaPz),
+            "pbe" => Some(XcScheme::Pbe),
+            "hse06" => Some(XcScheme::Hse06),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmearingScheme {
+    Fd,
+    Gs,
+    Mp1,
+    Mp2,
+}
+
+impl Default for SmearingScheme {
+    fn default() -> Self {
+        SmearingScheme::Mp2
+    }
+}
+
+impl SmearingScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SmearingScheme::Fd => "fd",
+            SmearingScheme::Gs => "gs",
+            SmearingScheme::Mp1 => "mp1",
+            SmearingScheme::Mp2 => "mp2",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "fd" => Some(SmearingScheme::Fd),
+            "gs" => Some(SmearingScheme::Gs),
+            "mp1" => Some(SmearingScheme::Mp1),
+            "mp2" => Some(SmearingScheme::Mp2),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EigenSolverScheme {
+    Sd,
+    Psd,
+    Cg,
+    Pcg,
+    Arpack,
+    Davidson,
+}
+
+impl Default for EigenSolverScheme {
+    fn default() -> Self {
+        EigenSolverScheme::Pcg
+    }
+}
+
+impl EigenSolverScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EigenSolverScheme::Sd => "sd",
+            EigenSolverScheme::Psd => "psd",
+            EigenSolverScheme::Cg => "cg",
+            EigenSolverScheme::Pcg => "pcg",
+            EigenSolverScheme::Arpack => "arpack",
+            EigenSolverScheme::Davidson => "davidson",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "sd" => Some(EigenSolverScheme::Sd),
+            "psd" => Some(EigenSolverScheme::Psd),
+            "cg" => Some(EigenSolverScheme::Cg),
+            "pcg" => Some(EigenSolverScheme::Pcg),
+            "arpack" => Some(EigenSolverScheme::Arpack),
+            "davidson" => Some(EigenSolverScheme::Davidson),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PotScheme {
+    Upf,
+    UpfFr,
+}
+
+impl Default for PotScheme {
+    fn default() -> Self {
+        PotScheme::Upf
+    }
+}
+
+impl PotScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PotScheme::Upf => "upf",
+            PotScheme::UpfFr => "upf-fr",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "upf" => Some(PotScheme::Upf),
+            "upf-fr" => Some(PotScheme::UpfFr),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KptsScheme {
+    Kmesh,
+    Kline,
+}
+
+impl Default for KptsScheme {
+    fn default() -> Self {
+        KptsScheme::Kmesh
+    }
+}
+
+impl KptsScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KptsScheme::Kmesh => "kmesh",
+            KptsScheme::Kline => "kline",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "kmesh" => Some(KptsScheme::Kmesh),
+            "kline" => Some(KptsScheme::Kline),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Control {
     // Runtime/solver settings parsed from in.ctrl with defaults.
@@ -79,21 +248,21 @@ pub struct Control {
     restart: bool,
     save_rho: bool,
     save_wfc: bool,
-    eigen_solver: String, // sd, psd, cg, pcg, arpack, davidson
+    eigen_solver: EigenSolverScheme,
 
     davidson_ndim: usize,
 
     temperature: f64,
-    smearing_scheme: String,
-    xc_scheme: String,
-    pot_scheme: String,
+    smearing_scheme: SmearingScheme,
+    xc_scheme: XcScheme,
+    pot_scheme: PotScheme,
     output_atomic_density: bool,
 
     dos_scheme: String,
     dos_sigma: f64,
     dos_ne: usize,
 
-    kpts_scheme: String,
+    kpts_scheme: KptsScheme,
     provenance_manifest: String,
     provenance_check: bool,
 
@@ -234,15 +403,6 @@ macro_rules! set_string_field {
     };
 }
 
-macro_rules! set_lower_string_field {
-    ($fn_name:ident, $field:ident) => {
-        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
-            control.$field = value.trim().to_lowercase();
-            Ok(())
-        }
-    };
-}
-
 macro_rules! set_bool_field {
     ($fn_name:ident, $field:ident) => {
         fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
@@ -283,9 +443,7 @@ set_string_field!(set_verbosity, verbosity);
 set_bool_field!(set_scf_harris, scf_harris);
 set_usize_field!(set_scf_max_iter_wfc, scf_max_iter_wfc);
 set_usize_field!(set_scf_max_iter_rand_wfc, scf_max_iter_rand_wfc);
-set_string_field!(set_pot_scheme, pot_scheme);
 set_bool_field!(set_output_atomic_density, output_atomic_density);
-set_lower_string_field!(set_xc_scheme, xc_scheme);
 set_bool_field!(set_geom_optim_cell, geom_optim_cell);
 set_string_field!(set_geom_optim_scheme, geom_optim_scheme);
 set_usize_field!(set_geom_optim_max_steps, geom_optim_max_steps);
@@ -293,7 +451,6 @@ set_usize_field!(set_geom_optim_history_steps, geom_optim_history_steps);
 set_f64_field!(set_geom_optim_alpha, geom_optim_alpha);
 set_f64_field!(set_geom_optim_force_tolerance, geom_optim_force_tolerance);
 set_f64_field!(set_geom_optim_stress_tolerance, geom_optim_stress_tolerance);
-set_string_field!(set_smearing_scheme, smearing_scheme);
 set_f64_field!(set_temperature, temperature);
 set_usize_field!(set_scf_min_iter, scf_min_iter);
 set_usize_field!(set_scf_max_iter, scf_max_iter);
@@ -311,11 +468,9 @@ set_bool_field!(set_eigval_same_epsilon, eigval_same_epsilon);
 set_bool_field!(set_restart, restart);
 set_bool_field!(set_save_rho, save_rho);
 set_bool_field!(set_save_wfc, save_wfc);
-set_string_field!(set_eigen_solver, eigen_solver);
 set_usize_field!(set_davidson_ndim, davidson_ndim);
 set_string_field!(set_dos_scheme, dos_scheme);
 set_usize_field!(set_dos_ne, dos_ne);
-set_string_field!(set_kpts_scheme, kpts_scheme);
 set_string_field!(set_provenance_manifest, provenance_manifest);
 set_bool_field!(set_provenance_check, provenance_check);
 set_f64_field!(set_occ_inversion, occ_inversion);
@@ -368,6 +523,36 @@ fn set_hubbard_j(control: &mut Control, value: &str) -> Result<(), String> {
 fn set_spin_scheme(control: &mut Control, value: &str) -> Result<(), String> {
     control.spin_scheme = SpinScheme::parse(value)
         .ok_or_else(|| "expected one of: nonspin, spin, ncl".to_string())?;
+    Ok(())
+}
+
+fn set_kpts_scheme(control: &mut Control, value: &str) -> Result<(), String> {
+    control.kpts_scheme = KptsScheme::parse(value)
+        .ok_or_else(|| "expected one of: kmesh, kline".to_string())?;
+    Ok(())
+}
+
+fn set_pot_scheme(control: &mut Control, value: &str) -> Result<(), String> {
+    control.pot_scheme =
+        PotScheme::parse(value).ok_or_else(|| "expected one of: upf, upf-fr".to_string())?;
+    Ok(())
+}
+
+fn set_xc_scheme(control: &mut Control, value: &str) -> Result<(), String> {
+    control.xc_scheme = XcScheme::parse(value)
+        .ok_or_else(|| "expected one of: lda-pz, lsda-pz, pbe, hse06".to_string())?;
+    Ok(())
+}
+
+fn set_smearing_scheme(control: &mut Control, value: &str) -> Result<(), String> {
+    control.smearing_scheme = SmearingScheme::parse(value)
+        .ok_or_else(|| "expected one of: fd, gs, mp1, mp2".to_string())?;
+    Ok(())
+}
+
+fn set_eigen_solver(control: &mut Control, value: &str) -> Result<(), String> {
+    control.eigen_solver = EigenSolverScheme::parse(value)
+        .ok_or_else(|| "expected one of: sd, psd, cg, pcg, arpack, davidson".to_string())?;
     Ok(())
 }
 
@@ -687,7 +872,11 @@ impl Control {
     }
 
     pub fn get_kpts_scheme(&self) -> &str {
-        &self.kpts_scheme
+        self.kpts_scheme.as_str()
+    }
+
+    pub fn get_kpts_scheme_enum(&self) -> KptsScheme {
+        self.kpts_scheme
     }
 
     pub fn get_provenance_manifest(&self) -> &str {
@@ -715,11 +904,19 @@ impl Control {
     }
 
     pub fn get_pot_scheme(&self) -> &str {
-        &self.pot_scheme
+        self.pot_scheme.as_str()
+    }
+
+    pub fn get_pot_scheme_enum(&self) -> PotScheme {
+        self.pot_scheme
     }
 
     pub fn get_xc_scheme(&self) -> &str {
-        &self.xc_scheme
+        self.xc_scheme.as_str()
+    }
+
+    pub fn get_xc_scheme_enum(&self) -> XcScheme {
+        self.xc_scheme
     }
 
     pub fn get_hse06_alpha(&self) -> f64 {
@@ -759,7 +956,11 @@ impl Control {
     }
 
     pub fn get_smearing_scheme(&self) -> &str {
-        &self.smearing_scheme
+        self.smearing_scheme.as_str()
+    }
+
+    pub fn get_smearing_scheme_enum(&self) -> SmearingScheme {
+        self.smearing_scheme
     }
 
     pub fn get_temperature(&self) -> f64 {
@@ -827,7 +1028,11 @@ impl Control {
     }
 
     pub fn get_eigen_solver(&self) -> &str {
-        &self.eigen_solver
+        self.eigen_solver.as_str()
+    }
+
+    pub fn get_eigen_solver_enum(&self) -> EigenSolverScheme {
+        self.eigen_solver
     }
 
     pub fn get_davidson_ndim(&self) -> usize {
@@ -954,7 +1159,7 @@ impl Control {
         self.rho_epsilon = 1.0E-5;
         self.energy_epsilon = EPS6;
 
-        self.eigen_solver = "pcg".to_string();
+        self.eigen_solver = EigenSolverScheme::Pcg;
         self.davidson_ndim = 6;
 
         self.scf_rho_mix_scheme = "simple".to_string();
@@ -974,7 +1179,10 @@ impl Control {
         self.dos_ne = 500;
         self.dos_sigma = 0.1;
 
-        self.kpts_scheme = "kmesh".to_string();
+        self.kpts_scheme = KptsScheme::Kmesh;
+        self.smearing_scheme = SmearingScheme::Mp2;
+        self.xc_scheme = XcScheme::LdaPz;
+        self.pot_scheme = PotScheme::Upf;
         self.provenance_manifest = "run.provenance.json".to_string();
         self.provenance_check = false;
         self.verbosity = "high".to_string();
@@ -1100,6 +1308,16 @@ impl Control {
             ));
         }
 
+        if !matches!(self.eigen_solver, EigenSolverScheme::Pcg) {
+            return Err(ControlError::validation(
+                "eigen_solver",
+                format!(
+                    "eigen_solver='{}' is parsed but not implemented yet; use 'pcg'",
+                    self.eigen_solver.as_str()
+                ),
+            ));
+        }
+
         Ok(())
     }
 
@@ -1150,7 +1368,7 @@ impl Control {
             }
         }
 
-        if self.xc_scheme == "hse06" {
+        if matches!(self.xc_scheme, XcScheme::Hse06) {
             if self.hse06_alpha < 0.0 || self.hse06_alpha > 1.0 {
                 return Err(ControlError::validation(
                     "hse06_alpha",
@@ -1507,7 +1725,7 @@ impl Control {
 
 #[cfg(test)]
 mod tests {
-    use super::{Control, ControlError, SpinScheme};
+    use super::{Control, ControlError, KptsScheme, PotScheme, SmearingScheme, SpinScheme, XcScheme};
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
         let mut control = Control::new();
@@ -1613,5 +1831,28 @@ mod tests {
         let err = parse_control(&["provenance_manifest ="]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("provenance_manifest"));
         assert!(err.message.contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_parser_exposes_typed_runtime_modes() {
+        let control = parse_control(&[
+            "kpts_scheme = kline",
+            "pot_scheme = upf-fr",
+            "smearing_scheme = fd",
+            "xc_scheme = pbe",
+        ])
+        .expect("control parse should succeed");
+
+        assert_eq!(control.get_kpts_scheme_enum(), KptsScheme::Kline);
+        assert_eq!(control.get_pot_scheme_enum(), PotScheme::UpfFr);
+        assert_eq!(control.get_smearing_scheme_enum(), SmearingScheme::Fd);
+        assert_eq!(control.get_xc_scheme_enum(), XcScheme::Pbe);
+    }
+
+    #[test]
+    fn test_validation_rejects_unimplemented_eigen_solver_modes() {
+        let err = parse_control(&["eigen_solver = davidson"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("eigen_solver"));
+        assert!(err.message.contains("not implemented yet"));
     }
 }

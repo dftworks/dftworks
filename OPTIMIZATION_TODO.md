@@ -132,8 +132,8 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E5 - Typed Configuration and Runtime Mode Safety
 **Priority**: P3/P5  
-**Status**: Open  
-**Files**: `control/`, `scf/`, `smearing/`, `density/`, `kpts/`
+**Status**: In Progress (2026-02-27)  
+**Files**: `control/`, `kscf/`, `scf/`, `smearing/`, `xc/`, `eigensolver/`, `pspot/`, `kpts/`, `pw/`, `wannier90/`
 
 - Parse runtime modes and options once into typed enums/structs
 - Remove repeated string-based branching in runtime drivers
@@ -142,6 +142,14 @@ The previous list contained intentional overlap to capture related themes. The i
 **Acceptance Criteria**
 - String mode dispatch removed from runtime hot paths
 - Invalid mode configurations fail at parse/validation time
+
+**Implementation Update (2026-02-27)**
+- [x] Added typed runtime-mode enums in `control` (`XcScheme`, `SmearingScheme`, `EigenSolverScheme`, `PotScheme`, `KptsScheme`) with parser-level conversion and canonical `as_str()` rendering
+- [x] Migrated core runtime factories to typed dispatch (`xc::new`, `smearing::new`, `eigensolver::new`, `PSPot::new`, `kpts::{new,try_new}`) and updated orchestration callsites in `kscf`, `scf`, `pw`, and `wannier90`
+- [x] Replaced hot-path string comparisons with enum-based `match`/`matches!` checks (including HSE06 runtime guards and provenance k-point source selection)
+- [x] Added validation guard to reject parsed-but-unimplemented eigensolver modes early (`pcg` currently enforced) and added parser/validation unit coverage in `control`
+- [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
+- [ ] Follow-up: remove remaining compatibility string getters after downstream callsites fully adopt typed getters
 
 ### E6 - Scalable K-Point Execution with Deterministic Reductions
 **Priority**: P5/P6  

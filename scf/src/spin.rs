@@ -489,7 +489,7 @@ impl SCF for SCFSpin {
         // v_xc in r space first and then transform to G space; this changes
         // with density every SCF iteration.
 
-        let xc = xc::new(control.get_xc_scheme());
+        let xc = xc::new(control.get_xc_scheme_enum());
 
         add_core_density_to_spin_channels(rho_3d, rhocore_3d, 1.0);
         xc.potential_and_energy(gvec, pwden, rgtrans, rho_3d, &mut ws.vxc_3d, &mut ws.exc_3d);

@@ -43,7 +43,7 @@ pub fn write_win_inputs(
 
     dwmpi::barrier(MPI_COMM_WORLD);
     if dwmpi::is_root() {
-        let pots = PSPot::new(control.get_pot_scheme());
+        let pots = PSPot::new(control.get_pot_scheme_enum());
         match control.get_spin_scheme_enum() {
             SpinScheme::NonSpin => {
                 summary.written_files.push(write_win_for_channel(
@@ -94,7 +94,7 @@ pub fn write_overlap_inputs(
     // Ensure all ranks have reached post-processing after SCF outputs are on disk.
     dwmpi::barrier(MPI_COMM_WORLD);
     if dwmpi::is_root() {
-        let pots = PSPot::new(control.get_pot_scheme());
+        let pots = PSPot::new(control.get_pot_scheme_enum());
         match control.get_spin_scheme_enum() {
             SpinScheme::NonSpin => {
                 let files = write_overlap_files_for_channel(

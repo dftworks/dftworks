@@ -121,7 +121,7 @@ fn main() {
     let mut crystal = Crystal::new();
     crystal.read_file("in.crystal");
 
-    let pots = PSPot::new(control.get_pot_scheme());
+    let pots = PSPot::new(control.get_pot_scheme_enum());
 
     let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
     let [n1, n2, n3] = fftgrid.get_size();

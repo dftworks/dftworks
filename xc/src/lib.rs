@@ -6,6 +6,7 @@ use ldapz::*;
 mod pbe;
 use pbe::*;
 
+use control::XcScheme;
 use dfttypes::*;
 use gvector::GVector;
 use ndarray::*;
@@ -33,31 +34,26 @@ pub trait XC {
     );
 }
 
-pub fn new(xc_scheme: &str) -> Box<dyn XC> {
+pub fn new(xc_scheme: XcScheme) -> Box<dyn XC> {
     let xc: Box<dyn XC>;
 
     match xc_scheme {
-        "lda-pz" => {
+        XcScheme::LdaPz => {
             xc = Box::new(XCLDAPZ::new());
         }
 
-        "lsda-pz" => {
+        XcScheme::LsdaPz => {
             xc = Box::new(XCLDAPZ::new());
         }
 
-        "pbe" => {
+        XcScheme::Pbe => {
             xc = Box::new(XCPBE::new());
         }
 
         // Local (semi-local) HSE06 component currently reuses PBE.
         // The screened exact-exchange operator is applied in KSCF.
-        "hse06" => {
+        XcScheme::Hse06 => {
             xc = Box::new(XCPBE::new());
-        }
-
-        &_ => {
-            println!("{} not implemented", xc_scheme);
-            panic!();
         }
     }
 
