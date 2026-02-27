@@ -1016,8 +1016,6 @@ fn main() {
 
     // last statement
 
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
     dwmpi::barrier(MPI_COMM_WORLD);
 
     dwmpi::finalize();

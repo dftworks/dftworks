@@ -200,6 +200,7 @@ pub fn compute_next_density(
 }
 
 pub fn display_eigen_values(
+    verbosity: &str,
     crystal: &Crystal,
     kpts: &dyn KPTS,
     vpwwfc: &[PWBasis],
@@ -212,36 +213,66 @@ pub fn display_eigen_values(
     let t_vkevals = vkevals.as_non_spin().unwrap();
 
     let rank = dwmpi::get_comm_world_rank();
+    let ordered_rank_output = matches!(
+        verbosity.trim().to_ascii_lowercase().as_str(),
+        "debug" | "verbose"
+    );
 
-    for irank in 0..dwmpi::get_comm_world_size() {
-        dwmpi::barrier(MPI_COMM_WORLD);
+    if ordered_rank_output {
+        for irank in 0..dwmpi::get_comm_world_size() {
+            dwmpi::barrier(MPI_COMM_WORLD);
 
-        if irank == rank {
-            debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
-            debug_assert_eq!(t_vkscf.len(), vpwwfc.len());
+            if irank == rank {
+                debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
+                debug_assert_eq!(t_vkscf.len(), vpwwfc.len());
 
-            for (kscf_k, evals, pwwfc_k) in itertools::multizip((
-                t_vkscf.iter(),
-                t_vkevals.iter(),
-                vpwwfc.iter(),
-            )) {
-                let g_ik = kscf_k.get_ik();
-                let k_frac = kpts.get_k_frac(g_ik);
-                let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                let npw_wfc = pwwfc_k.get_n_plane_waves();
+                for (kscf_k, evals, pwwfc_k) in itertools::multizip((
+                    t_vkscf.iter(),
+                    t_vkevals.iter(),
+                    vpwwfc.iter(),
+                )) {
+                    let g_ik = kscf_k.get_ik();
+                    let k_frac = kpts.get_k_frac(g_ik);
+                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                    let npw_wfc = pwwfc_k.get_n_plane_waves();
 
-                print_k_point(g_ik, k_frac, k_cart, npw_wfc);
+                    print_k_point(g_ik, k_frac, k_cart, npw_wfc);
 
-                let occ = kscf_k.get_occ();
+                    let occ = kscf_k.get_occ();
 
-                print_eigen_values(evals, occ);
+                    print_eigen_values(evals, occ);
+                }
+
+                std::io::stdout().flush();
             }
-
-            std::io::stdout().flush();
         }
-    }
 
-    dwmpi::barrier(MPI_COMM_WORLD);
+        dwmpi::barrier(MPI_COMM_WORLD);
+    } else if dwmpi::is_root() {
+        // Production path: avoid rank-serialized eigenvalue output.
+        // Ordered rank-by-rank dumps are available with verbosity=verbose/debug.
+        debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
+        debug_assert_eq!(t_vkscf.len(), vpwwfc.len());
+
+        for (kscf_k, evals, pwwfc_k) in itertools::multizip((
+            t_vkscf.iter(),
+            t_vkevals.iter(),
+            vpwwfc.iter(),
+        )) {
+            let g_ik = kscf_k.get_ik();
+            let k_frac = kpts.get_k_frac(g_ik);
+            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+            let npw_wfc = pwwfc_k.get_n_plane_waves();
+
+            print_k_point(g_ik, k_frac, k_cart, npw_wfc);
+
+            let occ = kscf_k.get_occ();
+
+            print_eigen_values(evals, occ);
+        }
+
+        std::io::stdout().flush();
+    }
 }
 
 pub fn print_eigen_values(v: &[f64], occ: &[f64]) {

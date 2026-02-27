@@ -374,7 +374,14 @@ impl SCF for SCFNonspin {
 
         // display eigenvalues
 
-        utils::display_eigen_values(crystal, kpts, vpwwfc, vkscf, vkevals);
+        utils::display_eigen_values(
+            control.get_verbosity(),
+            crystal,
+            kpts,
+            vpwwfc,
+            vkscf,
+            vkevals,
+        );
 
         // force
 

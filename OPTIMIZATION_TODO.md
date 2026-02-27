@@ -90,8 +90,8 @@ The previous list contained intentional overlap to capture related themes. The i
 
 ### E3 - Remove Serialized Eigenvalue Output Delay
 **Priority**: P2  
-**Status**: Open  
-**Files**: `pw/src/main.rs`
+**Status**: In Progress (2026-02-27)  
+**Files**: `pw/src/main.rs`, `scf/src/utils.rs`, `scf/src/nonspin.rs`
 
 - Remove fixed sleeps from production output paths
 - Gate ordered-rank debug printing behind explicit verbose/debug flags
@@ -100,6 +100,13 @@ The previous list contained intentional overlap to capture related themes. The i
 **Acceptance Criteria**
 - No fixed sleep calls in production paths
 - Wall-time reduction is measured on at least one multi-rank case
+
+**Implementation Update (2026-02-27)**
+- [x] Removed fixed tail sleep in `pw` main before MPI finalize
+- [x] Gated ordered rank-by-rank eigenvalue output in nonspin path behind explicit verbosity (`verbose` / `debug`)
+- [x] Switched default nonspin eigenvalue output to root-only print path without rank-serialized global barriers
+- [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
+- [ ] Capture and record multi-rank wall-time delta for representative SCF case
 
 ### E4 - Result-Based Error Model and Process Boundary
 **Priority**: P2/P3  
