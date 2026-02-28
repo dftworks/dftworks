@@ -196,8 +196,11 @@ impl ElectronicStepContext {
     fn build(runtime: &RuntimeContext, blatt: &lattice::Lattice, gvec: &GVector) -> Self {
         let nrank = dwmpi::get_comm_world_size() as usize;
         let k_costs = orchestration::electronic::estimate_kpoint_costs(runtime, blatt, gvec);
-        let k_schedule_plan =
-            KPointSchedulePlan::new_from_costs(k_costs.as_slice(), nrank, runtime.kpoint_schedule_mode());
+        let k_schedule_plan = KPointSchedulePlan::new_from_costs(
+            k_costs.as_slice(),
+            nrank,
+            runtime.kpoint_schedule_mode(),
+        );
         let k_domain = k_schedule_plan.domain_for_current_rank();
 
         if dwmpi::is_root() {
@@ -273,32 +276,27 @@ impl ElectronicStepContext {
         let (vkscf, spin_cache_saved_bytes_local) = match runtime.spin_scheme {
             SpinScheme::NonSpin => {
                 let channel = orchestration::electronic::build_kscf_channel(
-                    runtime,
-                    self,
-                    gvec,
-                    pwden,
-                    fft_shape,
-                    0,
+                    runtime, self, gvec, pwden, fft_shape, 0,
                 );
                 (VKSCF::NonSpin(channel), 0usize)
             }
             SpinScheme::Spin => {
                 let (channel_up, channel_dn, saved_bytes) =
                     orchestration::electronic::build_spin_kscf_channels(
-                        runtime,
-                        self,
-                        gvec,
-                        pwden,
-                        fft_shape,
+                        runtime, self, gvec, pwden, fft_shape,
                     );
                 (VKSCF::Spin(channel_up, channel_dn), saved_bytes)
             }
             SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
         };
 
-        let vkevals = orchestration::electronic::allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt);
-        let vkevecs =
-            orchestration::electronic::allocate_eigenvectors(runtime.spin_scheme, nband, &self.vpwwfc);
+        let vkevals =
+            orchestration::electronic::allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt);
+        let vkevecs = orchestration::electronic::allocate_eigenvectors(
+            runtime.spin_scheme,
+            nband,
+            &self.vpwwfc,
+        );
 
         (vkscf, vkevals, vkevecs, spin_cache_saved_bytes_local)
     }
@@ -433,40 +431,37 @@ fn main() {
 
         let rhocore_3d = orchestration_workspace.rhocore_3d();
 
-        orchestration::execution::run_scf_phase(orchestration::execution::ScfExecutionContext {
+        scf_driver.run(
             geom_iter,
-            control: &control,
-            crystal: &crystal,
-            gvec: phase.geom_ctx.gvec(),
-            pwden: phase.geom_ctx.pwden(),
-            pots: &pots,
-            rgtrans: phase.geom_ctx.rgtrans(),
-            kpts: kpts.as_ref(),
-            ewald: &phase.ewald,
-            vpwwfc: phase.electronic_ctx.vpwwfc(),
-            vkscf: &mut vkscf,
-            rhog: &mut phase.rhog,
-            rho_3d: &mut phase.rho_3d,
+            &control,
+            &crystal,
+            phase.geom_ctx.gvec(),
+            phase.geom_ctx.pwden(),
+            &pots,
+            phase.geom_ctx.rgtrans(),
+            kpts.as_ref(),
+            &phase.ewald,
+            phase.electronic_ctx.vpwwfc(),
+            &mut vkscf,
+            &mut phase.rhog,
+            &mut phase.rho_3d,
             rhocore_3d,
-            vkevals: &mut vkevals,
-            vkevecs: &mut vkevecs,
-            symdrv: phase.symdrv.as_ref(),
-            stress_total: &mut stress_total,
-            force_total: &mut force_total,
-            scf_driver: scf_driver.as_ref(),
-        });
+            &mut vkevals,
+            &mut vkevecs,
+            phase.symdrv.as_ref(),
+            &mut stress_total,
+            &mut force_total,
+        );
 
-        if let Err(err) =
-            orchestration::outputs::persist_outputs(orchestration::outputs::PersistOutputsContext {
-                control: &control,
-                crystal: &crystal,
-                blatt: phase.geom_ctx.blatt(),
-                expected_checkpoint_meta: &phase.expected_checkpoint_meta,
-                rho_3d: &phase.rho_3d,
-                electronic_ctx: &phase.electronic_ctx,
-                vkevecs: &vkevecs,
-            })
-        {
+        if let Err(err) = orchestration::outputs::persist_outputs(
+            &control,
+            &crystal,
+            phase.geom_ctx.blatt(),
+            &phase.expected_checkpoint_meta,
+            &phase.rho_3d,
+            &phase.electronic_ctx,
+            &vkevecs,
+        ) {
             if dwmpi::is_root() {
                 eprintln!("failed to persist checkpoint/output artifacts: {}", err);
             }
@@ -476,16 +471,14 @@ fn main() {
         }
 
         let should_exit = orchestration::outputs::evaluate_exit_and_finalize(
-            orchestration::outputs::ExitDecisionContext {
-                control: &control,
-                geom_iter,
-                stress_total: &stress_total,
-                force_total: force_total.as_slice(),
-                vkevals: &vkevals,
-                vkevecs: &vkevecs,
-                vkscf: &vkscf,
-                electronic_ctx: &phase.electronic_ctx,
-            },
+            &control,
+            geom_iter,
+            &stress_total,
+            force_total.as_slice(),
+            &vkevals,
+            &vkevecs,
+            &vkscf,
+            &phase.electronic_ctx,
         );
 
         if should_exit {

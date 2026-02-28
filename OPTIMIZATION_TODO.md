@@ -8,6 +8,12 @@ This document is the deduplicated execution backlog for optimization, architectu
 - Baseline gate: run `scripts/run_phase12_regression.sh` inside `rust-dev` Docker (`FORCE_BUILD=1`).
 - If spin/MPI behavior is touched, also run `scripts/run_spin_mpi_parity.sh` in Docker.
 
+## Engineering Simplicity Rule (Effective 2026-02-28)
+
+- Rule: "don't overenginner." Prefer direct phase-oriented code paths over wrapper-on-wrapper abstractions.
+- Add a new wrapper/context layer only when it removes clear duplication or encodes reusable behavior with tests.
+- If a helper only forwards arguments without adding logic, inline/remove it in the next refactor pass.
+
 ## Completed Work Summary
 
 ### Infrastructure
@@ -598,7 +604,7 @@ Finish an item only when:
 ### E7 - Orchestration Modularization
 **Priority**: P3/P6  
 **Status**: Done (2026-02-28)  
-**Files**: `pw/src/main.rs`, `pw/src/orchestration/{bootstrap.rs,construction.rs,execution.rs,outputs.rs,mod.rs}`, `scf/src/lib.rs`
+**Files**: `pw/src/main.rs`, `pw/src/orchestration/{bootstrap.rs,construction.rs,electronic.rs,outputs.rs,mod.rs}`, `scf/src/lib.rs`
 
 - Split monolithic orchestration into phase modules:
   - input/bootstrap
@@ -609,9 +615,10 @@ Finish an item only when:
 
 **Implementation Update (2026-02-28)**
 - [x] Added explicit orchestration phase modules under `pw/src/orchestration/`:
-  `bootstrap` (input/runtime bootstrap), `construction` (geometry-step basis/density/symmetry build), `execution` (SCF phase dispatch), `outputs` (checkpoint/output persistence and convergence exit policy)
+  `bootstrap` (input/runtime bootstrap), `construction` (geometry-step basis/density/symmetry build), `electronic` (k-point scheduling + SCF/eigenstate allocation helpers), `outputs` (checkpoint/output persistence and convergence exit policy)
 - [x] Refactored `pw::main` to a high-level orchestration loop that delegates phase work to those modules
-- [x] Introduced grouped phase context structs (`BootstrapData`, `GeometryPhaseInput/Artifacts`, `ScfExecutionContext`, `PersistOutputsContext`, `ExitDecisionContext`) to remove direct oversized call sites in the main loop
+- [x] Introduced grouped phase contexts where they added phase clarity (`BootstrapData`, `GeometryPhaseInput/Artifacts`)
+- [x] Simplified thin wrapper layers by removing pure pass-through SCF execution/output context wrappers; `main` now calls SCF execution and output helpers directly
 - [x] Preserved existing runtime behavior for restart/checkpoint, symmetry diagnostics, SCF execution, and postprocessing while reducing monolithic control flow in `main.rs`
 - [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
 

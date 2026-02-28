@@ -267,6 +267,13 @@ For workspace/performance refactors, also run allocation trace:
 docker run --rm -v "$PWD":/usr/src/app -w /usr/src/app rust-dev bash -lc 'source $HOME/.cargo/env && cargo run -p pw --bin workspace_alloc_trace'
 ```
 
+# Engineering simplicity rule (required)
+
+- Rule: "don't overenginner."
+- Prefer direct, phase-oriented flow over wrapper-on-wrapper abstractions.
+- Add a new wrapper/context layer only when it clearly removes duplication or encapsulates reusable/tested behavior.
+- If a helper only forwards arguments without adding logic, inline or remove it.
+
 # Test the code
 
 In the directory test_example/si-oncv/scf, run the following command.

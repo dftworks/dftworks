@@ -21,24 +21,9 @@ fn spin_scheme_is_spin(spin_scheme: SpinScheme) -> Result<bool, String> {
     }
 }
 
-#[inline]
-fn default_checkpoint_repository() -> Hdf5FilePerKCheckpointRepository {
-    Hdf5FilePerKCheckpointRepository::default()
-}
-
-fn checkpoint_wavefunction_filenames_with_repo(
-    repo: &dyn CheckpointRepository,
-    spin_scheme: SpinScheme,
-    ik_global: usize,
-) -> Result<Vec<String>, String> {
-    let is_spin = spin_scheme_is_spin(spin_scheme)?;
-    Ok(repo.wavefunction_filenames(is_spin, ik_global))
-}
-
 pub(crate) fn restart_density_files_exist(spin_scheme: SpinScheme) -> bool {
-    let repo = default_checkpoint_repository();
     match spin_scheme_is_spin(spin_scheme) {
-        Ok(is_spin) => repo
+        Ok(is_spin) => Hdf5FilePerKCheckpointRepository::default()
             .density_filenames(is_spin)
             .iter()
             .all(|filename| Path::new(filename).exists()),
@@ -56,7 +41,7 @@ pub(crate) fn try_load_density_checkpoint(
     rhog: &mut RHOG,
     rho_3d: &mut RHOR,
 ) -> Result<String, String> {
-    let repo = default_checkpoint_repository();
+    let repo = Hdf5FilePerKCheckpointRepository::default();
     let is_spin = spin_scheme_is_spin(spin_scheme)?;
 
     if !restart_density_files_exist(spin_scheme) {
@@ -111,7 +96,7 @@ pub(crate) fn try_load_wavefunction_checkpoint(
     if k_domain.is_empty() || vpwwfc.is_empty() {
         return Err("skip wavefunction restart: no local k-points on this rank".to_string());
     }
-    let repo = default_checkpoint_repository();
+    let repo = Hdf5FilePerKCheckpointRepository::default();
     let is_spin = spin_scheme_is_spin(spin_scheme)?;
 
     let local_nk = k_domain.len();
@@ -124,9 +109,7 @@ pub(crate) fn try_load_wavefunction_checkpoint(
     }
 
     for slot in k_domain.iter() {
-        for filename in
-            checkpoint_wavefunction_filenames_with_repo(&repo, spin_scheme, slot.global_index)?
-        {
+        for filename in repo.wavefunction_filenames(is_spin, slot.global_index) {
             if !Path::new(&filename).exists() {
                 return Err(format!(
                     "wavefunction restart files are incomplete for local slot {} (global k-index {}): missing '{}'",
@@ -138,7 +121,7 @@ pub(crate) fn try_load_wavefunction_checkpoint(
         }
     }
 
-    validate_wavefunction_checkpoint_metadata(spin_scheme, k_domain, expected_meta)?;
+    validate_wavefunction_checkpoint_metadata(&repo, is_spin, k_domain, expected_meta)?;
 
     let (loaded_pwbasis, checkpoint_blatt, loaded_evecs) =
         repo.load_wavefunctions(is_spin, k_domain.global_indices())?;
@@ -199,15 +182,13 @@ pub(crate) fn try_load_wavefunction_checkpoint(
 }
 
 fn validate_wavefunction_checkpoint_metadata(
-    spin_scheme: SpinScheme,
+    repo: &dyn CheckpointRepository,
+    is_spin: bool,
     k_domain: &KPointDomain,
     expected_meta: &CheckpointMeta,
 ) -> Result<(), String> {
-    let repo = default_checkpoint_repository();
     for slot in k_domain.iter() {
-        for filename in
-            checkpoint_wavefunction_filenames_with_repo(&repo, spin_scheme, slot.global_index)?
-        {
+        for filename in repo.wavefunction_filenames(is_spin, slot.global_index) {
             let checkpoint_meta = read_checkpoint_meta_required(&filename)?;
             checkpoint_meta.validate_against(expected_meta, RESTART_META_TOL)?;
         }
