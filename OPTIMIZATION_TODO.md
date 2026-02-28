@@ -800,13 +800,23 @@ Finish an item only when:
 
 ### E23 - SCF Utilities Module Decomposition
 **Priority**: P2  
-**Status**: Open  
-**Files**: `scf/src/utils.rs`, `scf/src/nonspin.rs`, `scf/src/spin.rs`
+**Status**: Done (2026-02-28)  
+**Files**: `scf/src/utils/{mod.rs,potential.rs,mixing.rs,diagnostics.rs,symmetry_projection.rs,energy.rs}`, `scf/src/nonspin.rs`, `scf/src/spin.rs`
 
 - Split `scf::utils` into focused modules (`potential`, `energy`, `mixing`, `symmetry_projection`, `diagnostics`)
 - Move printing/output routines out of numerical kernels to a diagnostics layer with verbosity controls
 - Consolidate duplicated helper logic (`get_eigvalue_epsilon`, eigen display helpers, plane-wave max helpers)
 - Keep math helpers (`3x3` transforms/projections) in a dedicated linear-algebra utility module
+
+**Implementation Update (2026-02-28)**
+- [x] Replaced monolithic `scf/src/utils.rs` with module tree and compatibility façade (`scf/src/utils/mod.rs`)
+- [x] Moved potential/XC/external-field assembly helpers into `utils/potential.rs`
+- [x] Moved density Fourier transform and mixing helpers into `utils/mixing.rs`
+- [x] Moved eigen diagnostics and eigensolver tuning helpers into `utils/diagnostics.rs`, including shared spin/nonspin eigenvalue display entrypoints
+- [x] Moved symmetry projection math and force/stress finalize+assembly routines into `utils/symmetry_projection.rs`
+- [x] Moved nonspin total-energy assembly helpers into `utils/energy.rs`
+- [x] Removed duplicated spin-side helpers (`get_eigvalue_epsilon`, `get_n_plane_waves_max`, eigen print block) by wiring `scf/src/spin.rs` to shared diagnostics helpers
+- [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
 
 **Acceptance Criteria**
 - `scf/src/utils.rs` is replaced by smaller purpose-specific modules

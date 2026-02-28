@@ -5,7 +5,7 @@ use super::hartree;
 use super::hubbard;
 use super::utils;
 use crate::SCF;
-use control::{Control, VerbosityLevel};
+use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
@@ -288,7 +288,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
     }
 
     fn solve_eigen_equations(&mut self, scf_iter: usize, energy_diff: f64) -> f64 {
-        let eigvalue_epsilon = get_eigvalue_epsilon(
+        let eigvalue_epsilon = utils::get_eigvalue_epsilon_spin(
             self.geom_iter,
             scf_iter,
             self.control,
@@ -483,8 +483,6 @@ impl SCF for SCFSpin {
         utils::validate_hse06_runtime_constraints(control, kpts);
         utils::display_external_field_runtime_note(control);
 
-        let blatt = crystal.get_latt().reciprocal();
-
         //
         let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
 
@@ -581,7 +579,7 @@ impl SCF for SCFSpin {
         let ntot_elec = crystal.get_n_total_electrons(pots);
         let fft_ntotf64 = fftgrid.get_ntotf64();
 
-        let npw_wfc_max = get_n_plane_waves_max(&vpwwfc);
+        let npw_wfc_max = utils::get_n_plane_waves_max(&vpwwfc);
 
         // Reuse one Fermi-level driver across SCF iterations to avoid repeated allocations.
         let fermi_driver = fermilevel::new(control.get_spin_scheme_enum());
@@ -616,87 +614,14 @@ impl SCF for SCFSpin {
         run_scf_iteration_engine(control, &mut adapter);
         drop(adapter);
 
-        // display eigenvalues
-
-        //let (vkscf_up, vkscf_dn) = utility::get_slice_up_dn(vkscf);
-        //let (vkevals_up, vkevals_dn) = utility::get_slice_up_dn(vkevals);
-
-        let verbosity = control.get_verbosity_enum();
-        if !matches!(verbosity, VerbosityLevel::Quiet) {
-            let ordered_rank_output = verbosity >= VerbosityLevel::Verbose;
-            let rank = dwmpi::get_comm_world_rank();
-
-            if ordered_rank_output {
-                for irank in 0..dwmpi::get_comm_world_size() {
-                    dwmpi::barrier(MPI_COMM_WORLD);
-
-                    if irank == rank {
-                        if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
-                            if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
-                                debug_assert_eq!(vkscf_up.len(), vkscf_dn.len());
-                                debug_assert_eq!(vkscf_up.len(), vkevals_up.len());
-                                debug_assert_eq!(vkscf_up.len(), vkevals_dn.len());
-                                debug_assert_eq!(vkscf_up.len(), vpwwfc.len());
-
-                                for (kscf_up_k, kscf_dn_k, evals_up, evals_dn, pwwfc_k) in
-                                    itertools::multizip((
-                                        vkscf_up.iter(),
-                                        vkscf_dn.iter(),
-                                        vkevals_up.iter(),
-                                        vkevals_dn.iter(),
-                                        vpwwfc.iter(),
-                                    ))
-                                {
-                                    let ik_global = kscf_up_k.get_ik();
-                                    let k_frac = kpts.get_k_frac(ik_global);
-                                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                                    let npw_wfc = pwwfc_k.get_n_plane_waves();
-
-                                    print_k_point(ik_global, k_frac, k_cart, npw_wfc);
-
-                                    let occ_up = kscf_up_k.get_occ();
-                                    let occ_dn = kscf_dn_k.get_occ();
-
-                                    print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
-                                }
-                            }
-                        }
-                    }
-                }
-                dwmpi::barrier(MPI_COMM_WORLD);
-            } else if dwmpi::is_root() {
-                if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
-                    if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
-                        debug_assert_eq!(vkscf_up.len(), vkscf_dn.len());
-                        debug_assert_eq!(vkscf_up.len(), vkevals_up.len());
-                        debug_assert_eq!(vkscf_up.len(), vkevals_dn.len());
-                        debug_assert_eq!(vkscf_up.len(), vpwwfc.len());
-
-                        for (kscf_up_k, kscf_dn_k, evals_up, evals_dn, pwwfc_k) in itertools::multizip(
-                            (
-                                vkscf_up.iter(),
-                                vkscf_dn.iter(),
-                                vkevals_up.iter(),
-                                vkevals_dn.iter(),
-                                vpwwfc.iter(),
-                            ),
-                        ) {
-                            let ik_global = kscf_up_k.get_ik();
-                            let k_frac = kpts.get_k_frac(ik_global);
-                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                            let npw_wfc = pwwfc_k.get_n_plane_waves();
-
-                            print_k_point(ik_global, k_frac, k_cart, npw_wfc);
-
-                            let occ_up = kscf_up_k.get_occ();
-                            let occ_dn = kscf_dn_k.get_occ();
-
-                            print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
-                        }
-                    }
-                }
-            }
-        }
+        utils::display_spin_eigen_values(
+            control.get_verbosity_enum(),
+            crystal,
+            kpts,
+            vpwwfc,
+            vkscf,
+            vkevals,
+        );
 
         // force
 
@@ -982,113 +907,4 @@ pub fn get_hybrid_exchange_energy(vkscf: &[KSCF]) -> f64 {
         .iter()
         .map(|kscf| kscf.get_hybrid_exchange_energy() * kscf.get_k_weight())
         .sum::<f64>()
-}
-
-pub fn get_eigvalue_epsilon(
-    geom_iter: usize,
-    scf_iter: usize,
-    control: &Control,
-    ntot_elec: f64,
-    energy_diff: f64,
-    npw_wfc: usize,
-) -> f64 {
-    let mut eig_epsilon: f64;
-
-    //if control.is_band() {
-    if control.get_scf_max_iter() <= 1 {
-        eig_epsilon = control.get_eigval_epsilon();
-    } else {
-        if geom_iter == 1 {
-            match scf_iter {
-                1 => {
-                    eig_epsilon = EPS2 * EV_TO_HA;
-                }
-
-                2 => {
-                    eig_epsilon = EPS3 * EV_TO_HA;
-                }
-
-                3 => {
-                    eig_epsilon = EPS4 * EV_TO_HA;
-                }
-
-                _ => {
-                    eig_epsilon =
-                        (EPS4 * EV_TO_HA).min(0.0001 * energy_diff / (1.0_f64).max(ntot_elec));
-
-                    eig_epsilon = eig_epsilon
-                        .max(EPS13 * EV_TO_HA)
-                        .min(control.get_eigval_epsilon());
-                }
-            }
-        } else {
-            match scf_iter {
-                1 => {
-                    eig_epsilon = EPS2 * EV_TO_HA;
-                }
-
-                2 => {
-                    eig_epsilon = EPS4 * EV_TO_HA;
-                }
-
-                3 => {
-                    eig_epsilon = EPS6 * EV_TO_HA;
-                }
-
-                _ => {
-                    eig_epsilon = (EPS11 * EV_TO_HA)
-                        .min(energy_diff / (npw_wfc as f64).powf(1.0) / (1.0_f64).max(ntot_elec));
-                }
-            }
-        }
-
-        eig_epsilon = eig_epsilon.max(EPS16 * EV_TO_HA);
-    }
-
-    eig_epsilon
-}
-
-fn get_n_plane_waves_max(vpwwfc: &[PWBasis]) -> usize {
-    let mut npw_max = 0;
-
-    for pwwfc in vpwwfc.iter() {
-        let npw = pwwfc.get_n_plane_waves();
-
-        if npw > npw_max {
-            npw_max = npw;
-        }
-    }
-
-    npw_max
-}
-
-pub fn print_k_point(ik: usize, xk_frac: Vector3f64, xk_cart: Vector3f64, npw_wfc: usize) {
-    println!();
-
-    println!("   kpoint-{} npws = {}", ik + 1, npw_wfc);
-
-    println!(
-        "     k_frac = [ {:.8}, {:.8}, {:.8} ]",
-        xk_frac.x, xk_frac.y, xk_frac.z
-    );
-
-    println!(
-        "     k_cart = [ {:.8}, {:.8}, {:.8} ] (1/a0)",
-        xk_cart.x, xk_cart.y, xk_cart.z
-    );
-}
-
-pub fn print_eigen_values(v_up: &[f64], occ_up: &[f64], v_dn: &[f64], occ_dn: &[f64]) {
-    println!();
-
-    for (i, _elem) in v_up.iter().enumerate() {
-        println!(
-            "       {:<6} {:16.6} {:12.6} {:16.6} {:12.6}",
-            i + 1,
-            v_up[i] * HA_TO_EV,
-            occ_up[i],
-            v_dn[i] * HA_TO_EV,
-            occ_dn[i]
-        );
-    }
 }
