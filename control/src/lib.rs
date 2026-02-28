@@ -39,6 +39,41 @@ impl SpinScheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VerbosityLevel {
+    Quiet,
+    Normal,
+    Verbose,
+    Debug,
+}
+
+impl Default for VerbosityLevel {
+    fn default() -> Self {
+        VerbosityLevel::Normal
+    }
+}
+
+impl VerbosityLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            VerbosityLevel::Quiet => "quiet",
+            VerbosityLevel::Normal => "normal",
+            VerbosityLevel::Verbose => "verbose",
+            VerbosityLevel::Debug => "debug",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "quiet" => Some(VerbosityLevel::Quiet),
+            "normal" | "medium" => Some(VerbosityLevel::Normal),
+            "verbose" | "high" => Some(VerbosityLevel::Verbose),
+            "debug" => Some(VerbosityLevel::Debug),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XcScheme {
     LdaPz,
@@ -238,6 +273,38 @@ impl FftPlannerScheme {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScfLogFormat {
+    None,
+    Jsonl,
+    Csv,
+}
+
+impl Default for ScfLogFormat {
+    fn default() -> Self {
+        ScfLogFormat::None
+    }
+}
+
+impl ScfLogFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ScfLogFormat::None => "none",
+            ScfLogFormat::Jsonl => "jsonl",
+            ScfLogFormat::Csv => "csv",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "none" => Some(ScfLogFormat::None),
+            "jsonl" => Some(ScfLogFormat::Jsonl),
+            "csv" => Some(ScfLogFormat::Csv),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElectricFieldAxis {
     A,
     B,
@@ -312,7 +379,7 @@ impl KPointScheduleScheme {
 #[derive(Debug, Default)]
 pub struct Control {
     // Runtime/solver settings parsed from in.ctrl with defaults.
-    verbosity: String,
+    verbosity: VerbosityLevel,
     ecut_wfc: f64,
     ecut_rho: f64,
 
@@ -354,6 +421,8 @@ pub struct Control {
     electric_field_axis: ElectricFieldAxis,
     electric_field_origin_frac: f64,
     kpoint_schedule: KPointScheduleScheme,
+    scf_log_format: ScfLogFormat,
+    scf_log_file: String,
     restart: bool,
     save_rho: bool,
     save_wfc: bool,
@@ -552,7 +621,6 @@ macro_rules! set_f64_field {
     };
 }
 
-set_string_field!(set_verbosity, verbosity);
 set_bool_field!(set_scf_harris, scf_harris);
 set_usize_field!(set_scf_max_iter_wfc, scf_max_iter_wfc);
 set_usize_field!(set_scf_max_iter_rand_wfc, scf_max_iter_rand_wfc);
@@ -600,6 +668,13 @@ set_i32_field!(set_hubbard_l, hubbard_l);
 set_f64_field!(set_hse06_alpha, hse06_alpha);
 set_f64_field!(set_hse06_omega, hse06_omega);
 set_bool_field!(set_symmetry, symmetry);
+set_string_field!(set_scf_log_file, scf_log_file);
+
+fn set_verbosity(control: &mut Control, value: &str) -> Result<(), String> {
+    control.verbosity = VerbosityLevel::parse(value)
+        .ok_or_else(|| "expected one of: quiet, normal, verbose, debug".to_string())?;
+    Ok(())
+}
 
 fn set_ecut_wfc(control: &mut Control, value: &str) -> Result<(), String> {
     control.ecut_wfc = parse_f64_value(value)? * EV_TO_HA;
@@ -698,6 +773,12 @@ fn set_kpoint_schedule(control: &mut Control, value: &str) -> Result<(), String>
     control.kpoint_schedule = KPointScheduleScheme::parse(value).ok_or_else(|| {
         "expected one of: contiguous, cost_aware (alias: cost-aware), dynamic".to_string()
     })?;
+    Ok(())
+}
+
+fn set_scf_log_format(control: &mut Control, value: &str) -> Result<(), String> {
+    control.scf_log_format = ScfLogFormat::parse(value)
+        .ok_or_else(|| "expected one of: none, jsonl, csv".to_string())?;
     Ok(())
 }
 
@@ -875,6 +956,14 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "kpoint_schedule",
         setter: set_kpoint_schedule,
+    },
+    KeySpec {
+        key: "scf_log_format",
+        setter: set_scf_log_format,
+    },
+    KeySpec {
+        key: "scf_log_file",
+        setter: set_scf_log_file,
     },
     KeySpec {
         key: "fft_threads",
@@ -1236,6 +1325,18 @@ impl Control {
         self.kpoint_schedule
     }
 
+    pub fn get_scf_log_format(&self) -> &str {
+        self.scf_log_format.as_str()
+    }
+
+    pub fn get_scf_log_format_enum(&self) -> ScfLogFormat {
+        self.scf_log_format
+    }
+
+    pub fn get_scf_log_file(&self) -> &str {
+        &self.scf_log_file
+    }
+
     pub fn get_fft_threads(&self) -> usize {
         self.fft_threads
     }
@@ -1285,7 +1386,15 @@ impl Control {
     }
 
     pub fn get_verbosity(&self) -> &str {
-        &self.verbosity
+        self.verbosity.as_str()
+    }
+
+    pub fn get_verbosity_enum(&self) -> VerbosityLevel {
+        self.verbosity
+    }
+
+    pub fn verbosity_at_least(&self, level: VerbosityLevel) -> bool {
+        self.verbosity >= level
     }
 
     pub fn get_restart(&self) -> bool {
@@ -1372,6 +1481,8 @@ impl Control {
         self.electric_field_axis = ElectricFieldAxis::C;
         self.electric_field_origin_frac = 0.5;
         self.kpoint_schedule = KPointScheduleScheme::CostAware;
+        self.scf_log_format = ScfLogFormat::None;
+        self.scf_log_file = "out.scf.iter.jsonl".to_string();
 
         self.geom_optim_cell = false;
         self.geom_optim_scheme = "bfgs".to_string();
@@ -1418,7 +1529,7 @@ impl Control {
         self.pot_scheme = PotScheme::Upf;
         self.provenance_manifest = "run.provenance.json".to_string();
         self.provenance_check = false;
-        self.verbosity = "high".to_string();
+        self.verbosity = VerbosityLevel::Normal;
         self.occ_inversion = 0.0;
 
         self.wannier90_export = false;
@@ -1545,6 +1656,14 @@ impl Control {
             return Err(ControlError::validation(
                 "fft_threads",
                 "must be >= 1",
+            ));
+        }
+
+        if !matches!(self.scf_log_format, ScfLogFormat::None) && self.scf_log_file.trim().is_empty()
+        {
+            return Err(ControlError::validation(
+                "scf_log_file",
+                "must not be empty when scf_log_format is enabled",
             ));
         }
 
@@ -1707,6 +1826,26 @@ impl Control {
             self.get_spin_scheme(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "verbosity",
+            self.get_verbosity(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "scf_log_format",
+            self.get_scf_log_format(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {}",
+            "scf_log_file",
+            self.get_scf_log_file(),
+            width1 = OUT_WIDTH1
         );
         println!(
             "   {:<width1$} = {:>width2$}",
@@ -2042,7 +2181,8 @@ impl Control {
 mod tests {
     use super::{
         Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KPointScheduleScheme,
-        KptsScheme, PotScheme, SmearingScheme, SpinScheme, XcScheme,
+        KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme, VerbosityLevel,
+        XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -2242,5 +2382,38 @@ mod tests {
         let err = parse_control(&["kpoint_schedule = adaptive"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("kpoint_schedule"));
         assert!(err.message.contains("contiguous"));
+    }
+
+    #[test]
+    fn test_parser_accepts_typed_verbosity_levels() {
+        let control = parse_control(&["verbosity = debug"]).unwrap();
+        assert_eq!(control.get_verbosity_enum(), VerbosityLevel::Debug);
+    }
+
+    #[test]
+    fn test_parser_accepts_legacy_verbosity_aliases() {
+        let control = parse_control(&["verbosity = high"]).unwrap();
+        assert_eq!(control.get_verbosity_enum(), VerbosityLevel::Verbose);
+    }
+
+    #[test]
+    fn test_parser_rejects_unknown_verbosity_levels() {
+        let err = parse_control(&["verbosity = noisy"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("verbosity"));
+        assert!(err.message.contains("quiet"));
+    }
+
+    #[test]
+    fn test_parser_accepts_scf_log_controls() {
+        let control = parse_control(&["scf_log_format = csv", "scf_log_file = iter.csv"]).unwrap();
+        assert_eq!(control.get_scf_log_format_enum(), ScfLogFormat::Csv);
+        assert_eq!(control.get_scf_log_file(), "iter.csv");
+    }
+
+    #[test]
+    fn test_validation_rejects_empty_scf_log_file_when_enabled() {
+        let err = parse_control(&["scf_log_format = jsonl", "scf_log_file ="]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_log_file"));
+        assert!(err.message.contains("must not be empty"));
     }
 }

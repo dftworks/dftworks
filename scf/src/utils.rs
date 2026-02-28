@@ -345,23 +345,24 @@ pub fn compute_next_density(
 }
 
 pub fn display_eigen_values(
-    verbosity: &str,
+    verbosity: VerbosityLevel,
     crystal: &Crystal,
     kpts: &dyn KPTS,
     vpwwfc: &[PWBasis],
     vkscf: &VKSCF,
     vkevals: &VKEigenValue,
 ) {
+    if matches!(verbosity, VerbosityLevel::Quiet) {
+        return;
+    }
+
     let blatt = crystal.get_latt().reciprocal();
 
     let t_vkscf = vkscf.as_non_spin().unwrap();
     let t_vkevals = vkevals.as_non_spin().unwrap();
 
     let rank = dwmpi::get_comm_world_rank();
-    let ordered_rank_output = matches!(
-        verbosity.trim().to_ascii_lowercase().as_str(),
-        "debug" | "verbose"
-    );
+    let ordered_rank_output = verbosity >= VerbosityLevel::Verbose;
 
     if ordered_rank_output {
         for irank in 0..dwmpi::get_comm_world_size() {

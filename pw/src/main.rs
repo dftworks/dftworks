@@ -1,5 +1,5 @@
 #![allow(warnings)]
-use control::{Control, FftPlannerScheme, KPointScheduleScheme, SpinScheme};
+use control::{Control, FftPlannerScheme, KPointScheduleScheme, SpinScheme, VerbosityLevel};
 use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
@@ -1012,6 +1012,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let verbosity = control.get_verbosity_enum();
 
     // dwfft3d
     dwfft3d::init_backend();
@@ -1030,7 +1031,7 @@ fn main() {
         },
     });
 
-    if dwmpi::is_root() {
+    if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
         display_program_header();
         display_system_information();
         control.display();
@@ -1047,7 +1048,7 @@ fn main() {
 
     let pots = PSPot::new(control.get_pot_scheme_enum());
 
-    if dwmpi::is_root() {
+    if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
         pots.display();
     }
 
@@ -1075,7 +1076,7 @@ fn main() {
         }
     };
 
-    if dwmpi::is_root() {
+    if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
         kpts.display();
     }
 
@@ -1084,7 +1085,7 @@ fn main() {
         if let Err(err) = emit_run_provenance_manifest(&control, kpts.as_ref()) {
             eprintln!("failed to write/verify provenance manifest: {}", err);
             provenance_status = 1;
-        } else {
+        } else if verbosity >= VerbosityLevel::Normal {
             println!(
                 "   provenance_manifest = {}",
                 control.get_provenance_manifest()
@@ -1137,13 +1138,13 @@ fn main() {
         let npw_rho = pwden.get_n_plane_waves();
         let runtime_ctx = RuntimeContext::new(&control, &crystal, &pots, kpts.as_ref(), spin_scheme);
 
-        if dwmpi::is_root() {
+        if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
             display_grid_information(fftgrid, pwden);
         }
 
         //loop {
 
-        if dwmpi::is_root() {
+        if dwmpi::is_root() && verbosity >= VerbosityLevel::Verbose {
             println!();
             crystal.display();
         }
@@ -1289,7 +1290,7 @@ fn main() {
             EPS6,
         );
 
-        if control.get_symmetry() && dwmpi::is_root() {
+        if control.get_symmetry() && dwmpi::is_root() && verbosity >= VerbosityLevel::Verbose {
             println!();
             println!("   {:-^88}", " symmetry analysis ");
             symdrv.display();

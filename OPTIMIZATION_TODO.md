@@ -760,8 +760,8 @@ Finish an item only when:
 
 ### E18 - Verbosity Policy and Structured Runtime Logging
 **Priority**: P3  
-**Status**: Open  
-**Files**: `control/src/lib.rs`, `pw/src/main.rs`, `scf/`, `kscf/`
+**Status**: In Progress (2026-02-28)  
+**Files**: `control/src/lib.rs`, `pw/src/main.rs`, `scf/src/{engine.rs,utils.rs,nonspin.rs,spin.rs}`
 
 - Implement typed verbosity levels (`quiet`, `normal`, `verbose`, `debug`) and enforce them consistently
 - Gate high-volume per-band/per-rank diagnostics behind explicit debug modes
@@ -772,6 +772,14 @@ Finish an item only when:
 - `verbosity` setting materially changes output behavior across modules
 - Default mode avoids high-frequency diagnostic flood in large runs
 - Structured logs can drive regression tooling without parsing free-form stdout
+
+**Implementation Update (2026-02-28)**
+- [x] Added typed verbosity model in `control` (`quiet`, `normal`, `verbose`, `debug`) with parser support and legacy alias mapping (`high` -> `verbose`)
+- [x] Added structured SCF iteration logging controls (`scf_log_format={none|jsonl|csv}`, `scf_log_file`) with validation and display output
+- [x] Wired SCF engine structured logs with per-iteration metrics and phase timings (prepare/solve/occupation/harris/density/refresh/scf/mix/total)
+- [x] Applied verbosity gating in SCF eigenvalue diagnostics: `quiet` suppresses dumps, `normal` prints root-only summary, `verbose`/`debug` enables ordered rank-by-rank output
+- [x] Applied verbosity gating in PW orchestration for high-volume startup/symmetry diagnostics (`normal` default, `verbose` expanded structural/symmetry output)
+- [ ] Add overhead benchmark comparing `scf_log_format=none` vs `jsonl/csv` on representative large-k runs
 
 
 ### E22 - Checkpoint Repository and Codec Abstraction

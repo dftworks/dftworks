@@ -413,7 +413,7 @@ impl SCF for SCFNonspin {
         // display eigenvalues
 
         utils::display_eigen_values(
-            control.get_verbosity(),
+            control.get_verbosity_enum(),
             crystal,
             kpts,
             vpwwfc,

@@ -5,7 +5,7 @@ use super::hartree;
 use super::hubbard;
 use super::utils;
 use crate::SCF;
-use control::Control;
+use control::{Control, VerbosityLevel};
 use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
@@ -621,35 +621,78 @@ impl SCF for SCFSpin {
         //let (vkscf_up, vkscf_dn) = utility::get_slice_up_dn(vkscf);
         //let (vkevals_up, vkevals_dn) = utility::get_slice_up_dn(vkevals);
 
-        if dwmpi::is_root() {
-            if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
-                if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
-                    debug_assert_eq!(vkscf_up.len(), vkscf_dn.len());
-                    debug_assert_eq!(vkscf_up.len(), vkevals_up.len());
-                    debug_assert_eq!(vkscf_up.len(), vkevals_dn.len());
-                    debug_assert_eq!(vkscf_up.len(), vpwwfc.len());
+        let verbosity = control.get_verbosity_enum();
+        if !matches!(verbosity, VerbosityLevel::Quiet) {
+            let ordered_rank_output = verbosity >= VerbosityLevel::Verbose;
+            let rank = dwmpi::get_comm_world_rank();
 
-                    for (kscf_up_k, kscf_dn_k, evals_up, evals_dn, pwwfc_k) in itertools::multizip(
-                        (
-                            vkscf_up.iter(),
-                            vkscf_dn.iter(),
-                            vkevals_up.iter(),
-                            vkevals_dn.iter(),
-                            vpwwfc.iter(),
-                        ),
-                    )
-                    {
-                        let ik_global = kscf_up_k.get_ik();
-                        let k_frac = kpts.get_k_frac(ik_global);
-                        let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
-                        let npw_wfc = pwwfc_k.get_n_plane_waves();
+            if ordered_rank_output {
+                for irank in 0..dwmpi::get_comm_world_size() {
+                    dwmpi::barrier(MPI_COMM_WORLD);
 
-                        print_k_point(ik_global, k_frac, k_cart, npw_wfc);
+                    if irank == rank {
+                        if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
+                            if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
+                                debug_assert_eq!(vkscf_up.len(), vkscf_dn.len());
+                                debug_assert_eq!(vkscf_up.len(), vkevals_up.len());
+                                debug_assert_eq!(vkscf_up.len(), vkevals_dn.len());
+                                debug_assert_eq!(vkscf_up.len(), vpwwfc.len());
 
-                        let occ_up = kscf_up_k.get_occ();
-                        let occ_dn = kscf_dn_k.get_occ();
+                                for (kscf_up_k, kscf_dn_k, evals_up, evals_dn, pwwfc_k) in
+                                    itertools::multizip((
+                                        vkscf_up.iter(),
+                                        vkscf_dn.iter(),
+                                        vkevals_up.iter(),
+                                        vkevals_dn.iter(),
+                                        vpwwfc.iter(),
+                                    ))
+                                {
+                                    let ik_global = kscf_up_k.get_ik();
+                                    let k_frac = kpts.get_k_frac(ik_global);
+                                    let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                                    let npw_wfc = pwwfc_k.get_n_plane_waves();
 
-                        print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
+                                    print_k_point(ik_global, k_frac, k_cart, npw_wfc);
+
+                                    let occ_up = kscf_up_k.get_occ();
+                                    let occ_dn = kscf_dn_k.get_occ();
+
+                                    print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
+                                }
+                            }
+                        }
+                    }
+                }
+                dwmpi::barrier(MPI_COMM_WORLD);
+            } else if dwmpi::is_root() {
+                if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
+                    if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {
+                        debug_assert_eq!(vkscf_up.len(), vkscf_dn.len());
+                        debug_assert_eq!(vkscf_up.len(), vkevals_up.len());
+                        debug_assert_eq!(vkscf_up.len(), vkevals_dn.len());
+                        debug_assert_eq!(vkscf_up.len(), vpwwfc.len());
+
+                        for (kscf_up_k, kscf_dn_k, evals_up, evals_dn, pwwfc_k) in itertools::multizip(
+                            (
+                                vkscf_up.iter(),
+                                vkscf_dn.iter(),
+                                vkevals_up.iter(),
+                                vkevals_dn.iter(),
+                                vpwwfc.iter(),
+                            ),
+                        ) {
+                            let ik_global = kscf_up_k.get_ik();
+                            let k_frac = kpts.get_k_frac(ik_global);
+                            let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
+                            let npw_wfc = pwwfc_k.get_n_plane_waves();
+
+                            print_k_point(ik_global, k_frac, k_cart, npw_wfc);
+
+                            let occ_up = kscf_up_k.get_occ();
+                            let occ_dn = kscf_dn_k.get_occ();
+
+                            print_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
+                        }
                     }
                 }
             }
