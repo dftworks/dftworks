@@ -43,6 +43,8 @@ struct NonSpinScfWorkspace {
     vxcg: VXCG,
     vxc_3d: VXCR,
     exc_3d: Array3<c64>,
+    vextg: Vec<c64>,
+    vext_3d: Array3<c64>,
     vpslocg: Vec<c64>,
     vlocg: Vec<c64>,
     vloc_3d: Array3<c64>,
@@ -57,6 +59,8 @@ impl NonSpinScfWorkspace {
             vxcg: VXCG::NonSpin(vec![c64::zero(); npw_rho]),
             vxc_3d: VXCR::NonSpin(Array3::<c64>::new(fft_shape)),
             exc_3d: Array3::<c64>::new(fft_shape),
+            vextg: vec![c64::zero(); npw_rho],
+            vext_3d: Array3::<c64>::new(fft_shape),
             vpslocg: vec![c64::zero(); npw_rho],
             vlocg: vec![c64::zero(); npw_rho],
             vloc_3d: Array3::<c64>::new(fft_shape),
@@ -69,6 +73,7 @@ impl NonSpinScfWorkspace {
         let nfft = fft_shape[0] * fft_shape[1] * fft_shape[2];
 
         debug_assert_eq!(self.vhg.len(), npw_rho);
+        debug_assert_eq!(self.vextg.len(), npw_rho);
         debug_assert_eq!(self.vpslocg.len(), npw_rho);
         debug_assert_eq!(self.vlocg.len(), npw_rho);
         debug_assert_eq!(self.rhog_out.len(), npw_rho);
@@ -76,6 +81,7 @@ impl NonSpinScfWorkspace {
         debug_assert_eq!(self.vxcg.as_non_spin().unwrap().len(), npw_rho);
         debug_assert_eq!(self.vxc_3d.as_non_spin().unwrap().as_slice().len(), nfft);
         debug_assert_eq!(self.exc_3d.as_slice().len(), nfft);
+        debug_assert_eq!(self.vext_3d.as_slice().len(), nfft);
         debug_assert_eq!(self.vloc_3d.as_slice().len(), nfft);
     }
 }
@@ -88,6 +94,7 @@ struct NonSpinIterationAdapter<'ctx, 'ks> {
     pwden: &'ctx PWDensity,
     rgtrans: &'ctx RGTransform,
     ewald: &'ctx Ewald,
+    zions: &'ctx [f64],
     ntot_elec: f64,
     npw_wfc_max: usize,
     fft_ntotf64: f64,
@@ -160,6 +167,7 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
             self.rhocore_3d,
             &self.ws.exc_3d,
             self.ws.vxc_3d.as_non_spin().unwrap(),
+            Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
         )
@@ -212,6 +220,7 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
             self.rhocore_3d,
             &self.ws.exc_3d,
             self.ws.vxc_3d.as_non_spin().unwrap(),
+            Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
         )
@@ -260,6 +269,19 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
             &self.ws.vxcg,
             &mut self.ws.vlocg,
         );
+        if utils::build_external_slab_potential(
+            self.control,
+            self.crystal,
+            self.zions,
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            self.rho_3d,
+            &mut self.ws.vext_3d,
+            &mut self.ws.vextg,
+        ) {
+            utils::add_external_potential_to_vlocg(&self.ws.vextg, &mut self.ws.vlocg);
+        }
     }
 }
 
@@ -292,6 +314,7 @@ impl SCF for SCFNonspin {
         // Density helper chosen from spin scheme; this resolves to non-spin here.
         let density_driver = density::new(control.get_spin_scheme_enum());
         utils::validate_hse06_runtime_constraints(control, kpts);
+        utils::display_external_field_runtime_note(control);
 
         //
 
@@ -304,6 +327,7 @@ impl SCF for SCFNonspin {
         ws.validate(npw_rho, fft_shape);
 
         let xc = xc::new(control.get_xc_scheme_enum());
+        let zions = crystal.get_zions(pots);
 
         // v_psloc in G space; this will not change for a fixed set of ion positions
 
@@ -330,6 +354,19 @@ impl SCF for SCFNonspin {
 
         // Total local KS potential in reciprocal space.
         utils::add_up_v(&ws.vpslocg, &ws.vhg, &ws.vxcg, &mut ws.vlocg);
+        if utils::build_external_slab_potential(
+            control,
+            crystal,
+            &zions,
+            gvec,
+            pwden,
+            rgtrans,
+            rho_3d,
+            &mut ws.vext_3d,
+            &mut ws.vextg,
+        ) {
+            utils::add_external_potential_to_vlocg(&ws.vextg, &mut ws.vlocg);
+        }
 
         // density mixing
 
@@ -350,6 +387,7 @@ impl SCF for SCFNonspin {
             pwden,
             rgtrans,
             ewald,
+            zions: &zions,
             ntot_elec,
             npw_wfc_max,
             fft_ntotf64,

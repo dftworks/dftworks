@@ -237,6 +237,46 @@ impl FftPlannerScheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElectricFieldAxis {
+    A,
+    B,
+    C,
+}
+
+impl Default for ElectricFieldAxis {
+    fn default() -> Self {
+        ElectricFieldAxis::C
+    }
+}
+
+impl ElectricFieldAxis {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ElectricFieldAxis::A => "a",
+            ElectricFieldAxis::B => "b",
+            ElectricFieldAxis::C => "c",
+        }
+    }
+
+    pub fn axis_index(self) -> usize {
+        match self {
+            ElectricFieldAxis::A => 0,
+            ElectricFieldAxis::B => 1,
+            ElectricFieldAxis::C => 2,
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "a" | "x" | "1" => Some(ElectricFieldAxis::A),
+            "b" | "y" | "2" => Some(ElectricFieldAxis::B),
+            "c" | "z" | "3" => Some(ElectricFieldAxis::C),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Control {
     // Runtime/solver settings parsed from in.ctrl with defaults.
@@ -277,6 +317,10 @@ pub struct Control {
     fft_threads: usize,
     fft_planner: FftPlannerScheme,
     fft_wisdom_file: String,
+    surface_dipole_correction: bool,
+    electric_field_2d: f64, // V/Ang in input, stored as Ha/bohr
+    electric_field_axis: ElectricFieldAxis,
+    electric_field_origin_frac: f64,
     restart: bool,
     save_rho: bool,
     save_wfc: bool,
@@ -385,6 +429,10 @@ struct KeySpec {
     key: &'static str,
     setter: SetterFn,
 }
+
+// 1 a.u. electric field = Eh/(e*a0) = 5.14220674763e11 V/m = 51.4220674763 V/Ang.
+const ELECTRIC_FIELD_AU_TO_VANG: f64 = 51.4220674763;
+const ELECTRIC_FIELD_VANG_TO_AU: f64 = 1.0 / ELECTRIC_FIELD_AU_TO_VANG;
 
 #[inline]
 fn parse_bool_value(value: &str) -> Result<bool, String> {
@@ -500,6 +548,7 @@ set_bool_field!(set_eigval_same_epsilon, eigval_same_epsilon);
 set_bool_field!(set_restart, restart);
 set_bool_field!(set_save_rho, save_rho);
 set_bool_field!(set_save_wfc, save_wfc);
+set_bool_field!(set_surface_dipole_correction, surface_dipole_correction);
 set_usize_field!(set_fft_threads, fft_threads);
 set_string_field!(set_fft_wisdom_file, fft_wisdom_file);
 set_usize_field!(set_davidson_ndim, davidson_ndim);
@@ -593,6 +642,22 @@ fn set_eigen_solver(control: &mut Control, value: &str) -> Result<(), String> {
 fn set_fft_planner(control: &mut Control, value: &str) -> Result<(), String> {
     control.fft_planner = FftPlannerScheme::parse(value)
         .ok_or_else(|| "expected one of: estimate, measure".to_string())?;
+    Ok(())
+}
+
+fn set_electric_field_axis(control: &mut Control, value: &str) -> Result<(), String> {
+    control.electric_field_axis = ElectricFieldAxis::parse(value)
+        .ok_or_else(|| "expected one of: a, b, c (aliases: x,y,z or 1,2,3)".to_string())?;
+    Ok(())
+}
+
+fn set_electric_field_2d(control: &mut Control, value: &str) -> Result<(), String> {
+    control.electric_field_2d = parse_f64_value(value)? * ELECTRIC_FIELD_VANG_TO_AU;
+    Ok(())
+}
+
+fn set_electric_field_origin_frac(control: &mut Control, value: &str) -> Result<(), String> {
+    control.electric_field_origin_frac = parse_f64_value(value)?;
     Ok(())
 }
 
@@ -750,6 +815,22 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "restart",
         setter: set_restart,
+    },
+    KeySpec {
+        key: "surface_dipole_correction",
+        setter: set_surface_dipole_correction,
+    },
+    KeySpec {
+        key: "electric_field_2d",
+        setter: set_electric_field_2d,
+    },
+    KeySpec {
+        key: "electric_field_axis",
+        setter: set_electric_field_axis,
+    },
+    KeySpec {
+        key: "electric_field_origin_frac",
+        setter: set_electric_field_origin_frac,
     },
     KeySpec {
         key: "fft_threads",
@@ -1079,6 +1160,30 @@ impl Control {
         &self.task
     }
 
+    pub fn get_surface_dipole_correction(&self) -> bool {
+        self.surface_dipole_correction
+    }
+
+    pub fn get_electric_field_2d(&self) -> f64 {
+        self.electric_field_2d
+    }
+
+    pub fn get_electric_field_2d_vang(&self) -> f64 {
+        self.electric_field_2d * ELECTRIC_FIELD_AU_TO_VANG
+    }
+
+    pub fn get_electric_field_axis(&self) -> &str {
+        self.electric_field_axis.as_str()
+    }
+
+    pub fn get_electric_field_axis_enum(&self) -> ElectricFieldAxis {
+        self.electric_field_axis
+    }
+
+    pub fn get_electric_field_origin_frac(&self) -> f64 {
+        self.electric_field_origin_frac
+    }
+
     pub fn get_fft_threads(&self) -> usize {
         self.fft_threads
     }
@@ -1210,6 +1315,10 @@ impl Control {
         self.fft_threads = 1;
         self.fft_planner = FftPlannerScheme::Estimate;
         self.fft_wisdom_file = String::new();
+        self.surface_dipole_correction = false;
+        self.electric_field_2d = 0.0;
+        self.electric_field_axis = ElectricFieldAxis::C;
+        self.electric_field_origin_frac = 0.5;
 
         self.geom_optim_cell = false;
         self.geom_optim_scheme = "bfgs".to_string();
@@ -1386,6 +1495,21 @@ impl Control {
             ));
         }
 
+        if self.electric_field_origin_frac < 0.0 || self.electric_field_origin_frac >= 1.0 {
+            return Err(ControlError::validation(
+                "electric_field_origin_frac",
+                "must be within [0, 1)",
+            ));
+        }
+
+        if (self.electric_field_2d.abs() > EPS16 || self.surface_dipole_correction) && self.symmetry
+        {
+            return Err(ControlError::validation(
+                "symmetry/electric_field_2d/surface_dipole_correction",
+                "external slab fields currently require symmetry=false",
+            ));
+        }
+
         if !matches!(self.eigen_solver, EigenSolverScheme::Pcg) {
             return Err(ControlError::validation(
                 "eigen_solver",
@@ -1555,6 +1679,34 @@ impl Control {
             "fft_wisdom_file",
             wisdom_file,
             width1 = OUT_WIDTH1
+        );
+        println!(
+            "   {:<width1$} = {:>width2$.6}",
+            "electric_field_2d",
+            self.get_electric_field_2d_vang(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "electric_field_axis",
+            self.get_electric_field_axis(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$.4}",
+            "electric_field_origin",
+            self.get_electric_field_origin_frac(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
+            "surface_dipole_correction",
+            self.get_surface_dipole_correction(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
         );
         println!(
             "   {:<width1$} = {:>width2$}",
@@ -1829,8 +1981,8 @@ impl Control {
 #[cfg(test)]
 mod tests {
     use super::{
-        Control, ControlError, FftPlannerScheme, KptsScheme, PotScheme, SmearingScheme, SpinScheme,
-        XcScheme,
+        Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KptsScheme, PotScheme,
+        SmearingScheme, SpinScheme, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -1983,5 +2135,39 @@ mod tests {
         let err = parse_control(&["fft_threads = 0"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("fft_threads"));
         assert!(err.message.contains(">= 1"));
+    }
+
+    #[test]
+    fn test_parser_accepts_surface_field_controls() {
+        let control = parse_control(&[
+            "electric_field_2d = 0.25",
+            "electric_field_axis = b",
+            "electric_field_origin_frac = 0.2",
+            "surface_dipole_correction = true",
+            "symmetry = false",
+        ])
+        .expect("control parse should succeed");
+
+        assert!((control.get_electric_field_2d_vang() - 0.25).abs() < 1.0e-12);
+        assert_eq!(control.get_electric_field_axis_enum(), ElectricFieldAxis::B);
+        assert!((control.get_electric_field_origin_frac() - 0.2).abs() < 1.0e-12);
+        assert!(control.get_surface_dipole_correction());
+    }
+
+    #[test]
+    fn test_validation_rejects_invalid_surface_field_origin() {
+        let err = parse_control(&["electric_field_origin_frac = 1.2"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("electric_field_origin_frac"));
+        assert!(err.message.contains("[0, 1)"));
+    }
+
+    #[test]
+    fn test_validation_rejects_surface_field_with_symmetry() {
+        let err = parse_control(&["electric_field_2d = 0.1", "symmetry = true"]).unwrap_err();
+        assert_eq!(
+            err.key.as_deref(),
+            Some("symmetry/electric_field_2d/surface_dipole_correction")
+        );
+        assert!(err.message.contains("symmetry=false"));
     }
 }

@@ -58,6 +58,8 @@ struct SpinScfWorkspace {
     vxcg: VXCG,
     vxc_3d: VXCR,
     exc_3d: Array3<c64>,
+    vextg: Vec<c64>,
+    vext_3d: Array3<c64>,
     vlocg_up: Vec<c64>,
     vlocg_dn: Vec<c64>,
     vloc_3d_up: Array3<c64>,
@@ -79,6 +81,8 @@ impl SpinScfWorkspace {
             vxcg: VXCG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
             vxc_3d: VXCR::Spin(Array3::<c64>::new(fft_shape), Array3::<c64>::new(fft_shape)),
             exc_3d: Array3::<c64>::new(fft_shape),
+            vextg: vec![c64::zero(); npw_rho],
+            vext_3d: Array3::<c64>::new(fft_shape),
             vlocg_up: vec![c64::zero(); npw_rho],
             vlocg_dn: vec![c64::zero(); npw_rho],
             vloc_3d_up: Array3::<c64>::new(fft_shape),
@@ -98,6 +102,7 @@ impl SpinScfWorkspace {
         debug_assert_eq!(self.rhog_tot_scratch.len(), npw_rho);
         debug_assert_eq!(self.vpslocg.len(), npw_rho);
         debug_assert_eq!(self.vhg.len(), npw_rho);
+        debug_assert_eq!(self.vextg.len(), npw_rho);
         debug_assert_eq!(self.vlocg_up.len(), npw_rho);
         debug_assert_eq!(self.vlocg_dn.len(), npw_rho);
         debug_assert_eq!(self.rhog_out_up.len(), npw_rho);
@@ -110,6 +115,7 @@ impl SpinScfWorkspace {
         debug_assert_eq!(self.vxc_3d.as_spin().unwrap().0.as_slice().len(), nfft);
         debug_assert_eq!(self.vxc_3d.as_spin().unwrap().1.as_slice().len(), nfft);
         debug_assert_eq!(self.exc_3d.as_slice().len(), nfft);
+        debug_assert_eq!(self.vext_3d.as_slice().len(), nfft);
         debug_assert_eq!(self.vloc_3d_up.as_slice().len(), nfft);
         debug_assert_eq!(self.vloc_3d_dn.as_slice().len(), nfft);
     }
@@ -176,6 +182,7 @@ struct SpinIterationAdapter<'ctx, 'ks> {
     pwden: &'ctx PWDensity,
     rgtrans: &'ctx RGTransform,
     ewald: &'ctx Ewald,
+    zions: &'ctx [f64],
     ntot_elec: f64,
     npw_wfc_max: usize,
     fft_ntotf64: f64,
@@ -237,6 +244,21 @@ impl SpinIterationAdapter<'_, '_> {
             self.ws.vpslocg.iter(),
         )) {
             *v_loc = *v_xc + *v_ha + *v_psloc;
+        }
+
+        if utils::build_external_slab_potential(
+            self.control,
+            self.crystal,
+            self.zions,
+            self.gvec,
+            self.pwden,
+            self.rgtrans,
+            self.rho_3d,
+            &mut self.ws.vext_3d,
+            &mut self.ws.vextg,
+        ) {
+            utils::add_external_potential_to_vlocg(&self.ws.vextg, &mut self.ws.vlocg_up);
+            utils::add_external_potential_to_vlocg(&self.ws.vextg, &mut self.ws.vlocg_dn);
         }
     }
 
@@ -314,6 +336,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
             self.rhocore_3d,
             &self.ws.exc_3d,
             &self.ws.vxc_3d,
+            Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
             &mut self.ws.rhog_tot_scratch,
@@ -374,6 +397,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
             self.rhocore_3d,
             &self.ws.exc_3d,
             &self.ws.vxc_3d,
+            Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
             &mut self.ws.rhog_tot_scratch,
@@ -457,6 +481,7 @@ impl SCF for SCFSpin {
     ) {
         let density_driver = density::new(control.get_spin_scheme_enum());
         utils::validate_hse06_runtime_constraints(control, kpts);
+        utils::display_external_field_runtime_note(control);
 
         let blatt = crystal.get_latt().reciprocal();
 
@@ -473,6 +498,7 @@ impl SCF for SCFSpin {
 
         let mut ws = SpinScfWorkspace::new(npw_rho, [n1, n2, n3]);
         ws.validate(npw_rho, [n1, n2, n3]);
+        let zions = crystal.get_zions(pots);
 
         if let RHOG::Spin(rhog_up, rhog_dn) = rhog {
             sum_spin_channels(rhog_up, rhog_dn, &mut ws.rhog_tot);
@@ -530,6 +556,20 @@ impl SCF for SCFSpin {
                 *v_loc = *v_xc + *v_ha + *v_psloc;
             }
         }
+        if utils::build_external_slab_potential(
+            control,
+            crystal,
+            &zions,
+            gvec,
+            pwden,
+            rgtrans,
+            rho_3d,
+            &mut ws.vext_3d,
+            &mut ws.vextg,
+        ) {
+            utils::add_external_potential_to_vlocg(&ws.vextg, &mut ws.vlocg_up);
+            utils::add_external_potential_to_vlocg(&ws.vextg, &mut ws.vlocg_dn);
+        }
         //
 
         // density mixing
@@ -554,6 +594,7 @@ impl SCF for SCFSpin {
             pwden,
             rgtrans,
             ewald,
+            zions: &zions,
             ntot_elec,
             npw_wfc_max,
             fft_ntotf64,
@@ -812,6 +853,7 @@ pub fn compute_total_energy(
     rhocore_3d: &Array3<c64>,
     exc_3d: &Array3<c64>,
     vxc_3d: &VXCR,
+    vext_3d: Option<&Array3<c64>>,
     ew_total: f64,
     hubbard_energy: f64,
     rhog_tot_scratch: &mut [c64],
@@ -845,6 +887,24 @@ pub fn compute_total_energy(
     let etot_vxc = energy::vxc_spin(latt, rho_3d, rhocore_3d.as_slice(), vxc_3d);
 
     let etot_xc = energy::exc_spin(latt, &rho_3d, &rhocore_3d, &exc_3d);
+    let etot_ext = if let Some(vext_3d) = vext_3d {
+        let nfft = vext_3d.as_slice().len();
+        let dvol = latt.volume() / nfft as f64;
+        let mut sum = 0.0;
+        if let RHOR::Spin(rho_up, rho_dn) = rho_3d {
+            for ((up, dn), vext) in rho_up
+                .as_slice()
+                .iter()
+                .zip(rho_dn.as_slice().iter())
+                .zip(vext_3d.as_slice().iter())
+            {
+                sum += (up.re + dn.re) * vext.re;
+            }
+        }
+        sum * dvol
+    } else {
+        0.0
+    };
     let mut hybrid_exchange_local = 0.0;
     if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
         hybrid_exchange_local =
@@ -856,7 +916,8 @@ pub fn compute_total_energy(
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
-    let etot = etot_one + etot_xc + etot_hartree + ew_total + hubbard_energy - hybrid_exchange;
+    let etot =
+        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange;
 
     etot
 }
