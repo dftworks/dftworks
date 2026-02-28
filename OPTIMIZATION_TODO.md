@@ -597,8 +597,8 @@ Finish an item only when:
 
 ### E7 - Orchestration Modularization
 **Priority**: P3/P6  
-**Status**: Open  
-**Files**: `pw/src/main.rs`, `scf/src/lib.rs`
+**Status**: Done (2026-02-28)  
+**Files**: `pw/src/main.rs`, `pw/src/orchestration/{bootstrap.rs,construction.rs,execution.rs,outputs.rs,mod.rs}`, `scf/src/lib.rs`
 
 - Split monolithic orchestration into phase modules:
   - input/bootstrap
@@ -606,6 +606,14 @@ Finish an item only when:
   - SCF execution
   - outputs/postprocessing
 - Replace oversized argument lists with grouped context structs
+
+**Implementation Update (2026-02-28)**
+- [x] Added explicit orchestration phase modules under `pw/src/orchestration/`:
+  `bootstrap` (input/runtime bootstrap), `construction` (geometry-step basis/density/symmetry build), `execution` (SCF phase dispatch), `outputs` (checkpoint/output persistence and convergence exit policy)
+- [x] Refactored `pw::main` to a high-level orchestration loop that delegates phase work to those modules
+- [x] Introduced grouped phase context structs (`BootstrapData`, `GeometryPhaseInput/Artifacts`, `ScfExecutionContext`, `PersistOutputsContext`, `ExitDecisionContext`) to remove direct oversized call sites in the main loop
+- [x] Preserved existing runtime behavior for restart/checkpoint, symmetry diagnostics, SCF execution, and postprocessing while reducing monolithic control flow in `main.rs`
+- [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
 
 **Acceptance Criteria**
 - `pw/src/main.rs` reduced to high-level orchestration flow
@@ -784,8 +792,8 @@ Finish an item only when:
 
 ### E22 - Checkpoint Repository and Codec Abstraction
 **Priority**: P2/P3  
-**Status**: Open  
-**Files**: `dfttypes/src/lib.rs`, `pw/src/main.rs`, `workflow/src/main.rs`
+**Status**: Done (2026-02-28)  
+**Files**: `dfttypes/src/{lib.rs,checkpoint_repo.rs}`, `pw/src/{restart.rs,orchestration/outputs.rs,main.rs}`
 
 - Split checkpoint domain model from storage codec to allow multiple backends (current HDF5 file-per-k, future packed/chunked formats)
 - Remove duplicated spin/nonspin load/save loops via shared channel iteration helpers
@@ -796,6 +804,15 @@ Finish an item only when:
 - Restart logic depends on a repository trait instead of direct filename logic in `pw`
 - Save/load branches share common code for spin channel handling
 - Checkpoint compatibility and migration behavior is covered by integration tests
+
+**Implementation Update (2026-02-28)**
+- [x] Added checkpoint repository/codec abstraction in `dfttypes` (`CheckpointRepository`, `CheckpointCodec`, `Hdf5FilePerKCheckpointRepository`) and re-exported it via `dfttypes::lib`
+- [x] Centralized spin/nonspin channel handling with shared helpers for file naming, channel iteration, and metadata merge behavior
+- [x] Refactored `VKEigenVector` and `RHOR` checkpoint save/load paths to delegate through repository methods, with fallible `try_*` APIs and contextual string errors
+- [x] Added checkpoint metadata migration hook (`v0` -> current schema) and validation path updates so restart accepts legacy-compatible metadata payloads
+- [x] Rewired `pw` restart and output persistence paths to depend on repository APIs for required filenames/load/save instead of hardcoded filename loops
+- [x] Added repository-focused unit tests (channel filename mapping + spin metadata merge contract) and migration tests in `dfttypes`
+- [x] Validated with Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
 
 
 ### E23 - SCF Utilities Module Decomposition

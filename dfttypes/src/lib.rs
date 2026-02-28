@@ -7,6 +7,9 @@ use types::*;
 
 use enum_as_inner::EnumAsInner;
 
+mod checkpoint_repo;
+pub use checkpoint_repo::{CheckpointCodec, CheckpointRepository, Hdf5FilePerKCheckpointRepository};
+
 pub const CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const CHECKPOINT_META_GROUP: &str = "CheckpointMeta";
 
@@ -39,43 +42,63 @@ impl CheckpointMeta {
     }
 
     pub fn validate_against(&self, expected: &Self, tol: f64) -> Result<(), String> {
-        if self.schema_version != expected.schema_version {
+        let this = self.migrate_to_current()?;
+        let expected = expected.migrate_to_current()?;
+
+        if this.schema_version != expected.schema_version {
             return Err(format!(
                 "checkpoint schema mismatch: found v{}, expected v{}",
-                self.schema_version, expected.schema_version
+                this.schema_version, expected.schema_version
             ));
         }
-        if self.spin_channels != expected.spin_channels {
+        if this.spin_channels != expected.spin_channels {
             return Err(format!(
                 "checkpoint spin mismatch: found {} channel(s), expected {}",
-                self.spin_channels, expected.spin_channels
+                this.spin_channels, expected.spin_channels
             ));
         }
-        if self.nband != expected.nband {
+        if this.nband != expected.nband {
             return Err(format!(
                 "checkpoint nband mismatch: found {}, expected {}",
-                self.nband, expected.nband
+                this.nband, expected.nband
             ));
         }
-        if self.k_mesh != expected.k_mesh {
+        if this.k_mesh != expected.k_mesh {
             return Err(format!(
                 "checkpoint k-mesh mismatch: found {:?}, expected {:?}",
-                self.k_mesh, expected.k_mesh
+                this.k_mesh, expected.k_mesh
             ));
         }
-        if (self.ecut_wfc - expected.ecut_wfc).abs() > tol {
+        if (this.ecut_wfc - expected.ecut_wfc).abs() > tol {
             return Err(format!(
                 "checkpoint ecut_wfc mismatch: found {:.12e}, expected {:.12e}",
-                self.ecut_wfc, expected.ecut_wfc
+                this.ecut_wfc, expected.ecut_wfc
             ));
         }
-        if (self.ecut_rho - expected.ecut_rho).abs() > tol {
+        if (this.ecut_rho - expected.ecut_rho).abs() > tol {
             return Err(format!(
                 "checkpoint ecut_rho mismatch: found {:.12e}, expected {:.12e}",
-                self.ecut_rho, expected.ecut_rho
+                this.ecut_rho, expected.ecut_rho
             ));
         }
         Ok(())
+    }
+
+    pub fn migrate_to_current(&self) -> Result<Self, String> {
+        let mut out = *self;
+        match out.schema_version {
+            CHECKPOINT_SCHEMA_VERSION => Ok(out),
+            // Compatibility hook: allow legacy metadata marked as v0 while
+            // preserving all parsed fields and normalizing to current schema.
+            0 => {
+                out.schema_version = CHECKPOINT_SCHEMA_VERSION;
+                Ok(out)
+            }
+            other => Err(format!(
+                "unsupported checkpoint schema version v{} (supported: v{} and migration hook v0)",
+                other, CHECKPOINT_SCHEMA_VERSION
+            )),
+        }
     }
 
     pub fn write_to_file(&self, file: &hdf5::File) -> Result<(), String> {
@@ -138,14 +161,15 @@ impl CheckpointMeta {
         let ecut_rho = read_f64_scalar(group, "ecut_rho")?;
         let k_mesh = read_i32_vec3(group, "k_mesh")?;
 
-        Ok(Self {
+        Self {
             schema_version,
             spin_channels,
             nband,
             ecut_wfc,
             ecut_rho,
             k_mesh,
-        })
+        }
+        .migrate_to_current()
     }
 }
 
@@ -224,16 +248,27 @@ impl VKEigenVector {
         blatt: &Lattice,
         checkpoint_meta: Option<&CheckpointMeta>,
     ) {
+        self.try_save_hdf5_with_meta(ik_first, pwbasis, blatt, checkpoint_meta)
+            .expect("failed to save VKEigenVector checkpoint");
+    }
+
+    pub fn try_save_hdf5_with_meta(
+        &self,
+        ik_first: usize,
+        pwbasis: &[PWBasis],
+        blatt: &Lattice,
+        checkpoint_meta: Option<&CheckpointMeta>,
+    ) -> Result<(), String> {
         let mut k_indices = Vec::with_capacity(pwbasis.len());
         for i in 0..pwbasis.len() {
             k_indices.push(ik_first + i);
         }
-        self.save_hdf5_with_meta_for_kpoints(
+        self.try_save_hdf5_with_meta_for_kpoints(
             k_indices.as_slice(),
             pwbasis,
             blatt,
             checkpoint_meta,
-        );
+        )
     }
 
     pub fn save_hdf5_with_meta_for_kpoints(
@@ -243,79 +278,19 @@ impl VKEigenVector {
         blatt: &Lattice,
         checkpoint_meta: Option<&CheckpointMeta>,
     ) {
-        assert_eq!(k_indices.len(), pwbasis.len());
-        match self {
-            VKEigenVector::NonSpin(v) => {
-                assert_eq!(v.len(), pwbasis.len());
-                for (i, eigen_vec) in v.iter().enumerate() {
-                    let ik = k_indices[i];
-                    let filename = format!("out.wfc.k.{}.hdf5", ik);
-                    let hdf5_file = hdf5::File::create(filename).unwrap();
+        self.try_save_hdf5_with_meta_for_kpoints(k_indices, pwbasis, blatt, checkpoint_meta)
+            .expect("failed to save VKEigenVector checkpoint");
+    }
 
-                    let mut group_tmp = hdf5_file.create_group("EigenVector").unwrap();
-                    eigen_vec.save_hdf5(&mut group_tmp);
-
-                    // Write PWBasis information
-                    let mut group_tmp = hdf5_file.create_group("PWBasis").unwrap();
-                    pwbasis.get(i).unwrap().save_hdf5(&mut group_tmp);
-
-                    // Write reciprocal lattice
-                    let mut group_tmp = hdf5_file.create_group("BLattice").unwrap();
-                    blatt.save_hdf5(&mut group_tmp);
-
-                    if let Some(meta) = checkpoint_meta {
-                        meta.write_to_file(&hdf5_file)
-                            .expect("failed to write checkpoint metadata");
-                    }
-                }
-            }
-            VKEigenVector::Spin(up, dn) => {
-                assert_eq!(up.len(), pwbasis.len());
-                assert_eq!(dn.len(), pwbasis.len());
-                for (i, eigen_vec) in up.iter().enumerate() {
-                    let ik = k_indices[i];
-                    let filename = format!("out.wfc.up.k.{}.hdf5", ik);
-                    let hdf5_file = hdf5::File::create(filename).unwrap();
-
-                    let mut group_tmp = hdf5_file.create_group("EigenVector").unwrap();
-                    eigen_vec.save_hdf5(&mut group_tmp);
-
-                    // Write PWBasis information
-                    let mut group_tmp = hdf5_file.create_group("PWBasis").unwrap();
-                    pwbasis.get(i).unwrap().save_hdf5(&mut group_tmp);
-
-                    // Write reciprocal lattice
-                    let mut group_tmp = hdf5_file.create_group("BLattice").unwrap();
-                    blatt.save_hdf5(&mut group_tmp);
-
-                    if let Some(meta) = checkpoint_meta {
-                        meta.write_to_file(&hdf5_file)
-                            .expect("failed to write checkpoint metadata");
-                    }
-                }
-                for (i, eigen_vec) in dn.iter().enumerate() {
-                    let ik = k_indices[i];
-                    let filename = format!("out.wfc.dn.k.{}.hdf5", ik);
-                    let hdf5_file = hdf5::File::create(filename).unwrap();
-
-                    let mut group_tmp = hdf5_file.create_group("EigenVector").unwrap();
-                    eigen_vec.save_hdf5(&mut group_tmp);
-
-                    // Write PWBasis information
-                    let mut group_tmp = hdf5_file.create_group("PWBasis").unwrap();
-                    pwbasis.get(i).unwrap().save_hdf5(&mut group_tmp);
-
-                    // Write reciprocal lattice
-                    let mut group_tmp = hdf5_file.create_group("BLattice").unwrap();
-                    blatt.save_hdf5(&mut group_tmp);
-
-                    if let Some(meta) = checkpoint_meta {
-                        meta.write_to_file(&hdf5_file)
-                            .expect("failed to write checkpoint metadata");
-                    }
-                }
-            }
-        }
+    pub fn try_save_hdf5_with_meta_for_kpoints(
+        &self,
+        k_indices: &[usize],
+        pwbasis: &[PWBasis],
+        blatt: &Lattice,
+        checkpoint_meta: Option<&CheckpointMeta>,
+    ) -> Result<(), String> {
+        let repo = Hdf5FilePerKCheckpointRepository::default();
+        repo.save_wavefunctions(self, k_indices, pwbasis, blatt, checkpoint_meta)
     }
 
     pub fn load_hdf5(
@@ -343,100 +318,8 @@ impl VKEigenVector {
         is_spin: bool,
         k_indices: &[usize],
     ) -> Result<(Vec<PWBasis>, Lattice, VKEigenVector), String> {
-        let nk = k_indices.len();
-        if nk == 0 {
-            return Err("cannot load VKEigenVector checkpoint for empty k-point list".to_string());
-        }
-        match is_spin {
-            false => {
-                let mut eigen_vecs = Vec::<Matrix<c64>>::with_capacity(nk);
-                let mut pwbasis_vec = Vec::<PWBasis>::with_capacity(nk);
-                let mut blatt = Lattice::default();
-
-                for &ik in k_indices.iter() {
-                    let filename = format!("out.wfc.k.{}.hdf5", ik);
-                    let hdf5_file = hdf5::File::open(&filename)
-                        .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
-
-                    let group_tmp = hdf5_file
-                        .group("EigenVector")
-                        .map_err(|e| format!("failed to open EigenVector in '{}': {}", filename, e))?;
-                    let eigen_vec_tmp = Matrix::<c64>::try_load_hdf5(&group_tmp)
-                        .map_err(|e| format!("{} in '{}'", e, filename))?;
-                    eigen_vecs.push(eigen_vec_tmp);
-
-                    // Load PWBasis information
-                    let group_tmp = hdf5_file
-                        .group("PWBasis")
-                        .map_err(|e| format!("failed to open PWBasis in '{}': {}", filename, e))?;
-                    let pwbasis_tmp = PWBasis::try_load_hdf5(&group_tmp)
-                        .map_err(|e| format!("{} in '{}'", e, filename))?;
-                    pwbasis_vec.push(pwbasis_tmp);
-
-                    // Load reciprocal lattice
-                    let group_tmp = hdf5_file
-                        .group("BLattice")
-                        .map_err(|e| format!("failed to open BLattice in '{}': {}", filename, e))?;
-                    blatt = Lattice::try_load_hdf5(&group_tmp)
-                        .map_err(|e| format!("{} in '{}'", e, filename))?;
-                }
-                Ok((pwbasis_vec, blatt, VKEigenVector::NonSpin(eigen_vecs)))
-            }
-            true => {
-                let mut eigen_vecs_up = Vec::<Matrix<c64>>::with_capacity(nk);
-                let mut eigen_vecs_dn = Vec::<Matrix<c64>>::with_capacity(nk);
-                let mut pwbasis_vec = Vec::<PWBasis>::with_capacity(nk);
-                let mut blatt = Lattice::default();
-
-                for &ik in k_indices.iter() {
-                    let filename = format!("out.wfc.up.k.{}.hdf5", ik);
-                    let hdf5_file = hdf5::File::open(&filename)
-                        .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
-
-                    let group_tmp = hdf5_file
-                        .group("EigenVector")
-                        .map_err(|e| format!("failed to open EigenVector in '{}': {}", filename, e))?;
-                    eigen_vecs_up.push(
-                        Matrix::<c64>::try_load_hdf5(&group_tmp)
-                            .map_err(|e| format!("{} in '{}'", e, filename))?,
-                    );
-
-                    // Load PWBasis information
-                    let group_tmp = hdf5_file
-                        .group("PWBasis")
-                        .map_err(|e| format!("failed to open PWBasis in '{}': {}", filename, e))?;
-                    pwbasis_vec.push(
-                        PWBasis::try_load_hdf5(&group_tmp)
-                            .map_err(|e| format!("{} in '{}'", e, filename))?,
-                    );
-
-                    // Load reciprocal lattice
-                    let group_tmp = hdf5_file
-                        .group("BLattice")
-                        .map_err(|e| format!("failed to open BLattice in '{}': {}", filename, e))?;
-                    blatt = Lattice::try_load_hdf5(&group_tmp)
-                        .map_err(|e| format!("{} in '{}'", e, filename))?;
-                }
-                for &ik in k_indices.iter() {
-                    let filename = format!("out.wfc.dn.k.{}.hdf5", ik);
-                    let hdf5_file = hdf5::File::open(&filename)
-                        .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
-
-                    let group_tmp = hdf5_file
-                        .group("EigenVector")
-                        .map_err(|e| format!("failed to open EigenVector in '{}': {}", filename, e))?;
-                    eigen_vecs_dn.push(
-                        Matrix::<c64>::try_load_hdf5(&group_tmp)
-                            .map_err(|e| format!("{} in '{}'", e, filename))?,
-                    );
-                }
-                Ok((
-                    pwbasis_vec,
-                    blatt,
-                    VKEigenVector::Spin(eigen_vecs_up, eigen_vecs_dn),
-                ))
-            }
-        }
+        let repo = Hdf5FilePerKCheckpointRepository::default();
+        repo.load_wavefunctions(is_spin, k_indices)
     }
 }
 
@@ -464,54 +347,17 @@ impl RHOR {
     }
 
     pub fn save_hdf5_with_meta(&self, blatt: &Lattice, checkpoint_meta: Option<&CheckpointMeta>) {
-        match self {
-            RHOR::NonSpin(rho_3d) => {
-                let hdf5_file = hdf5::File::create("out.scf.rho.hdf5").unwrap();
+        self.try_save_hdf5_with_meta(blatt, checkpoint_meta)
+            .expect("failed to save RHOR checkpoint");
+    }
 
-                let mut group_tmp = hdf5_file.create_group("RhoR").unwrap();
-                rho_3d.save_hdf5(&mut group_tmp);
-
-                // Write reciprocal lattice
-                let mut group_tmp = hdf5_file.create_group("BLattice").unwrap();
-                blatt.save_hdf5(&mut group_tmp);
-
-                if let Some(meta) = checkpoint_meta {
-                    meta.write_to_file(&hdf5_file)
-                        .expect("failed to write checkpoint metadata");
-                }
-            }
-            RHOR::Spin(rho_3d_up, rho_3d_dn) => {
-                // ---------------------- UP ----------------------
-                let hdf5_file = hdf5::File::create("out.scf.rho.up.hdf5").unwrap();
-
-                let mut group_tmp = hdf5_file.create_group("RhoR").unwrap();
-                rho_3d_up.save_hdf5(&mut group_tmp);
-
-                // Write reciprocal lattice
-                let mut group_tmp = hdf5_file.create_group("BLattice").unwrap();
-                blatt.save_hdf5(&mut group_tmp);
-
-                if let Some(meta) = checkpoint_meta {
-                    meta.write_to_file(&hdf5_file)
-                        .expect("failed to write checkpoint metadata");
-                }
-
-                // ---------------------- DOWN ----------------------
-                let hdf5_file = hdf5::File::create("out.scf.rho.dn.hdf5").unwrap();
-
-                let mut group_tmp = hdf5_file.create_group("RhoR").unwrap();
-                rho_3d_dn.save_hdf5(&mut group_tmp);
-
-                // Write reciprocal lattice
-                let mut group_tmp = hdf5_file.create_group("BLattice").unwrap();
-                blatt.save_hdf5(&mut group_tmp);
-
-                if let Some(meta) = checkpoint_meta {
-                    meta.write_to_file(&hdf5_file)
-                        .expect("failed to write checkpoint metadata");
-                }
-            }
-        }
+    pub fn try_save_hdf5_with_meta(
+        &self,
+        blatt: &Lattice,
+        checkpoint_meta: Option<&CheckpointMeta>,
+    ) -> Result<(), String> {
+        let repo = Hdf5FilePerKCheckpointRepository::default();
+        repo.save_density(self, blatt, checkpoint_meta)
     }
 
     pub fn load_hdf5(is_spin: bool) -> (Lattice, RHOR) {
@@ -523,83 +369,8 @@ impl RHOR {
     pub fn try_load_hdf5(
         is_spin: bool,
     ) -> Result<(Lattice, RHOR, Option<CheckpointMeta>), String> {
-        match is_spin {
-            false => {
-                let filename = "out.scf.rho.hdf5";
-                let hdf5_file = hdf5::File::open(filename)
-                    .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
-
-                let group_tmp = hdf5_file
-                    .group("RhoR")
-                    .map_err(|e| format!("failed to open RhoR in '{}': {}", filename, e))?;
-                let rho_3d = Array3::<c64>::try_load_hdf5(&group_tmp)
-                    .map_err(|e| format!("{} in '{}'", e, filename))?;
-
-                let group_tmp = hdf5_file
-                    .group("BLattice")
-                    .map_err(|e| format!("failed to open BLattice in '{}': {}", filename, e))?;
-                let blatt = Lattice::try_load_hdf5(&group_tmp)
-                    .map_err(|e| format!("{} in '{}'", e, filename))?;
-
-                let meta = CheckpointMeta::read_from_file_optional(&hdf5_file)
-                    .map_err(|e| format!("{} in '{}'", e, filename))?;
-
-                Ok((blatt, RHOR::NonSpin(rho_3d), meta))
-            }
-            true => {
-                // ---------------------- UP ----------------------
-                let filename_up = "out.scf.rho.up.hdf5";
-                let hdf5_file_up = hdf5::File::open(filename_up)
-                    .map_err(|e| format!("failed to open '{}': {}", filename_up, e))?;
-
-                let group_tmp = hdf5_file_up
-                    .group("RhoR")
-                    .map_err(|e| format!("failed to open RhoR in '{}': {}", filename_up, e))?;
-                let rho_3d_up = Array3::<c64>::try_load_hdf5(&group_tmp)
-                    .map_err(|e| format!("{} in '{}'", e, filename_up))?;
-
-                // ---------------------- DOWN ----------------------
-                let filename_dn = "out.scf.rho.dn.hdf5";
-                let hdf5_file_dn = hdf5::File::open(filename_dn)
-                    .map_err(|e| format!("failed to open '{}': {}", filename_dn, e))?;
-
-                let group_tmp = hdf5_file_dn
-                    .group("RhoR")
-                    .map_err(|e| format!("failed to open RhoR in '{}': {}", filename_dn, e))?;
-                let rho_3d_dn = Array3::<c64>::try_load_hdf5(&group_tmp)
-                    .map_err(|e| format!("{} in '{}'", e, filename_dn))?;
-
-                // Reciprocal lattice (identical for up/down)
-                let group_tmp = hdf5_file_up
-                    .group("BLattice")
-                    .map_err(|e| format!("failed to open BLattice in '{}': {}", filename_up, e))?;
-                let blatt = Lattice::try_load_hdf5(&group_tmp)
-                    .map_err(|e| format!("{} in '{}'", e, filename_up))?;
-
-                let meta_up = CheckpointMeta::read_from_file_optional(&hdf5_file_up)
-                    .map_err(|e| format!("{} in '{}'", e, filename_up))?;
-                let meta_dn = CheckpointMeta::read_from_file_optional(&hdf5_file_dn)
-                    .map_err(|e| format!("{} in '{}'", e, filename_dn))?;
-
-                let meta = match (meta_up, meta_dn) {
-                    (Some(up), Some(dn)) => {
-                        if up != dn {
-                            return Err("spin checkpoint metadata mismatch between up/down files"
-                                .to_string());
-                        }
-                        Some(up)
-                    }
-                    (None, None) => None,
-                    _ => {
-                        return Err(
-                            "spin checkpoint metadata is present only in one channel file".to_string()
-                        )
-                    }
-                };
-
-                Ok((blatt, RHOR::Spin(rho_3d_up, rho_3d_dn), meta))
-            }
-        }
+        let repo = Hdf5FilePerKCheckpointRepository::default();
+        repo.load_density(is_spin)
     }
 }
 
@@ -639,4 +410,41 @@ fn test_vktypes() {
 
     println!("up = {:?}", up);
     println!("dn = {:?}", dn);
+}
+
+#[test]
+fn test_checkpoint_meta_migration_v0_to_current() {
+    let legacy = CheckpointMeta {
+        schema_version: 0,
+        spin_channels: 2,
+        nband: 32,
+        ecut_wfc: 30.0,
+        ecut_rho: 120.0,
+        k_mesh: [4, 4, 1],
+    };
+
+    let migrated = legacy
+        .migrate_to_current()
+        .expect("legacy v0 checkpoint metadata should migrate");
+    assert_eq!(migrated.schema_version, CHECKPOINT_SCHEMA_VERSION);
+    assert_eq!(migrated.spin_channels, legacy.spin_channels);
+    assert_eq!(migrated.nband, legacy.nband);
+    assert_eq!(migrated.k_mesh, legacy.k_mesh);
+}
+
+#[test]
+fn test_checkpoint_meta_validate_accepts_migrated_schema() {
+    let expected = CheckpointMeta::new(2, 48, 40.0, 160.0, [6, 6, 2]);
+    let legacy_same_payload = CheckpointMeta {
+        schema_version: 0,
+        spin_channels: 2,
+        nband: 48,
+        ecut_wfc: 40.0,
+        ecut_rho: 160.0,
+        k_mesh: [6, 6, 2],
+    };
+
+    legacy_same_payload
+        .validate_against(&expected, 1.0e-12)
+        .expect("v0 payload-compatible metadata should validate via migration hook");
 }
