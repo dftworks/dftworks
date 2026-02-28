@@ -277,6 +277,38 @@ impl ElectricFieldAxis {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KPointScheduleScheme {
+    Contiguous,
+    CostAware,
+    Dynamic,
+}
+
+impl Default for KPointScheduleScheme {
+    fn default() -> Self {
+        KPointScheduleScheme::CostAware
+    }
+}
+
+impl KPointScheduleScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KPointScheduleScheme::Contiguous => "contiguous",
+            KPointScheduleScheme::CostAware => "cost_aware",
+            KPointScheduleScheme::Dynamic => "dynamic",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "contiguous" => Some(KPointScheduleScheme::Contiguous),
+            "cost_aware" | "cost-aware" | "costaware" => Some(KPointScheduleScheme::CostAware),
+            "dynamic" => Some(KPointScheduleScheme::Dynamic),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Control {
     // Runtime/solver settings parsed from in.ctrl with defaults.
@@ -321,6 +353,7 @@ pub struct Control {
     electric_field_2d: f64, // V/Ang in input, stored as Ha/bohr
     electric_field_axis: ElectricFieldAxis,
     electric_field_origin_frac: f64,
+    kpoint_schedule: KPointScheduleScheme,
     restart: bool,
     save_rho: bool,
     save_wfc: bool,
@@ -549,8 +582,8 @@ set_bool_field!(set_restart, restart);
 set_bool_field!(set_save_rho, save_rho);
 set_bool_field!(set_save_wfc, save_wfc);
 set_bool_field!(set_surface_dipole_correction, surface_dipole_correction);
-set_usize_field!(set_fft_threads, fft_threads);
 set_string_field!(set_fft_wisdom_file, fft_wisdom_file);
+set_usize_field!(set_fft_threads, fft_threads);
 set_usize_field!(set_davidson_ndim, davidson_ndim);
 set_string_field!(set_dos_scheme, dos_scheme);
 set_usize_field!(set_dos_ne, dos_ne);
@@ -658,6 +691,13 @@ fn set_electric_field_2d(control: &mut Control, value: &str) -> Result<(), Strin
 
 fn set_electric_field_origin_frac(control: &mut Control, value: &str) -> Result<(), String> {
     control.electric_field_origin_frac = parse_f64_value(value)?;
+    Ok(())
+}
+
+fn set_kpoint_schedule(control: &mut Control, value: &str) -> Result<(), String> {
+    control.kpoint_schedule = KPointScheduleScheme::parse(value).ok_or_else(|| {
+        "expected one of: contiguous, cost_aware (alias: cost-aware), dynamic".to_string()
+    })?;
     Ok(())
 }
 
@@ -831,6 +871,10 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "electric_field_origin_frac",
         setter: set_electric_field_origin_frac,
+    },
+    KeySpec {
+        key: "kpoint_schedule",
+        setter: set_kpoint_schedule,
     },
     KeySpec {
         key: "fft_threads",
@@ -1184,6 +1228,14 @@ impl Control {
         self.electric_field_origin_frac
     }
 
+    pub fn get_kpoint_schedule(&self) -> &str {
+        self.kpoint_schedule.as_str()
+    }
+
+    pub fn get_kpoint_schedule_enum(&self) -> KPointScheduleScheme {
+        self.kpoint_schedule
+    }
+
     pub fn get_fft_threads(&self) -> usize {
         self.fft_threads
     }
@@ -1319,6 +1371,7 @@ impl Control {
         self.electric_field_2d = 0.0;
         self.electric_field_axis = ElectricFieldAxis::C;
         self.electric_field_origin_frac = 0.5;
+        self.kpoint_schedule = KPointScheduleScheme::CostAware;
 
         self.geom_optim_cell = false;
         self.geom_optim_scheme = "bfgs".to_string();
@@ -1710,6 +1763,13 @@ impl Control {
         );
         println!(
             "   {:<width1$} = {:>width2$}",
+            "kpoint_schedule",
+            self.get_kpoint_schedule(),
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
+        );
+        println!(
+            "   {:<width1$} = {:>width2$}",
             "pot_scheme",
             self.get_pot_scheme(),
             width1 = OUT_WIDTH1,
@@ -1981,8 +2041,8 @@ impl Control {
 #[cfg(test)]
 mod tests {
     use super::{
-        Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KptsScheme, PotScheme,
-        SmearingScheme, SpinScheme, XcScheme,
+        Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KPointScheduleScheme,
+        KptsScheme, PotScheme, SmearingScheme, SpinScheme, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -2169,5 +2229,18 @@ mod tests {
             Some("symmetry/electric_field_2d/surface_dipole_correction")
         );
         assert!(err.message.contains("symmetry=false"));
+    }
+
+    #[test]
+    fn test_parser_accepts_kpoint_schedule_modes() {
+        let control = parse_control(&["kpoint_schedule = dynamic"]).unwrap();
+        assert_eq!(control.get_kpoint_schedule_enum(), KPointScheduleScheme::Dynamic);
+    }
+
+    #[test]
+    fn test_parser_rejects_unknown_kpoint_schedule_modes() {
+        let err = parse_control(&["kpoint_schedule = adaptive"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("kpoint_schedule"));
+        assert!(err.message.contains("contiguous"));
     }
 }

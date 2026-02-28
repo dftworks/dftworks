@@ -7,20 +7,20 @@ use std::path::Path;
 pub(crate) fn write_local_eig_part_files(
     seedname: &str,
     vkevals: &VKEigenValue,
-    ik_first: usize,
+    k_indices: &[usize],
 ) -> io::Result<()> {
     let rank = dwmpi::get_comm_world_rank();
 
     match vkevals {
         VKEigenValue::NonSpin(vkevals) => {
             let filename = format!("{}.eig.part.rank{}", seedname, rank);
-            write_eig_part_file(&filename, vkevals, ik_first)?;
+            write_eig_part_file(&filename, vkevals, k_indices)?;
         }
         VKEigenValue::Spin(vkevals_up, vkevals_dn) => {
             let up_filename = format!("{}.up.eig.part.rank{}", seedname, rank);
             let dn_filename = format!("{}.dn.eig.part.rank{}", seedname, rank);
-            write_eig_part_file(&up_filename, vkevals_up, ik_first)?;
-            write_eig_part_file(&dn_filename, vkevals_dn, ik_first)?;
+            write_eig_part_file(&up_filename, vkevals_up, k_indices)?;
+            write_eig_part_file(&dn_filename, vkevals_dn, k_indices)?;
         }
     }
 
@@ -58,12 +58,23 @@ where
     Ok(())
 }
 
-fn write_eig_part_file(filename: &str, eigvals: &[Vec<f64>], ik_first: usize) -> io::Result<()> {
+fn write_eig_part_file(filename: &str, eigvals: &[Vec<f64>], k_indices: &[usize]) -> io::Result<()> {
+    if eigvals.len() != k_indices.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "eig output size mismatch: eig blocks={}, k_indices={}",
+                eigvals.len(),
+                k_indices.len()
+            ),
+        ));
+    }
+
     let file = File::create(filename)?;
     let mut writer = BufWriter::new(file);
 
     for (ik_local, evals_at_k) in eigvals.iter().enumerate() {
-        let ik_global = ik_first + ik_local + 1;
+        let ik_global = k_indices[ik_local] + 1;
         for (iband, eval) in evals_at_k.iter().enumerate() {
             writeln!(
                 writer,
@@ -96,7 +107,8 @@ mod tests {
             .to_string();
 
         let eigvals = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
-        write_eig_part_file(&filename, &eigvals, 2).unwrap();
+        let k_indices = vec![2usize, 3usize];
+        write_eig_part_file(&filename, &eigvals, &k_indices).unwrap();
 
         let content = fs::read_to_string(&filename).unwrap();
         fs::remove_file(&filename).unwrap();

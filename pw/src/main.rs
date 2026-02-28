@@ -1,12 +1,12 @@
 #![allow(warnings)]
-use control::{Control, FftPlannerScheme, SpinScheme};
+use control::{Control, FftPlannerScheme, KPointScheduleScheme, SpinScheme};
 use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
-use kpts_distribution::KPointDomain;
+use kpts_distribution::{KPointDomain, KPointScheduleMode, KPointSchedulePlan};
 use kscf::KSCF;
 use matrix::*;
 use mpi_sys::MPI_COMM_WORLD;
@@ -709,10 +709,12 @@ impl<'a> RuntimeContext<'a> {
         }
     }
 
-    fn kpoint_domain(&self) -> KPointDomain {
-        let nkpt = self.kpts.get_n_kpts();
-        let nrank = dwmpi::get_comm_world_size() as usize;
-        KPointDomain::for_current_rank(nkpt, nrank)
+    fn kpoint_schedule_mode(&self) -> KPointScheduleMode {
+        match self.control.get_kpoint_schedule_enum() {
+            KPointScheduleScheme::Contiguous => KPointScheduleMode::Contiguous,
+            KPointScheduleScheme::CostAware => KPointScheduleMode::CostAware,
+            KPointScheduleScheme::Dynamic => KPointScheduleMode::Dynamic,
+        }
     }
 
     fn checkpoint_meta(&self) -> CheckpointMeta {
@@ -721,6 +723,7 @@ impl<'a> RuntimeContext<'a> {
 }
 
 struct ElectronicStepContext {
+    k_schedule_plan: KPointSchedulePlan,
     k_domain: KPointDomain,
     vpwwfc: Vec<PWBasis>,
     vvnl: Vec<VNL>,
@@ -728,7 +731,30 @@ struct ElectronicStepContext {
 
 impl ElectronicStepContext {
     fn build(runtime: &RuntimeContext, blatt: &lattice::Lattice, gvec: &GVector) -> Self {
-        let k_domain = runtime.kpoint_domain();
+        let nrank = dwmpi::get_comm_world_size() as usize;
+        let k_costs = estimate_kpoint_costs(runtime, blatt, gvec);
+        let k_schedule_plan =
+            KPointSchedulePlan::new_from_costs(k_costs.as_slice(), nrank, runtime.kpoint_schedule_mode());
+        let k_domain = k_schedule_plan.domain_for_current_rank();
+
+        if dwmpi::is_root() {
+            let min_load = k_schedule_plan.min_rank_load();
+            let max_load = k_schedule_plan.max_rank_load();
+            let avg_load = k_schedule_plan.mean_rank_load();
+            let imbalance_pct = if avg_load > 0.0 {
+                (k_schedule_plan.imbalance_ratio() - 1.0) * 100.0
+            } else {
+                0.0
+            };
+            println!(
+                "   kpoint_schedule = {} (rank_cost min/avg/max = {}/{:.2}/{}, imbalance={:.2}%)",
+                k_schedule_plan.mode().as_str(),
+                min_load,
+                avg_load,
+                max_load,
+                imbalance_pct
+            );
+        }
 
         let mut vpwwfc = Vec::<PWBasis>::with_capacity(k_domain.len());
         for slot in k_domain.iter() {
@@ -748,18 +774,19 @@ impl ElectronicStepContext {
         }
 
         Self {
+            k_schedule_plan,
             k_domain,
             vpwwfc,
             vvnl,
         }
     }
 
-    fn global_k_first_or_zero(&self) -> usize {
-        self.k_domain.global_first_or_zero()
-    }
-
     fn kpoint_domain(&self) -> &KPointDomain {
         &self.k_domain
+    }
+
+    fn global_k_indices(&self) -> &[usize] {
+        self.k_domain.global_indices()
     }
 
     fn local_nkpt(&self) -> usize {
@@ -772,19 +799,19 @@ impl ElectronicStepContext {
         gvec: &'a GVector,
         pwden: &'a PWDensity,
         fft_shape: [usize; 3],
-    ) -> (VKSCF<'a>, VKEigenValue, VKEigenVector) {
+    ) -> (VKSCF<'a>, VKEigenValue, VKEigenVector, usize) {
         let nband = runtime.control.get_nband();
         let my_nkpt = self.local_nkpt();
 
-        let vkscf = match runtime.spin_scheme {
+        let (vkscf, spin_cache_saved_bytes_local) = match runtime.spin_scheme {
             SpinScheme::NonSpin => {
                 let channel = build_kscf_channel(runtime, self, gvec, pwden, fft_shape, 0);
-                VKSCF::NonSpin(channel)
+                (VKSCF::NonSpin(channel), 0usize)
             }
             SpinScheme::Spin => {
-                let channel_up = build_kscf_channel(runtime, self, gvec, pwden, fft_shape, 0);
-                let channel_dn = build_kscf_channel(runtime, self, gvec, pwden, fft_shape, 1);
-                VKSCF::Spin(channel_up, channel_dn)
+                let (channel_up, channel_dn, saved_bytes) =
+                    build_spin_kscf_channels(runtime, self, gvec, pwden, fft_shape);
+                (VKSCF::Spin(channel_up, channel_dn), saved_bytes)
             }
             SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
         };
@@ -792,8 +819,24 @@ impl ElectronicStepContext {
         let vkevals = allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt);
         let vkevecs = allocate_eigenvectors(runtime.spin_scheme, nband, &self.vpwwfc);
 
-        (vkscf, vkevals, vkevecs)
+        (vkscf, vkevals, vkevecs, spin_cache_saved_bytes_local)
     }
+}
+
+fn estimate_kpoint_costs(runtime: &RuntimeContext, blatt: &lattice::Lattice, gvec: &GVector) -> Vec<u64> {
+    let nkpt = runtime.kpts.get_n_kpts();
+    let nband = runtime.control.get_nband() as u64;
+    let mut costs = Vec::<u64>::with_capacity(nkpt);
+
+    for ik in 0..nkpt {
+        let k_frac = runtime.kpts.get_k_frac(ik);
+        let k_cart = runtime.kpts.frac_to_cart(&k_frac, blatt);
+        let pwwfc = PWBasis::new(k_cart, ik, runtime.control.get_ecut(), gvec);
+        let npw = pwwfc.get_n_plane_waves() as u64;
+        costs.push(npw.saturating_mul(nband).max(1));
+    }
+
+    costs
 }
 
 fn build_kscf_channel<'a>(
@@ -832,6 +875,81 @@ fn build_kscf_channel<'a>(
     }
 
     channel
+}
+
+fn build_spin_kscf_channels<'a>(
+    runtime: &RuntimeContext<'a>,
+    electronic_ctx: &'a ElectronicStepContext,
+    gvec: &'a GVector,
+    pwden: &'a PWDensity,
+    fft_shape: [usize; 3],
+) -> (Vec<KSCF<'a>>, Vec<KSCF<'a>>, usize) {
+    let mut shared = Vec::with_capacity(electronic_ctx.k_domain.len());
+    let blatt = runtime.crystal.get_latt().reciprocal();
+
+    for slot in electronic_ctx.k_domain.iter() {
+        let ik = slot.global_index;
+        let ilocal = slot.local_slot;
+        let k_frac = runtime.kpts.get_k_frac(ik);
+        let k_cart = runtime.kpts.frac_to_cart(&k_frac, &blatt);
+        let cache = KSCF::build_shared_cache(
+            gvec,
+            runtime.crystal,
+            runtime.pots,
+            &electronic_ctx.vpwwfc[ilocal],
+            &electronic_ctx.vvnl[ilocal],
+            fft_shape,
+            ik,
+            k_cart,
+        );
+        shared.push(cache);
+    }
+
+    let saved_bytes = shared.iter().map(|cache| cache.estimated_bytes()).sum::<usize>();
+
+    let mut channel_up = Vec::<KSCF>::with_capacity(electronic_ctx.k_domain.len());
+    let mut channel_dn = Vec::<KSCF>::with_capacity(electronic_ctx.k_domain.len());
+
+    for slot in electronic_ctx.k_domain.iter() {
+        let ik = slot.global_index;
+        let ilocal = slot.local_slot;
+        let k_weight = runtime.kpts.get_k_weight(ik);
+        let cache = shared[ilocal].clone();
+
+        let kscf_up = KSCF::new_with_shared_cache(
+            runtime.control,
+            gvec,
+            pwden,
+            runtime.crystal,
+            runtime.pots,
+            &electronic_ctx.vpwwfc[ilocal],
+            &electronic_ctx.vvnl[ilocal],
+            fft_shape,
+            ik,
+            k_weight,
+            cache.clone(),
+            0,
+        );
+        let kscf_dn = KSCF::new_with_shared_cache(
+            runtime.control,
+            gvec,
+            pwden,
+            runtime.crystal,
+            runtime.pots,
+            &electronic_ctx.vpwwfc[ilocal],
+            &electronic_ctx.vvnl[ilocal],
+            fft_shape,
+            ik,
+            k_weight,
+            cache,
+            1,
+        );
+
+        channel_up.push(kscf_up);
+        channel_dn.push(kscf_dn);
+    }
+
+    (channel_up, channel_dn, saved_bytes)
 }
 
 fn allocate_eigenvalues(spin_scheme: SpinScheme, nband: usize, nk_local: usize) -> VKEigenValue {
@@ -1206,8 +1324,21 @@ fn main() {
 
         //
         let electronic_ctx = ElectronicStepContext::build(&runtime_ctx, blatt, gvec);
-        let (mut vkscf, mut vkevals, mut vkevecs) =
+        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) =
             electronic_ctx.build_scf_state(&runtime_ctx, gvec, pwden, fftgrid.get_size());
+
+        if matches!(spin_scheme, SpinScheme::Spin) {
+            let local_saved = spin_cache_saved_bytes_local as f64;
+            let mut saved_total = 0.0f64;
+            dwmpi::reduce_scalar_sum(&local_saved, &mut saved_total, MPI_COMM_WORLD);
+            dwmpi::bcast_scalar(&mut saved_total, MPI_COMM_WORLD);
+            if dwmpi::is_root() && saved_total > 0.0 {
+                println!(
+                    "   spin_cache_dedup_saved ~= {:.3} MiB (shared immutable per-k caches)",
+                    saved_total / (1024.0 * 1024.0)
+                );
+            }
+        }
 
         if geom_iter == 1 && control.get_restart() {
             match try_load_wavefunction_checkpoint(
@@ -1275,8 +1406,8 @@ fn main() {
 
         // save wavefunction
         if control.get_save_wfc() || control.get_wannier90_export() {
-            vkevecs.save_hdf5_with_meta(
-                electronic_ctx.global_k_first_or_zero(),
+            vkevecs.save_hdf5_with_meta_for_kpoints(
+                electronic_ctx.global_k_indices(),
                 &electronic_ctx.vpwwfc,
                 blatt,
                 Some(&expected_checkpoint_meta),
@@ -1323,7 +1454,7 @@ fn main() {
                 match wannier90::write_eig_inputs(
                     &control,
                     &vkevals,
-                    electronic_ctx.global_k_first_or_zero(),
+                    electronic_ctx.global_k_indices(),
                 ) {
                     Ok(summary) => {
                         if dwmpi::is_root() {
@@ -1497,12 +1628,10 @@ fn try_load_wavefunction_checkpoint(
 
     validate_wavefunction_checkpoint_metadata(spin_scheme, k_domain, expected_meta)?;
 
-    let (ik_first, ik_last) = k_domain
-        .global_range()
-        .ok_or_else(|| "skip wavefunction restart: no local k-points on this rank".to_string())?;
-
-    let (loaded_pwbasis, checkpoint_blatt, loaded_evecs) =
-        VKEigenVector::try_load_hdf5(matches!(spin_scheme, SpinScheme::Spin), ik_first, ik_last)?;
+    let (loaded_pwbasis, checkpoint_blatt, loaded_evecs) = VKEigenVector::try_load_hdf5_for_kpoints(
+        matches!(spin_scheme, SpinScheme::Spin),
+        k_domain.global_indices(),
+    )?;
 
     validate_checkpoint_lattice(
         expected_blatt,
@@ -1553,10 +1682,7 @@ fn try_load_wavefunction_checkpoint(
 
     *vkevecs = loaded_evecs;
 
-    Ok(format!(
-        "loaded restart wavefunctions for local k-range [{}..={}] (local_nk={})",
-        ik_first, ik_last, local_nk
-    ))
+    Ok(format!("loaded restart wavefunctions for local_nk={}", local_nk))
 }
 
 fn checkpoint_wavefunction_filenames(

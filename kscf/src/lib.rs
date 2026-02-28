@@ -24,6 +24,8 @@ use vnl::VNL;
 
 use itertools::multizip;
 use std::cell::{Cell, RefCell};
+use std::mem::size_of;
+use std::sync::Arc;
 
 mod hubbard;
 mod hybrid;
@@ -72,6 +74,32 @@ struct NonLocalTerm<'a> {
     sfact_by_atom: Vec<Vec<c64>>,
 }
 
+pub struct KscfSharedCache<'a> {
+    ik: usize,
+    kgylm: KGYLM,
+    kin: Vec<f64>,
+    fft_linear_index: Vec<usize>,
+    vnl_terms: Vec<NonLocalTerm<'a>>,
+}
+
+impl<'a> KscfSharedCache<'a> {
+    pub fn k_index(&self) -> usize {
+        self.ik
+    }
+
+    pub fn estimated_bytes(&self) -> usize {
+        let mut bytes = 0usize;
+        bytes += self.kin.len() * size_of::<f64>();
+        bytes += self.fft_linear_index.len() * size_of::<usize>();
+        for term in self.vnl_terms.iter() {
+            for sfact in term.sfact_by_atom.iter() {
+                bytes += sfact.len() * size_of::<c64>();
+            }
+        }
+        bytes
+    }
+}
+
 // Per-k-point SCF worker.
 //
 // Encapsulates everything required to apply the Kohn-Sham Hamiltonian and
@@ -89,14 +117,11 @@ pub struct KSCF<'a> {
     pwwfc: &'a PWBasis,
 
     ik: usize,
-    kgylm: KGYLM,
-    kin: Vec<f64>,
+    shared_cache: Arc<KscfSharedCache<'a>>,
     occ: Vec<f64>,
     smearing: Box<dyn Smearing>,
     volume: f64,
     fft_shape: [usize; 3],
-    fft_linear_index: Vec<usize>,
-    vnl_terms: Vec<NonLocalTerm<'a>>,
     hybrid: HybridPotential,
     hubbard: HubbardPotential,
     hybrid_exchange_energy: Cell<f64>,
@@ -113,7 +138,7 @@ impl<'a> KSCF<'a> {
     }
 
     pub fn get_kgylm(&self) -> &KGYLM {
-        &self.kgylm
+        &self.shared_cache.kgylm
     }
 
     pub fn get_vnl(&self) -> &VNL {
@@ -143,17 +168,40 @@ impl<'a> KSCF<'a> {
         k_weight: f64,
         random_stream_id: u64,
     ) -> KSCF<'a> {
+        let shared_cache =
+            Self::build_shared_cache(gvec, crystal, pspot, pwwfc, vnl, fft_shape, ik, k_cart);
+        Self::new_with_shared_cache(
+            control,
+            gvec,
+            pwden,
+            crystal,
+            pspot,
+            pwwfc,
+            vnl,
+            fft_shape,
+            ik,
+            k_weight,
+            shared_cache,
+            random_stream_id,
+        )
+    }
+
+    pub fn build_shared_cache(
+        gvec: &'a GVector,
+        crystal: &'a Crystal,
+        pspot: &'a PSPot,
+        pwwfc: &'a PWBasis,
+        vnl: &'a VNL,
+        fft_shape: [usize; 3],
+        ik: usize,
+        k_cart: Vector3f64,
+    ) -> Arc<KscfSharedCache<'a>> {
         // Real spherical harmonics Y_lm(k+G) table for this k-point.
         let kgylm = KGYLM::new(k_cart, pspot.get_max_lmax(), gvec, pwwfc);
 
         // Kinetic diagonal 1/2 |k+G|^2.
         let kin = compute_kinetic_energy(pwwfc.get_kg());
 
-        let occ = vec![0.0; control.get_nband()];
-
-        let smearing = smearing::new(control.get_smearing_scheme_enum());
-
-        let volume = crystal.get_latt().volume();
         // Cache FFT index mapping for fast v_loc application.
         let fft_linear_index = utility::compute_fft_linear_index_map(
             gvec.get_miller(),
@@ -164,8 +212,38 @@ impl<'a> KSCF<'a> {
         );
         // Precompute non-local projector terms by species.
         let vnl_terms = build_nonlocal_terms(crystal, gvec, pspot, pwwfc, vnl);
+        Arc::new(KscfSharedCache {
+            ik,
+            kgylm,
+            kin,
+            fft_linear_index,
+            vnl_terms,
+        })
+    }
+
+    pub fn new_with_shared_cache(
+        control: &'a Control,
+        gvec: &'a GVector,
+        pwden: &'a PWDensity,
+        crystal: &'a Crystal,
+        pspot: &'a PSPot,
+        pwwfc: &'a PWBasis,
+        vnl: &'a VNL,
+        fft_shape: [usize; 3],
+        ik: usize,
+        k_weight: f64,
+        shared_cache: Arc<KscfSharedCache<'a>>,
+        random_stream_id: u64,
+    ) -> KSCF<'a> {
+        debug_assert_eq!(shared_cache.k_index(), ik);
+
+        let occ = vec![0.0; control.get_nband()];
+        let smearing = smearing::new(control.get_smearing_scheme_enum());
+        let volume = crystal.get_latt().volume();
+
         let hybrid = HybridPotential::new(control, pwwfc, pwden);
-        let hubbard = HubbardPotential::new(control, crystal, gvec, pspot, pwwfc, &kgylm);
+        let hubbard =
+            HubbardPotential::new(control, crystal, gvec, pspot, pwwfc, &shared_cache.kgylm);
         let npw_wfc = pwwfc.get_n_plane_waves();
         let workspace = KscfWorkspace::new(
             fft_shape,
@@ -188,14 +266,11 @@ impl<'a> KSCF<'a> {
             vnl,
             pwwfc,
             ik,
-            kgylm,
-            kin,
+            shared_cache,
             occ,
             smearing,
             volume,
             fft_shape,
-            fft_linear_index,
-            vnl_terms,
             hybrid,
             hubbard,
             hybrid_exchange_energy: Cell::new(0.0),
@@ -204,6 +279,10 @@ impl<'a> KSCF<'a> {
             k_weight,
             random_stream_id,
         }
+    }
+
+    pub fn shared_cache_estimated_bytes(&self) -> usize {
+        self.shared_cache.estimated_bytes()
     }
 
     pub fn get_ik(&self) -> usize {
@@ -415,7 +494,7 @@ impl<'a> KSCF<'a> {
             self.gvec,
             self.pwden,
             self.volume,
-            &self.fft_linear_index,
+            &self.shared_cache.fft_linear_index,
             evecs,
             &self.occ,
             self.control.is_spin(),
@@ -435,7 +514,7 @@ impl<'a> KSCF<'a> {
             hpsi::vloc_on_psi_with_cached_fft_index(
                 rgtrans,
                 self.volume,
-                &self.fft_linear_index,
+                &self.shared_cache.fft_linear_index,
                 vloc_3d,
                 vunkg_3d,
                 unk_3d,
@@ -446,12 +525,12 @@ impl<'a> KSCF<'a> {
 
             // Non-local pseudopotential projector contribution.
 
-            for term in self.vnl_terms.iter() {
+            for term in self.shared_cache.vnl_terms.iter() {
                 hpsi::vnl_on_psi_with_structure_factors(
                     term.atompsp,
                     &term.sfact_by_atom,
                     term.kgbeta,
-                    &self.kgylm,
+                    &self.shared_cache.kgylm,
                     vin,
                     vout,
                 );
@@ -463,7 +542,7 @@ impl<'a> KSCF<'a> {
                 self.gvec,
                 self.pwden,
                 self.volume,
-                &self.fft_linear_index,
+                &self.shared_cache.fft_linear_index,
                 &hybrid_prepared,
                 hybrid_workspace,
                 vin,
@@ -480,7 +559,7 @@ impl<'a> KSCF<'a> {
 
             // Kinetic contribution (diagonal in PW basis).
 
-            hpsi::kinetic_on_psi(&self.kin, vin, vout);
+            hpsi::kinetic_on_psi(&self.shared_cache.kin, vin, vout);
         };
         let mut sparse = self.sparse_solver.borrow_mut();
 
@@ -499,7 +578,7 @@ impl<'a> KSCF<'a> {
 
             let (n_band_converged_this_loop, n_hpsi_this_loop) = sparse.compute(
                 &mut hamiltonian_on_psi,
-                &self.kin,
+                &self.shared_cache.kin,
                 evecs,
                 evals,
                 &self.occ,

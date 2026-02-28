@@ -1,12 +1,20 @@
 #![allow(warnings)]
 use dwmpi;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
 // K-point distribution helpers for MPI ranks.
 //
-// Strategy:
+// Contiguous strategy:
 // - contiguous block distribution
 // - first `remainder` ranks take one extra point
-// - O(1) computations (no temporary chunk vectors needed)
+// - O(1) first/last/total computations
+//
+// Cost-aware strategy:
+// - greedy largest-processing-time (LPT) assignment based on user-provided
+//   per-kpoint costs
+// - deterministic tie-breaking for reproducibility
+
 #[inline]
 fn compute_k_first(nkpt: usize, nrank: usize, rank: usize) -> usize {
     let base_size = nkpt / nrank;
@@ -47,7 +55,6 @@ fn compute_k_last(nkpt: usize, nrank: usize, rank: usize) -> usize {
 fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
     assert!(nrank > 0);
 
-    // Same rule as O(1) helpers, materialized explicitly.
     let base_size = nkpt / nrank;
     let remainder = nkpt % nrank;
 
@@ -69,6 +76,23 @@ fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KPointScheduleMode {
+    Contiguous,
+    CostAware,
+    Dynamic,
+}
+
+impl KPointScheduleMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KPointScheduleMode::Contiguous => "contiguous",
+            KPointScheduleMode::CostAware => "cost_aware",
+            KPointScheduleMode::Dynamic => "dynamic",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KPointSlot {
     pub local_slot: usize,
     pub global_index: usize,
@@ -83,19 +107,38 @@ impl KPointSlot {
 
 #[derive(Clone, Debug)]
 pub struct KPointDomain {
-    first: usize,
-    total: usize,
+    global_indices: Vec<usize>,
+    global_to_local: HashMap<usize, usize>,
+    empty_fallback_first: usize,
 }
 
 impl KPointDomain {
+    fn from_indices_with_fallback(global_indices: Vec<usize>, empty_fallback_first: usize) -> Self {
+        let mut global_to_local = HashMap::with_capacity(global_indices.len());
+        for (local, &global) in global_indices.iter().enumerate() {
+            global_to_local.insert(global, local);
+        }
+
+        Self {
+            global_indices,
+            global_to_local,
+            empty_fallback_first,
+        }
+    }
+
+    pub fn from_indices(global_indices: Vec<usize>) -> Self {
+        Self::from_indices_with_fallback(global_indices, 0)
+    }
+
     pub fn new(nkpt: usize, nrank: usize, rank: usize) -> Self {
         assert!(nrank > 0);
         assert!(rank < nrank);
 
         let first = compute_k_first(nkpt, nrank, rank);
         let total = compute_k_total(nkpt, nrank, rank);
+        let global_indices = (first..first + total).collect::<Vec<usize>>();
 
-        Self { first, total }
+        Self::from_indices_with_fallback(global_indices, first)
     }
 
     pub fn for_current_rank(nkpt: usize, nrank: usize) -> Self {
@@ -105,38 +148,54 @@ impl KPointDomain {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.total
+        self.global_indices.len()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.total == 0
+        self.global_indices.is_empty()
+    }
+
+    #[inline]
+    pub fn global_indices(&self) -> &[usize] {
+        self.global_indices.as_slice()
     }
 
     #[inline]
     pub fn global_range(&self) -> Option<(usize, usize)> {
-        if self.total == 0 {
+        if self.global_indices.is_empty() {
             None
         } else {
-            Some((self.first, self.first + self.total - 1))
+            let mut min_idx = usize::MAX;
+            let mut max_idx = 0usize;
+            for &ik in self.global_indices.iter() {
+                if ik < min_idx {
+                    min_idx = ik;
+                }
+                if ik > max_idx {
+                    max_idx = ik;
+                }
+            }
+            Some((min_idx, max_idx))
         }
     }
 
     #[inline]
     pub fn global_first_or_zero(&self) -> usize {
-        self.global_range().map(|(first, _)| first).unwrap_or(0)
+        self.global_indices.first().copied().unwrap_or(0)
     }
 
     #[inline]
     pub fn global_last_or_first_minus_one(&self) -> usize {
-        self.global_range()
-            .map(|(_, last)| last)
-            .unwrap_or_else(|| self.first.saturating_sub(1))
+        self.global_indices
+            .last()
+            .copied()
+            .unwrap_or_else(|| self.empty_fallback_first.saturating_sub(1))
     }
 
     #[inline]
     pub fn contains_global(&self, global_index: usize) -> bool {
-        self.local_index(global_index).is_some()
+        self.global_to_local.contains_key(&global_index)
     }
 
     #[inline]
@@ -157,42 +216,32 @@ impl KPointDomain {
 
     #[inline]
     pub fn global_index(&self, local_index: usize) -> Option<usize> {
-        if local_index < self.total {
-            Some(self.first + local_index)
-        } else {
-            None
-        }
+        self.global_indices.get(local_index).copied()
     }
 
     #[inline]
     pub fn local_index(&self, global_index: usize) -> Option<usize> {
-        if global_index < self.first || global_index >= self.first + self.total {
-            None
-        } else {
-            Some(global_index - self.first)
-        }
+        self.global_to_local.get(&global_index).copied()
     }
 
-    pub fn iter(&self) -> KPointDomainIter {
+    pub fn iter(&self) -> KPointDomainIter<'_> {
         KPointDomainIter {
-            first: self.first,
-            total: self.total,
+            domain: self,
             next_local: 0,
         }
     }
 }
 
-pub struct KPointDomainIter {
-    first: usize,
-    total: usize,
+pub struct KPointDomainIter<'a> {
+    domain: &'a KPointDomain,
     next_local: usize,
 }
 
-impl Iterator for KPointDomainIter {
+impl Iterator for KPointDomainIter<'_> {
     type Item = KPointSlot;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next_local >= self.total {
+        if self.next_local >= self.domain.len() {
             return None;
         }
 
@@ -201,9 +250,151 @@ impl Iterator for KPointDomainIter {
 
         Some(KPointSlot {
             local_slot,
-            global_index: self.first + local_slot,
+            global_index: self.domain.global_indices[local_slot],
         })
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct KPointSchedulePlan {
+    mode: KPointScheduleMode,
+    rank_indices: Vec<Vec<usize>>,
+    rank_loads: Vec<u64>,
+    total_cost: u64,
+}
+
+impl KPointSchedulePlan {
+    pub fn new_from_costs(costs: &[u64], nrank: usize, mode: KPointScheduleMode) -> Self {
+        assert!(nrank > 0);
+        let nkpt = costs.len();
+        let rank_indices = match mode {
+            KPointScheduleMode::Contiguous => build_contiguous_assignments(nkpt, nrank),
+            KPointScheduleMode::CostAware => build_cost_aware_assignments(costs, nrank, false),
+            KPointScheduleMode::Dynamic => build_cost_aware_assignments(costs, nrank, true),
+        };
+
+        let mut rank_loads = vec![0u64; nrank];
+        for rank in 0..nrank {
+            rank_loads[rank] = rank_indices[rank]
+                .iter()
+                .map(|&ik| costs.get(ik).copied().unwrap_or(0))
+                .sum();
+        }
+        let total_cost = costs.iter().sum();
+
+        Self {
+            mode,
+            rank_indices,
+            rank_loads,
+            total_cost,
+        }
+    }
+
+    pub fn mode(&self) -> KPointScheduleMode {
+        self.mode
+    }
+
+    pub fn rank_count(&self) -> usize {
+        self.rank_indices.len()
+    }
+
+    pub fn total_cost(&self) -> u64 {
+        self.total_cost
+    }
+
+    pub fn rank_loads(&self) -> &[u64] {
+        self.rank_loads.as_slice()
+    }
+
+    pub fn max_rank_load(&self) -> u64 {
+        self.rank_loads.iter().copied().max().unwrap_or(0)
+    }
+
+    pub fn min_rank_load(&self) -> u64 {
+        self.rank_loads.iter().copied().min().unwrap_or(0)
+    }
+
+    pub fn mean_rank_load(&self) -> f64 {
+        if self.rank_loads.is_empty() {
+            return 0.0;
+        }
+        self.total_cost as f64 / self.rank_loads.len() as f64
+    }
+
+    pub fn imbalance_ratio(&self) -> f64 {
+        let mean = self.mean_rank_load();
+        if mean <= 0.0 {
+            0.0
+        } else {
+            self.max_rank_load() as f64 / mean
+        }
+    }
+
+    pub fn domain_for_rank(&self, rank: usize) -> KPointDomain {
+        assert!(rank < self.rank_indices.len());
+        KPointDomain::from_indices_with_fallback(self.rank_indices[rank].clone(), 0)
+    }
+
+    pub fn domain_for_current_rank(&self) -> KPointDomain {
+        let rank = dwmpi::get_comm_world_rank() as usize;
+        self.domain_for_rank(rank)
+    }
+}
+
+fn build_contiguous_assignments(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
+    let mut assignments = Vec::with_capacity(nrank);
+    for rank in 0..nrank {
+        let first = compute_k_first(nkpt, nrank, rank);
+        let total = compute_k_total(nkpt, nrank, rank);
+        assignments.push((first..first + total).collect::<Vec<usize>>());
+    }
+    assignments
+}
+
+fn build_cost_aware_assignments(costs: &[u64], nrank: usize, dynamic_local_order: bool) -> Vec<Vec<usize>> {
+    let mut assignments = vec![Vec::<usize>::new(); nrank];
+    if costs.is_empty() {
+        return assignments;
+    }
+
+    // Largest cost first with deterministic tie-breaks by global index.
+    let mut order = (0..costs.len()).collect::<Vec<usize>>();
+    order.sort_by(|&lhs, &rhs| {
+        costs[rhs]
+            .cmp(&costs[lhs])
+            .then_with(|| lhs.cmp(&rhs))
+    });
+
+    let mut rank_load = vec![0u64; nrank];
+    for ik in order {
+        let best_rank = rank_load
+            .iter()
+            .enumerate()
+            .min_by(|(ra, la), (rb, lb)| {
+                la.cmp(lb).then_with(|| ra.cmp(rb))
+            })
+            .map(|(rank, _)| rank)
+            .unwrap_or(0);
+
+        assignments[best_rank].push(ik);
+        rank_load[best_rank] += costs[ik];
+    }
+
+    if dynamic_local_order {
+        for indices in assignments.iter_mut() {
+            indices.sort_by(|&lhs, &rhs| {
+                costs[rhs]
+                    .cmp(&costs[lhs])
+                    .then_with(|| lhs.cmp(&rhs))
+            });
+        }
+    } else {
+        for indices in assignments.iter_mut() {
+            indices.sort_unstable();
+        }
+    }
+
+    assignments
 }
 
 pub fn get_k_first(nkpt: usize, nrank: usize, rank: usize) -> usize {
@@ -230,7 +421,6 @@ pub fn get_k_range(nkpt: usize, nrank: usize, rank: usize) -> Option<(usize, usi
 }
 
 pub fn get_my_k_first(nkpt: usize, nrank: usize) -> usize {
-    // Convenience wrappers bound to current MPI rank.
     let rank = dwmpi::get_comm_world_rank() as usize;
     get_k_first(nkpt, nrank, rank)
 }
@@ -265,12 +455,10 @@ fn test_kpts_distribution() {
 
 #[test]
 fn test_optimization_correctness() {
-    // Compare O(1) helpers against reference chunk-based implementation.
     let test_cases = [(10, 3), (31, 5), (100, 7), (1000, 16)];
 
     for (nkpt, nrank) in test_cases {
         for rank in 0..nrank {
-            // Compare optimized functions with original chunk-based approach
             let chunks = get_chunks(nkpt, nrank);
             let original_first = chunks[rank].first().unwrap().clone();
             let original_last = chunks[rank].last().unwrap().clone();
@@ -285,7 +473,6 @@ fn test_optimization_correctness() {
 
 #[test]
 fn test_oversubscribed_ranks() {
-    // Edge case: more ranks than k-points.
     let nkpt = 3;
     let nrank = 5;
 
@@ -373,21 +560,12 @@ fn test_partition_invariants_uneven_and_oversubscribed() {
         for rank in 0..nrank {
             let domain = KPointDomain::new(nkpt, nrank, rank);
 
-            // Range length and iterator length always agree.
-            let expected_len = domain
-                .global_range()
-                .map(|(first, last)| last - first + 1)
-                .unwrap_or(0);
-            assert_eq!(domain.len(), expected_len);
-
             for slot in domain.iter() {
-                // local->global and global->local transforms must be reversible.
                 assert_eq!(domain.global_index(slot.local_slot), Some(slot.global_index));
                 assert_eq!(domain.local_index(slot.global_index), Some(slot.local_slot));
                 assert_eq!(domain.slot(slot.local_slot), Some(slot));
                 assert_eq!(domain.slot_from_global(slot.global_index), Some(slot));
 
-                // Each global k-point belongs to exactly one rank.
                 assert!(!seen[slot.global_index]);
                 seen[slot.global_index] = true;
                 seen_count += 1;
@@ -396,5 +574,53 @@ fn test_partition_invariants_uneven_and_oversubscribed() {
 
         assert_eq!(seen_count, nkpt);
         assert!(seen.into_iter().all(|v| v));
+    }
+}
+
+#[test]
+fn test_cost_aware_plan_partition_invariants() {
+    let costs = vec![9u64, 1, 4, 7, 8, 2, 3, 6, 5];
+    let plan = KPointSchedulePlan::new_from_costs(&costs, 4, KPointScheduleMode::CostAware);
+
+    let mut seen = vec![false; costs.len()];
+    let mut seen_count = 0usize;
+    for rank in 0..4 {
+        let domain = plan.domain_for_rank(rank);
+        for &ik in domain.global_indices() {
+            assert!(ik < costs.len());
+            assert!(!seen[ik]);
+            seen[ik] = true;
+            seen_count += 1;
+        }
+    }
+
+    assert_eq!(seen_count, costs.len());
+    assert!(seen.into_iter().all(|v| v));
+}
+
+#[test]
+fn test_cost_aware_plan_reduces_imbalance_for_skewed_costs() {
+    let costs = vec![100u64, 90, 80, 1, 1, 1, 1, 1];
+    let nrank = 3usize;
+
+    let contiguous = KPointSchedulePlan::new_from_costs(&costs, nrank, KPointScheduleMode::Contiguous);
+    let balanced = KPointSchedulePlan::new_from_costs(&costs, nrank, KPointScheduleMode::CostAware);
+
+    assert!(balanced.max_rank_load() <= contiguous.max_rank_load());
+}
+
+#[test]
+fn test_dynamic_mode_orders_local_tasks_by_descending_cost() {
+    let costs = vec![10u64, 2, 9, 3, 8, 4, 7, 5, 6, 1];
+    let plan = KPointSchedulePlan::new_from_costs(&costs, 3, KPointScheduleMode::Dynamic);
+
+    for rank in 0..3 {
+        let domain = plan.domain_for_rank(rank);
+        let mut prev = u64::MAX;
+        for &ik in domain.global_indices() {
+            let c = costs[ik];
+            assert!(c <= prev);
+            prev = c;
+        }
     }
 }

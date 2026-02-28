@@ -224,10 +224,31 @@ impl VKEigenVector {
         blatt: &Lattice,
         checkpoint_meta: Option<&CheckpointMeta>,
     ) {
+        let mut k_indices = Vec::with_capacity(pwbasis.len());
+        for i in 0..pwbasis.len() {
+            k_indices.push(ik_first + i);
+        }
+        self.save_hdf5_with_meta_for_kpoints(
+            k_indices.as_slice(),
+            pwbasis,
+            blatt,
+            checkpoint_meta,
+        );
+    }
+
+    pub fn save_hdf5_with_meta_for_kpoints(
+        &self,
+        k_indices: &[usize],
+        pwbasis: &[PWBasis],
+        blatt: &Lattice,
+        checkpoint_meta: Option<&CheckpointMeta>,
+    ) {
+        assert_eq!(k_indices.len(), pwbasis.len());
         match self {
             VKEigenVector::NonSpin(v) => {
+                assert_eq!(v.len(), pwbasis.len());
                 for (i, eigen_vec) in v.iter().enumerate() {
-                    let ik = ik_first + i;
+                    let ik = k_indices[i];
                     let filename = format!("out.wfc.k.{}.hdf5", ik);
                     let hdf5_file = hdf5::File::create(filename).unwrap();
 
@@ -249,8 +270,10 @@ impl VKEigenVector {
                 }
             }
             VKEigenVector::Spin(up, dn) => {
+                assert_eq!(up.len(), pwbasis.len());
+                assert_eq!(dn.len(), pwbasis.len());
                 for (i, eigen_vec) in up.iter().enumerate() {
-                    let ik = ik_first + i;
+                    let ik = k_indices[i];
                     let filename = format!("out.wfc.up.k.{}.hdf5", ik);
                     let hdf5_file = hdf5::File::create(filename).unwrap();
 
@@ -271,7 +294,7 @@ impl VKEigenVector {
                     }
                 }
                 for (i, eigen_vec) in dn.iter().enumerate() {
-                    let ik = ik_first + i;
+                    let ik = k_indices[i];
                     let filename = format!("out.wfc.dn.k.{}.hdf5", ik);
                     let hdf5_file = hdf5::File::create(filename).unwrap();
 
@@ -309,15 +332,29 @@ impl VKEigenVector {
         ik_first: usize,
         ik_last: usize,
     ) -> Result<(Vec<PWBasis>, Lattice, VKEigenVector), String> {
-        let nk = ik_last.saturating_sub(ik_first) + 1;
+        let mut k_indices = Vec::new();
+        for ik in ik_first..=ik_last {
+            k_indices.push(ik);
+        }
+        Self::try_load_hdf5_for_kpoints(is_spin, k_indices.as_slice())
+    }
+
+    pub fn try_load_hdf5_for_kpoints(
+        is_spin: bool,
+        k_indices: &[usize],
+    ) -> Result<(Vec<PWBasis>, Lattice, VKEigenVector), String> {
+        let nk = k_indices.len();
+        if nk == 0 {
+            return Err("cannot load VKEigenVector checkpoint for empty k-point list".to_string());
+        }
         match is_spin {
             false => {
                 let mut eigen_vecs = Vec::<Matrix<c64>>::with_capacity(nk);
                 let mut pwbasis_vec = Vec::<PWBasis>::with_capacity(nk);
                 let mut blatt = Lattice::default();
 
-                for i in ik_first..=ik_last {
-                    let filename = format!("out.wfc.k.{}.hdf5", i);
+                for &ik in k_indices.iter() {
+                    let filename = format!("out.wfc.k.{}.hdf5", ik);
                     let hdf5_file = hdf5::File::open(&filename)
                         .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
 
@@ -351,8 +388,8 @@ impl VKEigenVector {
                 let mut pwbasis_vec = Vec::<PWBasis>::with_capacity(nk);
                 let mut blatt = Lattice::default();
 
-                for i in ik_first..=ik_last {
-                    let filename = format!("out.wfc.up.k.{}.hdf5", i);
+                for &ik in k_indices.iter() {
+                    let filename = format!("out.wfc.up.k.{}.hdf5", ik);
                     let hdf5_file = hdf5::File::open(&filename)
                         .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
 
@@ -380,8 +417,8 @@ impl VKEigenVector {
                     blatt = Lattice::try_load_hdf5(&group_tmp)
                         .map_err(|e| format!("{} in '{}'", e, filename))?;
                 }
-                for i in ik_first..=ik_last {
-                    let filename = format!("out.wfc.dn.k.{}.hdf5", i);
+                for &ik in k_indices.iter() {
+                    let filename = format!("out.wfc.dn.k.{}.hdf5", ik);
                     let hdf5_file = hdf5::File::open(&filename)
                         .map_err(|e| format!("failed to open '{}': {}", filename, e))?;
 

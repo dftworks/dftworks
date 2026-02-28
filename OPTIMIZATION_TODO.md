@@ -694,8 +694,8 @@ Finish an item only when:
 
 ### E15 - Cost-Aware K-Point Scheduling and Spin Cache Deduplication
 **Priority**: P2/P3  
-**Status**: Open  
-**Files**: `kpts_distribution/src/lib.rs`, `pw/src/main.rs`, `kscf/src/lib.rs`
+**Status**: In Progress (2026-02-28)  
+**Files**: `control/src/lib.rs`, `kpts_distribution/src/lib.rs`, `pw/src/main.rs`, `kscf/src/lib.rs`, `dfttypes/src/lib.rs`, `wannier90/src/{lib.rs,eig.rs}`
 
 - Replace pure contiguous k-point partitioning with cost-aware scheduling (e.g., `npw * nband` proxy)
 - Add optional dynamic scheduling mode for heterogeneous k-point costs
@@ -706,6 +706,15 @@ Finish an item only when:
 - MPI rank wall-time imbalance is reduced on asymmetric k-point workloads
 - Spin memory footprint drops measurably on representative systems
 - Numerical results remain unchanged versus current partitioning
+
+**Implementation Update (2026-02-28)**
+- [x] Added typed `kpoint_schedule` control mode (`contiguous`, `cost_aware`, `dynamic`) with parser support, defaults, display output, and validation tests
+- [x] Added deterministic `KPointSchedulePlan` in `kpts_distribution` with cost-aware LPT assignment, dynamic local ordering mode, and explicit non-contiguous `KPointDomain` indexing helpers
+- [x] Wired `pw` electronic setup to estimate per-k costs using `npw * nband`, construct schedule plans per geometry step, and print rank load imbalance summaries
+- [x] Added spin-channel immutable cache dedup in `kscf` via shared per-k cache objects (`KGYLM`, kinetic diagonal, FFT index map, non-local structure-factor tables), with runtime saved-memory reporting in `pw`
+- [x] Extended wavefunction checkpoint/Wannier EIG I/O paths to support arbitrary local k-index sets (non-contiguous local domains): explicit k-index save/load in `dfttypes` and rank-part EIG export in `wannier90`
+- [x] Validated no-regression with required Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh`)
+- [ ] Add benchmark traces quantifying wall-time imbalance improvement for strongly asymmetric k-mesh workloads (`contiguous` vs `cost_aware`/`dynamic`)
 
 
 ### E16 - Deterministic Initialization and Run Provenance

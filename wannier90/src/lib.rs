@@ -144,11 +144,11 @@ pub fn write_overlap_inputs(
 pub fn write_eig_inputs(
     control: &Control,
     vkevals: &VKEigenValue,
-    ik_first: usize,
+    k_indices: &[usize],
 ) -> io::Result<ExportSummary> {
     let seedname = validate_seedname(control)?;
     let mut summary = ExportSummary::default();
-    write_local_eig_part_files(seedname, vkevals, ik_first)?;
+    write_local_eig_part_files(seedname, vkevals, k_indices)?;
     dwmpi::barrier(MPI_COMM_WORLD);
 
     if dwmpi::is_root() {
@@ -196,7 +196,7 @@ pub fn export(
     crystal: &Crystal,
     kpts: &dyn kpts::KPTS,
     vkevals: &VKEigenValue,
-    ik_first: usize,
+    k_indices: &[usize],
 ) -> io::Result<ExportSummary> {
     let mut summary = ExportSummary::default();
 
@@ -206,7 +206,7 @@ pub fn export(
     let overlap_summary = write_overlap_inputs(control, crystal, kpts)?;
     summary.written_files.extend(overlap_summary.written_files);
 
-    let eig_summary = write_eig_inputs(control, vkevals, ik_first)?;
+    let eig_summary = write_eig_inputs(control, vkevals, k_indices)?;
     summary.written_files.extend(eig_summary.written_files);
 
     Ok(summary)
