@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  # Temporarily disabled - enable after validation
+  # pull_request:
+  #   branches: [main]
+  # push:
+  #   branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Fast check job - runs first for quick feedback
+  check:
+    name: Cargo Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libhdf5-dev \
+            libfftw3-dev \
+            liblapack-dev \
+            libblas-dev \
+            libopenmpi-dev \
+            gfortran
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: dftworks-v1
+
+      - name: Check all packages compile
+        run: cargo check --all --locked
+
+  # Unit tests for core libraries
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: check
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libhdf5-dev \
+            libfftw3-dev \
+            liblapack-dev \
+            libblas-dev \
+            libopenmpi-dev \
+            gfortran
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: dftworks-v1
+
+      - name: Run unit tests
+        run: |
+          cargo test --locked \
+            -p fifo \
+            -p integral \
+            -p ndarray@0.1.0 \
+            -p utility \
+            -p control \
+            -p kpts \
+            -p kpts_distribution \
+            -p dfttypes \
+            -p symops \
+            -p special
+
+  # Integration tests - phase 1/2 regression
+  integration-phase12:
+    name: Phase 1/2 Regression (LDA/PBE nonspin/spin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libhdf5-dev \
+            libfftw3-dev \
+            liblapack-dev \
+            libblas-dev \
+            libopenmpi-dev \
+            gfortran
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: dftworks-v1
+
+      - name: Build pw binary
+        run: cargo build -p pw --locked
+
+      - name: Run phase 1/2 regression test
+        run: bash scripts/run_phase12_regression.sh
+        env:
+          FORCE_BUILD: "0"
+
+  # Clippy linting
+  clippy:
+    name: Clippy Lints
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: check
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libhdf5-dev \
+            libfftw3-dev \
+            liblapack-dev \
+            libblas-dev \
+            libopenmpi-dev \
+            gfortran
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: dftworks-v1
+
+      - name: Run clippy (warnings allowed for now)
+        run: cargo clippy --all --locked -- -D warnings || true
+        continue-on-error: true
+
+  # Format check
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
