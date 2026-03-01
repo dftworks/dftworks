@@ -29,3 +29,5 @@ ndarray = { path = "../ndarray" }
 itertools = "*"
 num-traits = "*"
 utility = { path = "../utility" }
+symmetry = { path = "../symmetry" }
+dwmpi = { path = "../dwmpi" }

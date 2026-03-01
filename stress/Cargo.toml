@@ -32,3 +32,4 @@ itertools = "*"
 dfttypes = { path = "../dfttypes" }
 num-traits = "*"
 utility = { path = "../utility" }
+dwmpi = { path = "../dwmpi" }

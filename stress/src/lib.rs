@@ -19,6 +19,8 @@ use types::*;
 use vector3::*;
 use std::collections::HashMap;
 
+pub mod symmetry;
+
 pub struct SpectralWorkspace {
     npw_rho: usize,
     volume: f64,
