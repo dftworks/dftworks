@@ -728,6 +728,7 @@ pub fn display_stress_by_parts(
     s_vpsloc: &Matrix<f64>,
     s_vnl: &Matrix<f64>,
     s_ew: &Matrix<f64>,
+    s_vdw: &Matrix<f64>,
     s_tot: &Matrix<f64>,
 ) {
     println!("\n   {:-^88}", " stress (kbar) ");
@@ -755,6 +756,45 @@ pub fn display_stress_by_parts(
 
     println!("     Ewald");
     disp_stress(s_ew);
+
+    println!("     vdW");
+    disp_stress(s_vdw);
+}
+
+pub fn vdw(
+    control: &control::Control,
+    crystal: &Crystal,
+    stress_vdw: &mut Matrix<f64>,
+) {
+    use vdw::{VdwCorrection, VdwMethod, VdwDamping};
+
+    stress_vdw.set_zeros();
+
+    if !control.get_vdw_correction() {
+        return;
+    }
+
+    let damping = match control.get_vdw_damping() {
+        "zero" => VdwDamping::Zero,
+        "bj" => VdwDamping::BJ,
+        _ => VdwDamping::BJ,
+    };
+
+    let xc_scheme = control.get_xc_scheme();
+    let vdw_calc = VdwCorrection::new(VdwMethod::D3, damping, xc_scheme);
+
+    match vdw_calc.stress(crystal) {
+        Ok(stress_array) => {
+            for i in 0..3 {
+                for j in 0..3 {
+                    stress_vdw[[i, j]] = stress_array[i][j];
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: vdW stress calculation failed: {}", e);
+        }
+    }
 }
 
 pub fn stress_to_force_on_cell(latt: &Lattice, stress: &Matrix<f64>) -> Matrix<f64> {

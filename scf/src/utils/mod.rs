@@ -8,7 +8,7 @@ pub use diagnostics::{
     display_eigen_values, display_spin_eigen_values, get_eigvalue_epsilon,
     get_eigvalue_epsilon_spin, get_n_plane_waves_max, solve_eigen_equations,
 };
-pub use energy::compute_total_energy;
+pub use energy::{compute_total_energy, compute_vdw_energy};
 pub use mixing::{compute_next_density, compute_rho_of_g};
 pub use potential::{
     add_external_potential_to_vlocg, add_up_v, build_external_slab_potential,

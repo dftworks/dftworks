@@ -510,6 +510,7 @@ pub fn display(
     force_loc: &[Vector3f64],
     force_vnl: &[Vector3f64],
     force_nlcc: &[Vector3f64],
+    force_vdw: &[Vector3f64],
 ) {
     println!("\n");
     println!(
@@ -534,4 +535,46 @@ pub fn display(
     println!("\n   {:-^64}", " nlcc ");
 
     printout_force(crystal, force_nlcc);
+
+    println!("\n   {:-^64}", " vdW ");
+
+    printout_force(crystal, force_vdw);
+}
+
+pub fn vdw(
+    control: &control::Control,
+    crystal: &Crystal,
+    force_vdw: &mut [Vector3f64],
+) {
+    use vdw::{VdwCorrection, VdwMethod, VdwDamping};
+
+    if !control.get_vdw_correction() {
+        for f in force_vdw.iter_mut() {
+            *f = Vector3f64::zeros();
+        }
+        return;
+    }
+
+    let damping = match control.get_vdw_damping() {
+        "zero" => VdwDamping::Zero,
+        "bj" => VdwDamping::BJ,
+        _ => VdwDamping::BJ,
+    };
+
+    let xc_scheme = control.get_xc_scheme();
+    let vdw_calc = VdwCorrection::new(VdwMethod::D3, damping, xc_scheme);
+
+    match vdw_calc.forces(crystal) {
+        Ok(forces) => {
+            for (i, f) in forces.iter().enumerate() {
+                force_vdw[i] = *f;
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: vdW force calculation failed: {}", e);
+            for f in force_vdw.iter_mut() {
+                *f = Vector3f64::zeros();
+            }
+        }
+    }
 }

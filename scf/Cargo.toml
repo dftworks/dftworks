@@ -21,6 +21,7 @@ kpts = { path = "../kpts" }
 fftgrid = { path = "../fftgrid" }
 xc = { path = "../xc" }
 vloc = { path = "../vloc" }
+vdw = { path = "../vdw" }
 itertools = "*"
 pwbasis = { path = "../pwbasis" }
 vnl = { path = "../vnl" }

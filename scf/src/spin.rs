@@ -324,6 +324,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
 
     fn compute_harris_energy(&mut self) -> f64 {
         let (rhog_up, rhog_dn) = self.rhog.as_spin().unwrap();
+        let vdw_energy = utils::compute_vdw_energy(self.control, self.crystal);
 
         compute_total_energy(
             self.pwden,
@@ -339,6 +340,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
             Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
+            vdw_energy,
             &mut self.ws.rhog_tot_scratch,
         )
     }
@@ -386,6 +388,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
     }
 
     fn compute_scf_energy(&mut self) -> f64 {
+        let vdw_energy = utils::compute_vdw_energy(self.control, self.crystal);
         compute_total_energy(
             self.pwden,
             self.crystal.get_latt(),
@@ -400,6 +403,7 @@ impl ScfIterationAdapter for SpinIterationAdapter<'_, '_> {
             Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
+            vdw_energy,
             &mut self.ws.rhog_tot_scratch,
         )
     }
@@ -694,6 +698,9 @@ impl SCF for SCFSpin {
             }
         }
 
+        let mut force_vdw = vec![Vector3f64::zeros(); natoms];
+        force::vdw(control, crystal, &mut force_vdw);
+
         utils::finalize_force_by_parts(
             control,
             crystal,
@@ -703,6 +710,7 @@ impl SCF for SCFSpin {
             force_loc.as_mut_slice(),
             force_vnl.as_mut_slice(),
             force_nlcc.as_mut_slice(),
+            force_vdw.as_mut_slice(),
         );
 
         // stress
@@ -794,6 +802,9 @@ impl SCF for SCFSpin {
         );
         let mut stress_ewald = ewald.get_stress().clone();
 
+        let mut stress_vdw = Matrix::new(3, 3);
+        stress::vdw(control, crystal, &mut stress_vdw);
+
         utils::finalize_stress_by_parts(
             control,
             crystal,
@@ -806,6 +817,7 @@ impl SCF for SCFSpin {
             &mut stress_loc,
             &mut stress_vnl,
             &mut stress_ewald,
+            &mut stress_vdw,
         );
     }
 }
@@ -824,6 +836,7 @@ pub fn compute_total_energy(
     vext_3d: Option<&Array3<c64>>,
     ew_total: f64,
     hubbard_energy: f64,
+    vdw_energy: f64,
     rhog_tot_scratch: &mut [c64],
 ) -> f64 {
     let npw_rho = pwden.get_n_plane_waves();
@@ -885,7 +898,7 @@ pub fn compute_total_energy(
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
     let etot =
-        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange;
+        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange + vdw_energy;
 
     etot
 }

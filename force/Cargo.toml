@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 atompsp = { path ="../atompsp" }
+control = { path = "../control" }
 crystal = { path ="../crystal" }
 dwconsts = { path = "../dwconsts" }
 vector3 = { path = "../vector3" }
@@ -20,6 +21,7 @@ pwbasis = { path = "../pwbasis" }
 pwdensity = { path = "../pwdensity" }
 types = { path = "../types" }
 vloc = { path = "../vloc" }
+vdw = { path = "../vdw" }
 nlcc = { path = "../nlcc" }
 fhkl = { path = "../fhkl" }
 kgylm = { path = "../kgylm" }

@@ -461,6 +461,9 @@ pub struct Control {
 
     hse06_alpha: f64,
     hse06_omega: f64, // bohr^-1
+
+    vdw_correction: bool,
+    vdw_damping: String,  // "zero" or "bj"
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -800,6 +803,20 @@ fn set_random_seed(control: &mut Control, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn set_vdw_correction(control: &mut Control, value: &str) -> Result<(), String> {
+    control.vdw_correction = parse_bool_value(value)?;
+    Ok(())
+}
+
+fn set_vdw_damping(control: &mut Control, value: &str) -> Result<(), String> {
+    let damping = value.trim().to_lowercase();
+    if damping != "zero" && damping != "bj" {
+        return Err("expected one of: zero, bj".to_string());
+    }
+    control.vdw_damping = damping;
+    Ok(())
+}
+
 const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "verbosity",
@@ -1068,6 +1085,14 @@ const CONTROL_KEY_SPECS: &[KeySpec] = &[
     KeySpec {
         key: "symmetry",
         setter: set_symmetry,
+    },
+    KeySpec {
+        key: "vdw_correction",
+        setter: set_vdw_correction,
+    },
+    KeySpec {
+        key: "vdw_damping",
+        setter: set_vdw_damping,
     },
 ];
 
@@ -1453,6 +1478,14 @@ impl Control {
         self.hubbard_u - self.hubbard_j
     }
 
+    pub fn get_vdw_correction(&self) -> bool {
+        self.vdw_correction
+    }
+
+    pub fn get_vdw_damping(&self) -> &str {
+        &self.vdw_damping
+    }
+
     pub fn read_file(&mut self, inpfile: &str) {
         if let Err(err) = self.try_read_file(inpfile) {
             panic!("{}", err);
@@ -1545,6 +1578,9 @@ impl Control {
 
         self.hse06_alpha = 0.25;
         self.hse06_omega = 0.11;
+
+        self.vdw_correction = false;
+        self.vdw_damping = "bj".to_string();
     }
 
     fn parse_assignment_line(line: &str, line_no: usize) -> Result<Option<(String, String)>, ControlError> {
@@ -2415,5 +2451,26 @@ mod tests {
         let err = parse_control(&["scf_log_format = jsonl", "scf_log_file ="]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("scf_log_file"));
         assert!(err.message.contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_parser_accepts_vdw_correction_parameters() {
+        let control = parse_control(&["vdw_correction = true", "vdw_damping = zero"]).unwrap();
+        assert!(control.get_vdw_correction());
+        assert_eq!(control.get_vdw_damping(), "zero");
+    }
+
+    #[test]
+    fn test_parser_uses_vdw_defaults() {
+        let control = parse_control(&["nband = 10"]).unwrap();
+        assert!(!control.get_vdw_correction());
+        assert_eq!(control.get_vdw_damping(), "bj");
+    }
+
+    #[test]
+    fn test_parser_rejects_invalid_vdw_damping() {
+        let err = parse_control(&["vdw_damping = invalid"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("vdw_damping"));
+        assert!(err.message.contains("expected one of: zero, bj"));
     }
 }

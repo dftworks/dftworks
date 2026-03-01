@@ -199,16 +199,18 @@ pub(crate) fn finalize_force_by_parts(
     force_loc: &mut [Vector3f64],
     force_vnl: &mut [Vector3f64],
     force_nlcc: &mut [Vector3f64],
+    force_vdw: &mut [Vector3f64],
 ) {
     if control.get_symmetry() {
         project_force_by_symmetry(crystal, symdrv, force_loc);
         project_force_by_symmetry(crystal, symdrv, force_vnl);
         project_force_by_symmetry(crystal, symdrv, force_nlcc);
         project_force_by_symmetry(crystal, symdrv, force_ewald);
+        project_force_by_symmetry(crystal, symdrv, force_vdw);
     }
 
     for iat in 0..force_total.len() {
-        force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat];
+        force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat] + force_vdw[iat];
     }
 
     if dwmpi::is_root() {
@@ -219,6 +221,7 @@ pub(crate) fn finalize_force_by_parts(
             force_loc,
             force_vnl,
             force_nlcc,
+            force_vdw,
         );
     }
 }
@@ -235,6 +238,7 @@ pub(crate) fn finalize_stress_by_parts(
     stress_loc: &mut Matrix<f64>,
     stress_vnl: &mut Matrix<f64>,
     stress_ewald: &mut Matrix<f64>,
+    stress_vdw: &mut Matrix<f64>,
 ) {
     if control.get_symmetry() {
         project_stress_by_symmetry(crystal, symdrv, stress_kin);
@@ -244,6 +248,7 @@ pub(crate) fn finalize_stress_by_parts(
         project_stress_by_symmetry(crystal, symdrv, stress_loc);
         project_stress_by_symmetry(crystal, symdrv, stress_vnl);
         project_stress_by_symmetry(crystal, symdrv, stress_ewald);
+        project_stress_by_symmetry(crystal, symdrv, stress_vdw);
     }
 
     for i in 0..3 {
@@ -254,7 +259,8 @@ pub(crate) fn finalize_stress_by_parts(
                 + stress_xc_nlcc[[i, j]]
                 + stress_loc[[i, j]]
                 + stress_vnl[[i, j]]
-                + stress_ewald[[i, j]];
+                + stress_ewald[[i, j]]
+                + stress_vdw[[i, j]];
         }
     }
 
@@ -267,6 +273,7 @@ pub(crate) fn finalize_stress_by_parts(
             stress_loc,
             stress_vnl,
             stress_ewald,
+            stress_vdw,
             stress_total,
         );
     }
@@ -334,6 +341,10 @@ pub fn compute_force(
         vxcg.as_non_spin().unwrap(),
         &mut force_nlcc,
     );
+
+    let mut force_vdw = vec![Vector3f64::zeros(); natoms];
+    force::vdw(control, crystal, &mut force_vdw);
+
     finalize_force_by_parts(
         control,
         crystal,
@@ -343,6 +354,7 @@ pub fn compute_force(
         force_loc.as_mut_slice(),
         force_vnl.as_mut_slice(),
         force_nlcc.as_mut_slice(),
+        force_vdw.as_mut_slice(),
     );
 }
 
@@ -429,6 +441,10 @@ pub fn compute_stress(
     );
 
     let mut stress_ewald = ewald.get_stress().clone();
+
+    let mut stress_vdw = Matrix::new(3, 3);
+    stress::vdw(control, crystal, &mut stress_vdw);
+
     finalize_stress_by_parts(
         control,
         crystal,
@@ -441,5 +457,6 @@ pub fn compute_stress(
         &mut stress_loc,
         &mut stress_vnl,
         &mut stress_ewald,
+        &mut stress_vdw,
     );
 }

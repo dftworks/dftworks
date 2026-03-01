@@ -157,6 +157,7 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
     }
 
     fn compute_harris_energy(&mut self) -> f64 {
+        let vdw_energy = utils::compute_vdw_energy(self.control, self.crystal);
         utils::compute_total_energy(
             self.pwden,
             self.crystal,
@@ -170,6 +171,7 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
             Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
+            vdw_energy,
         )
     }
 
@@ -210,6 +212,7 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
     }
 
     fn compute_scf_energy(&mut self) -> f64 {
+        let vdw_energy = utils::compute_vdw_energy(self.control, self.crystal);
         utils::compute_total_energy(
             self.pwden,
             self.crystal,
@@ -223,6 +226,7 @@ impl ScfIterationAdapter for NonSpinIterationAdapter<'_, '_> {
             Some(&self.ws.vext_3d),
             self.ewald.get_energy(),
             self.hubbard_energy,
+            vdw_energy,
         )
     }
 

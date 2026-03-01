@@ -1,5 +1,6 @@
 #![allow(warnings)]
 
+use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
 use kscf::KSCF;
@@ -7,6 +8,7 @@ use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use pwdensity::PWDensity;
 use types::c64;
+use vdw::{VdwCorrection, VdwMethod, VdwDamping};
 pub fn compute_total_energy(
     pwden: &PWDensity,
     crystal: &Crystal,
@@ -20,6 +22,7 @@ pub fn compute_total_energy(
     vext_3d: Option<&Array3<c64>>,
     ew_total: f64,
     hubbard_energy: f64,
+    vdw_energy: f64,
 ) -> f64 {
     let latt = crystal.get_latt();
 
@@ -61,7 +64,7 @@ pub fn compute_total_energy(
     // `etot_bands` already contains <Vx_hybrid>; subtract E_x^hybrid once to
     // remove the double counting and keep one copy in total energy.
     let etot =
-        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange;
+        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange + vdw_energy;
 
     etot
 }
@@ -87,4 +90,24 @@ fn get_hybrid_exchange_energy(vkscf: &[KSCF]) -> f64 {
     dwmpi::bcast_scalar(&mut total, MPI_COMM_WORLD);
 
     total
+}
+
+pub fn compute_vdw_energy(control: &Control, crystal: &Crystal) -> f64 {
+    if !control.get_vdw_correction() {
+        return 0.0;
+    }
+
+    let damping = match control.get_vdw_damping() {
+        "zero" => VdwDamping::Zero,
+        "bj" => VdwDamping::BJ,
+        _ => VdwDamping::BJ, // Default to BJ if invalid
+    };
+
+    let xc_scheme = control.get_xc_scheme();
+    let vdw = VdwCorrection::new(VdwMethod::D3, damping, xc_scheme);
+
+    vdw.energy(crystal).unwrap_or_else(|e| {
+        eprintln!("Warning: vdW energy calculation failed: {}", e);
+        0.0
+    })
 }

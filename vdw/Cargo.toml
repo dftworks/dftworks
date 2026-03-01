@@ -1,0 +1,9 @@
+[package]
+name = "vdw"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vector3 = { path = "../vector3" }
+crystal = { path = "../crystal" }
+types = { path = "../types" }

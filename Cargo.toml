@@ -41,6 +41,7 @@ members = [
 	"kgylm",
 	"vnl",
 	"vloc",
+	"vdw",
 	"eigensolver",
 	"hpsi",
 	"kscf",

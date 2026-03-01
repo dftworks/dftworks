@@ -391,6 +391,7 @@ name = "force"
 version = "0.1.0"
 dependencies = [
  "atompsp",
+ "control",
  "crystal",
  "dwconsts",
  "fhkl",
@@ -408,6 +409,7 @@ dependencies = [
  "pwdensity",
  "types",
  "utility",
+ "vdw",
  "vector3",
  "vloc",
 ]
@@ -1250,6 +1252,7 @@ dependencies = [
  "symmetry",
  "types",
  "utility",
+ "vdw",
  "vector3",
  "vloc",
  "vnl",
@@ -1334,6 +1337,7 @@ name = "stress"
 version = "0.1.0"
 dependencies = [
  "atompsp",
+ "control",
  "crystal",
  "dfttypes",
  "dwconsts",
@@ -1354,6 +1358,7 @@ dependencies = [
  "symmetry",
  "types",
  "utility",
+ "vdw",
  "vector3",
  "vloc",
 ]
@@ -1458,6 +1463,15 @@ dependencies = [
  "matrix",
  "ndarray 0.1.0",
  "rand",
+ "types",
+ "vector3",
+]
+
+[[package]]
+name = "vdw"
+version = "0.1.0"
+dependencies = [
+ "crystal",
  "types",
  "vector3",
 ]
