@@ -1392,7 +1392,7 @@ Finish an item only when:
 
 ### E31 - Replace `matrix` Core with `nalgebra` and Keep Only Domain-Specific Wrappers
 **Priority**: P1/P2 (Maintainability + numerical safety)
-**Status**: In Progress (Phase 1 complete)
+**Status**: In Progress (Phase 2/3 underway)
 **Files**: `matrix/`, `linalg/`, `kscf/`, `eigensolver/`, `stress/`, `force/`, `dfttypes/`, `workflow/`
 
 - Goal: migrate matrix math/storage responsibilities to nalgebra, then reduce `matrix` crate to project-specific adapters only (I/O, checkpoints, compatibility helpers).
@@ -1407,10 +1407,16 @@ Finish an item only when:
 - [x] Added explicit `DMatrix` adapters on `Matrix<T>` (`as_dmatrix`, `as_dmatrix_mut`, `from_dmatrix`, `into_dmatrix`) to enable direct nalgebra call-site migration.
 - [x] Migrated `kscf` subspace rotation kernel (`rotate_wfc`) from manual column loops to direct nalgebra matrix multiplication.
 - [x] Replaced custom 3x3 tensor algebra kernels in `stress`/`lattice` (cartesian-fractional transforms, symmetry projection products, cell-force transform) with `nalgebra::Matrix3` operations.
+- [x] Migrated `mixing` (`broyden`, `pulay`) linear algebra internals to native `nalgebra::DMatrix` inversion/pseudo-inversion paths.
+- [x] Migrated `optimization::diis` coefficient solve from `Matrix<f64>` to native `nalgebra::DMatrix`.
+- [x] Migrated `eigensolver::pcg::get_alpha` from ad-hoc `Matrix` + `linalg::eigh` workflow to native `nalgebra` 2x2 algebra path.
+- [x] Reduced duplicated `matrix` API surface by removing unused thin wrappers (`unit`, `action`, `mat_mul`, `sum`) and updating call sites.
+- [x] Retired direct `matrix` dependency from `mixing` and `optimization` crates (matrix-dependent crates reduced from 20 to 18).
 - [x] Verified workspace compile gate: `cargo check --workspace`.
 - [x] Verified Docker regression gate: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
 - [x] Verified spin/MPI parity gate: `scripts/run_spin_mpi_parity.sh`.
-- [ ] Phase 2 remaining: migrate remaining algebra-heavy call sites (notably in `eigensolver` and residual `kscf`/`stress` helper paths) to native nalgebra APIs, then trim duplicated wrappers.
+- [ ] Phase 2 remaining: migrate remaining algebra-heavy call sites in geometry/mixing-force coupling (`geom`, `force`, `ewald`) from `Matrix` helper chains to native nalgebra operations.
+- [ ] Phase 3/4 remaining: move HDF5/checkpoint matrix adapters out of core algebra paths, then decide whether `matrix` stays as a minimal compatibility shim or is fully retired.
 
 **Phase 0 - Inventory and API Freeze**
 - Catalog `matrix` APIs currently used by downstream crates:

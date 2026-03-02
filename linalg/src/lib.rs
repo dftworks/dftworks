@@ -104,7 +104,7 @@ pub fn eigh(mat: &Matrix<c64>) -> (Vec<f64>, Matrix<c64>) {
 
 #[test]
 fn test_eigh() {
-    use matrix::Dot;
+    use nalgebra::DVector;
 
     let cm = Matrix::<c64>::from_row_slice(
         2,
@@ -126,7 +126,8 @@ fn test_eigh() {
 
     println!("vec0 = \n{:?}", v0);
 
-    println!("M.V = \n{:?}", cm.dot(&v0));
+    let mv = cm.as_dmatrix() * DVector::from_column_slice(&v0);
+    println!("M.V = \n{:?}", mv.as_slice());
 
     for i in 0..v0.len() {
         v0[i] *= e[0];

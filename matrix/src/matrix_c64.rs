@@ -1,4 +1,4 @@
-use crate::{Dot, Matrix};
+use crate::Matrix;
 use dwconsts::*;
 
 use itertools::multizip;
@@ -30,20 +30,6 @@ impl Matrix<c64> {
             }
         }
         out
-    }
-
-    pub fn sum(&self) -> c64 {
-        self.as_slice().iter().copied().sum()
-    }
-
-    pub fn action(&self, vin: &[c64], vout: &mut [c64]) {
-        vout.iter_mut().for_each(|x| *x = c64::zero());
-
-        for i in 0..self.ncol() {
-            for j in 0..self.nrow() {
-                vout[j] += self[[j, i]] * vin[i];
-            }
-        }
     }
 
     // pub fn dot(&self, v: &[c64]) -> Vec<c64> {
@@ -83,10 +69,6 @@ impl Matrix<c64> {
             .expect("nalgebra SVD pseudo-inverse failed");
 
         self.data = pinv;
-    }
-
-    pub fn mat_mul(&self, rhs: &Matrix<c64>) -> Matrix<c64> {
-        self.dot(rhs)
     }
 
     /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.

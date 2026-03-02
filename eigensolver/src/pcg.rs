@@ -3,8 +3,9 @@
 use crate::EigenSolver;
 use control::*;
 use dwconsts::*;
-use linalg;
 use matrix::*;
+use nalgebra::DVector;
+use nalgebra::Matrix2;
 use num_traits::identities::Zero;
 use types::c64;
 use utility;
@@ -246,36 +247,55 @@ impl EigenSolver for EigenSolverPCG {
 }
 
 pub fn get_alpha(x0: &[c64], d0: &[c64], h_x0: &[c64], h_d0: &[c64]) -> c64 {
-    let mut mh: Matrix<c64> = Matrix::new(2, 2);
-    let mut mo: Matrix<c64> = Matrix::new(2, 2);
+    let mh = Matrix2::new(
+        utility::zdot_product(x0, h_x0),
+        utility::zdot_product(x0, h_d0),
+        utility::zdot_product(d0, h_x0),
+        utility::zdot_product(d0, h_d0),
+    );
+    let mo = Matrix2::new(
+        utility::zdot_product(x0, x0),
+        utility::zdot_product(x0, d0),
+        utility::zdot_product(d0, x0),
+        utility::zdot_product(d0, d0),
+    );
+    let mo_inv = mo
+        .try_inverse()
+        .unwrap_or_else(|| {
+            mo.svd(true, true)
+                .pseudo_inverse(EPS30)
+                .expect("failed to pseudo-invert overlap matrix in get_alpha")
+        });
+    let oinvh = mo_inv * mh;
 
-    mh[[0, 0]] = utility::zdot_product(x0, h_x0);
-    mh[[0, 1]] = utility::zdot_product(x0, h_d0);
-    mh[[1, 0]] = utility::zdot_product(d0, h_x0);
-    mh[[1, 1]] = utility::zdot_product(d0, h_d0);
+    // Solve eigenvalues analytically for 2x2 and pick the lower branch.
+    let a = oinvh[(0, 0)];
+    let b = oinvh[(0, 1)];
+    let c = oinvh[(1, 0)];
+    let d = oinvh[(1, 1)];
+    let tr = a + d;
+    let det = a * d - b * c;
+    let disc = tr * tr - c64::new(4.0, 0.0) * det;
+    let disc_sqrt = disc.sqrt();
+    let lambda_minus = (tr - disc_sqrt) * 0.5;
+    let lambda_plus = (tr + disc_sqrt) * 0.5;
+    let lambda = if lambda_minus.re <= lambda_plus.re {
+        lambda_minus
+    } else {
+        lambda_plus
+    };
 
-    mo[[0, 0]] = utility::zdot_product(x0, x0);
-    mo[[0, 1]] = utility::zdot_product(x0, d0);
-    mo[[1, 0]] = utility::zdot_product(d0, x0);
-    mo[[1, 1]] = utility::zdot_product(d0, d0);
-
-    //println!("mo = {}", mo);
-    //println!("mh = {}", mh);
-    mo.pinv(); // in situ inverse
-
-    let oinvh = mo.dot(&mh);
-
-    //println!("oinvh = {}", oinvh);
-
-    let (_es, ev) = linalg::eigh(&oinvh);
-    // println!("es = {}", es[0]);
-    let ev0 = ev.get_col(0);
-
-    let alpha = ev0[1] / ev0[0];
-
-    //println!("alpha = {}", alpha);
-
-    alpha
+    // Compute alpha = v1 / v0 from (M - lambda I) v = 0, choosing the numerically
+    // more stable formula based on denominator magnitude.
+    let denom1 = b.norm();
+    let denom2 = (lambda - d).norm();
+    if denom1 > EPS12 {
+        (lambda - a) / b
+    } else if denom2 > EPS12 {
+        c / (lambda - d)
+    } else {
+        c64::zero()
+    }
 }
 
 fn compute_preconditioner(psi: &[c64], kin: &[f64], kgg: &mut [c64]) {
@@ -326,12 +346,11 @@ fn test_sparse_solver_pcg() {
     let nev: usize = 20;
 
     let m = utility::make_matrix(n);
+    let m_na = m.as_dmatrix().clone();
 
     let mut m_dot_v = |v: &[c64], vp: &mut [c64]| {
-        let x = m.dot(&v.to_vec());
-        for i in 0..x.len() {
-            vp[i] = x[i];
-        }
+        let x = &m_na * DVector::from_column_slice(v);
+        vp.copy_from_slice(x.as_slice());
     };
     let mut evals = vec![0.0; nev];
     let mut evecs = Matrix::new(n, nev);
@@ -363,7 +382,7 @@ fn test_sparse_solver_pcg() {
 
     println!("eigenvalues converged = {}, niter = {}", nconv, niter);
 
-    let (es, ev) = linalg::eigh(&m);
+    let (es, _ev) = linalg::eigh(&m);
 
     println!(" pcg \t\t eigh");
 

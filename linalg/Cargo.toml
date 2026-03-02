@@ -10,3 +10,4 @@ edition = "2018"
 types = { path = "../types" }
 matrix = { path = "../matrix" }
 lapack_sys = { path = "../lapack_sys" }
+nalgebra = "0.32.6"

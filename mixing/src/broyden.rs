@@ -1,8 +1,9 @@
 // Phys. Rev. B 38, 12807 (1988)
 
 use control::Control;
+use dwconsts::EPS30;
 use fifo::*;
-use matrix::*;
+use nalgebra::DMatrix;
 use num_traits::identities::Zero;
 use types::*;
 
@@ -57,7 +58,7 @@ impl Mixing for MixingBroyden {
             let a = compute_a(&self.vout, &omega);
             let c = compute_c(&self.vout, &omega);
             let beta = compute_beta(&a);
-            let gamma = c.dot(&beta);
+            let gamma = &c * &beta;
 
             // println!("a = {}", a);
             //            println!("c = {}", c);
@@ -81,7 +82,7 @@ impl Mixing for MixingBroyden {
                 }
 
                 for ig in 0..ng {
-                    inp[ig] -= omega[n] * gamma[[m, n]] * (self.alpha * dres[ig] + drho[ig]);
+                    inp[ig] -= omega[n] * gamma[(m, n)] * (self.alpha * dres[ig] + drho[ig]);
                 }
             }
         }
@@ -90,26 +91,28 @@ impl Mixing for MixingBroyden {
     }
 }
 
-fn compute_beta(a: &Matrix<c64>) -> Matrix<c64> {
+fn compute_beta(a: &DMatrix<c64>) -> DMatrix<c64> {
     let mut m = a.clone();
 
     let omega0 = 0.01; // the weight determining how close the subsequent inverser Jacobian
 
-    for i in 0..m.nrow() {
-        m[[i, i]] += omega0 * omega0;
+    for i in 0..m.nrows() {
+        m[(i, i)] += omega0 * omega0;
     }
 
-    m.inv();
-
-    m
+    m.clone().try_inverse().unwrap_or_else(|| {
+        m.svd(true, true)
+            .pseudo_inverse(EPS30)
+            .expect("Broyden beta pseudo-inverse failed")
+    })
 }
 
-fn compute_a(res: &FIFO<Vec<c64>>, omega: &[f64]) -> Matrix<c64> {
+fn compute_a(res: &FIFO<Vec<c64>>, omega: &[f64]) -> DMatrix<c64> {
     let m = res.len() - 1;
 
     let ng = res.last().len();
 
-    let mut a = Matrix::<c64>::new(m, m);
+    let mut a = DMatrix::<c64>::from_element(m, m, c64::zero());
 
     let mut dresj = vec![c64::zero(); ng];
     let mut dresi = vec![c64::zero(); ng];
@@ -128,7 +131,7 @@ fn compute_a(res: &FIFO<Vec<c64>>, omega: &[f64]) -> Matrix<c64> {
 
             utility::normalize_vector_c64(&mut dresj);
 
-            a[[i, j]] = utility::zdot_product(&dresj, &dresi) * omega[j] * omega[i];
+            a[(i, j)] = utility::zdot_product(&dresj, &dresi) * omega[j] * omega[i];
         }
     }
 
@@ -137,12 +140,12 @@ fn compute_a(res: &FIFO<Vec<c64>>, omega: &[f64]) -> Matrix<c64> {
 
 // dimension: (m+1) x m
 
-fn compute_c(res: &FIFO<Vec<c64>>, omega: &[f64]) -> Matrix<c64> {
+fn compute_c(res: &FIFO<Vec<c64>>, omega: &[f64]) -> DMatrix<c64> {
     let m = res.len() - 1;
 
     let ng = res.last().len();
 
-    let mut c = Matrix::<c64>::new(m + 1, m);
+    let mut c = DMatrix::<c64>::from_element(m + 1, m, c64::zero());
 
     let mut dresk = vec![c64::zero(); ng];
 
@@ -156,7 +159,7 @@ fn compute_c(res: &FIFO<Vec<c64>>, omega: &[f64]) -> Matrix<c64> {
 
             utility::normalize_vector_c64(&mut dresk);
 
-            c[[i, k]] = utility::zdot_product(&dresk, &resi) * omega[k];
+            c[(i, k)] = utility::zdot_product(&dresk, &resi) * omega[k];
         }
     }
 

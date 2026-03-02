@@ -328,7 +328,8 @@ fn test_matrix() {
     let vin = vec![1.0, 2.0, 3.0];
     let mut vout = vec![0.0; 2];
 
-    m.action(vin.as_slice(), vout.as_mut_slice());
+    let mv = m.as_dmatrix() * nalgebra::DVector::from_column_slice(vin.as_slice());
+    vout.copy_from_slice(mv.as_slice());
     println!("m = \n{}", m);
     println!("vin  = {:?}", vin);
     println!("vout = {:?}", vout);

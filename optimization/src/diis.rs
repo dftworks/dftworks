@@ -1,7 +1,7 @@
 #![allow(warnings)]
 
 use fifo::*;
-use matrix::*;
+use nalgebra::DMatrix;
 use utility::*;
 
 pub struct DIIS {
@@ -54,7 +54,7 @@ impl OptimizationDriver for DIIS {
 fn compute_coef(vout: &FIFO<Vec<f64>>) -> Vec<f64> {
     let n = vout.len();
 
-    let mut a = Matrix::<f64>::new(n, n);
+    let mut a = DMatrix::<f64>::from_element(n, n, 0.0);
 
     for i in 0..n {
         let vi = &vout[i];
@@ -62,23 +62,24 @@ fn compute_coef(vout: &FIFO<Vec<f64>>) -> Vec<f64> {
         for j in 0..n {
             let vj = &vout[j];
 
-            a[[j, i]] = utility::ddot_product(vj, vi);
+            a[(j, i)] = utility::ddot_product(vj, vi);
         }
     }
 
     let mut alpha = vec![0.0; n];
 
-    let mut b = a.clone();
-
-    a.pinv();
-
-    let s = a.sum();
+    let a_inv = a.clone().try_inverse().unwrap_or_else(|| {
+        a.svd(true, true)
+            .pseudo_inverse(1.0e-30)
+            .expect("DIIS coefficient pseudo-inverse failed")
+    });
+    let s = a_inv.iter().sum::<f64>();
 
     for i in 0..n {
         alpha[i] = 0.0;
 
         for j in 0..n {
-            alpha[i] += a[[j, i]] / s;
+            alpha[i] += a_inv[(j, i)] / s;
         }
     }
 

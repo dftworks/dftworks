@@ -8,6 +8,5 @@ edition = "2018"
 
 [dependencies]
 fifo = { path = "../fifo" }
-matrix = { path = "../matrix" }
 utility = { path = "../utility" }
-linalg = { path = "../linalg" }
+nalgebra = "0.32.6"

@@ -505,7 +505,7 @@ pub fn compute_stress_g_space_part(
 
     let atoms = crystal.get_atom_positions();
 
-    let unit_mat = Matrix::<f64>::unit(3);
+    let unit_mat = Matrix::<f64>::identity(3);
 
     // Reciprocal-space stress tensor contribution.
     let mut stress = Matrix::<f64>::new(3, 3);

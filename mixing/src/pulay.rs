@@ -1,8 +1,9 @@
 //#![allow(warnings)]
 
 use control::Control;
+use dwconsts::EPS30;
 use fifo::*;
-use matrix::*;
+use nalgebra::DMatrix;
 use num_traits::identities::Zero;
 use types::*;
 
@@ -113,7 +114,7 @@ fn build_metric(weight: f64, gs: &[f64]) -> Vec<f64> {
 fn compute_coef(metric: &[f64], vout: &FIFO<Vec<c64>>) -> Vec<c64> {
     let n = vout.len();
 
-    let mut a = Matrix::<c64>::new(n, n);
+    let mut a = DMatrix::<c64>::from_element(n, n, c64::zero());
 
     for i in 0..n {
         let vi = &vout[i];
@@ -122,24 +123,28 @@ fn compute_coef(metric: &[f64], vout: &FIFO<Vec<c64>>) -> Vec<c64> {
             let vj = &vout[j];
 
             let aji = utility::zdot_product_metric(vj, vi, metric);
-            a[[j, i]] = aji;
+            a[(j, i)] = aji;
             if j != i {
-                a[[i, j]] = aji.conj();
+                a[(i, j)] = aji.conj();
             }
         }
     }
 
     let mut alpha = vec![c64::zero(); n];
 
-    a.pinv();
+    let a_inv = a.clone().try_inverse().unwrap_or_else(|| {
+        a.svd(true, true)
+            .pseudo_inverse(EPS30)
+            .expect("Pulay coefficient pseudo-inverse failed")
+    });
 
-    let s = a.sum();
+    let s = a_inv.iter().copied().sum::<c64>();
 
     for i in 0..n {
         let mut f = c64::zero();
 
         for j in 0..n {
-            f += a[[j, i]];
+            f += a_inv[(j, i)];
         }
 
         alpha[i] = f / s;

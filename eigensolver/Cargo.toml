@@ -14,3 +14,4 @@ linalg = { path = "../linalg" }
 utility = { path = "../utility" }
 num-traits = "*"
 control = { path = "../control" }
+nalgebra = "0.32.6"

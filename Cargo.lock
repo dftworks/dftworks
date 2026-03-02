@@ -279,6 +279,7 @@ dependencies = [
  "dwconsts",
  "linalg",
  "matrix",
+ "nalgebra",
  "num-traits",
  "types",
  "utility",
@@ -691,6 +692,7 @@ version = "0.1.0"
 dependencies = [
  "lapack_sys",
  "matrix",
+ "nalgebra",
  "types",
 ]
 
@@ -742,7 +744,7 @@ dependencies = [
  "control",
  "dwconsts",
  "fifo",
- "matrix",
+ "nalgebra",
  "num-traits",
  "types",
  "utility",
@@ -916,8 +918,7 @@ name = "optimization"
 version = "0.1.0"
 dependencies = [
  "fifo",
- "linalg",
- "matrix",
+ "nalgebra",
  "utility",
 ]
 

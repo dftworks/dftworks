@@ -32,30 +32,6 @@ impl Matrix<f64> {
         mat
     }
 
-    pub fn unit(n: usize) -> Matrix<f64> {
-        let mut mat = Matrix::<f64>::new(n, n);
-
-        for v in mat.as_mut_slice() {
-            *v = 0.0;
-        }
-
-        for i in 0..n {
-            mat[[i, i]] = 1.0;
-        }
-
-        mat
-    }
-
-    pub fn action(&self, vin: &[f64], vout: &mut [f64]) {
-        vout.iter_mut().for_each(|x| *x = 0.0);
-
-        for i in 0..self.ncol() {
-            for j in 0..self.nrow() {
-                vout[j] += self[[j, i]] * vin[i];
-            }
-        }
-    }
-
     pub fn symmetrize(&mut self) {
         for i in 0..self.ncol() {
             for j in i..self.nrow() {
@@ -98,10 +74,6 @@ impl Matrix<f64> {
             .expect("nalgebra SVD pseudo-inverse failed");
 
         self.data = pinv;
-    }
-
-    pub fn sum(&self) -> f64 {
-        self.as_slice().iter().sum()
     }
 
     /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.

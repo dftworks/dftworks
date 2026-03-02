@@ -360,7 +360,7 @@ pub fn hartree(gvec: &GVector, pwden: &PWDensity, rhog: &[c64]) -> Matrix<f64> {
     let gidx = pwden.get_gindex();
     let npw = pwden.get_n_plane_waves();
 
-    let unit_mat = Matrix::<f64>::unit(3);
+    let unit_mat = Matrix::<f64>::identity(3);
 
     let mut stress = Matrix::<f64>::new(3, 3);
 
@@ -520,7 +520,7 @@ pub fn vnl_of_one_specie_one_k(
 
     let occ = kscf.get_occ();
 
-    let unit_mat = Matrix::<f64>::unit(3);
+    let unit_mat = Matrix::<f64>::identity(3);
     let mut stress = Matrix::<c64>::new(3, 3);
 
     for ibnd in 0..kscf.get_nbands() {
