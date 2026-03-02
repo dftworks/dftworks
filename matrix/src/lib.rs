@@ -191,6 +191,22 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
         self.data.as_mut_slice()
     }
 
+    pub fn as_dmatrix(&self) -> &DMatrix<T> {
+        &self.data
+    }
+
+    pub fn as_dmatrix_mut(&mut self) -> &mut DMatrix<T> {
+        &mut self.data
+    }
+
+    pub fn from_dmatrix(data: DMatrix<T>) -> Matrix<T> {
+        Matrix { data }
+    }
+
+    pub fn into_dmatrix(self) -> DMatrix<T> {
+        self.data
+    }
+
     pub fn set_zeros(&mut self) {
         self.data.iter_mut().for_each(|x| *x = T::zero());
     }

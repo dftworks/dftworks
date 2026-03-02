@@ -625,6 +625,7 @@ dependencies = [
  "lattice",
  "linalg",
  "matrix",
+ "nalgebra",
  "ndarray 0.1.0",
  "num-traits",
  "pspot",
@@ -652,6 +653,7 @@ dependencies = [
  "hdf5-metno",
  "itertools",
  "matrix",
+ "nalgebra",
  "types",
 ]
 
@@ -1340,6 +1342,7 @@ dependencies = [
  "kscf",
  "lattice",
  "matrix",
+ "nalgebra",
  "ndarray 0.1.0",
  "nlcc",
  "num-traits",

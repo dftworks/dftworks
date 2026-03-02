@@ -33,3 +33,4 @@ linalg = { path = "../linalg" }
 num-traits = "*"
 integral = { path = "../integral" }
 special = { path = "../special" }
+nalgebra = "0.32.6"

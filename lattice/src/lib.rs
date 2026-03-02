@@ -1,4 +1,5 @@
 use matrix::*;
+use nalgebra::Matrix3;
 use types::*;
 
 use std::{f64::consts, fmt};
@@ -140,28 +141,21 @@ impl Lattice {
 
     pub fn frac_to_cart(&self, pos_f: &[f64], pos_c: &mut [f64]) {
         // Cartesian position = lattice_matrix * fractional_position.
-        for i in 0..3 {
-            pos_c[i] = 0.0;
-
-            for j in 0..3 {
-                pos_c[i] += self.data[[i, j]] * pos_f[j];
-            }
-        }
+        let latt = Matrix3::<f64>::from_column_slice(self.data.as_slice());
+        let pos_frac = Vector3f64::new(pos_f[0], pos_f[1], pos_f[2]);
+        let pos_cart = latt * pos_frac;
+        pos_c[..3].copy_from_slice(pos_cart.as_slice());
     }
 
     pub fn cart_to_frac(&self, pos_c: &[f64], pos_f: &mut [f64]) {
         // Fractional position = inverse(lattice_matrix) * Cartesian position.
-        let mut mat = self.data.clone();
-
-        mat.inv();
-
-        for i in 0..3 {
-            pos_f[i] = 0.0;
-
-            for j in 0..3 {
-                pos_f[i] += mat[[i, j]] * pos_c[j];
-            }
-        }
+        let latt = Matrix3::<f64>::from_column_slice(self.data.as_slice());
+        let latt_inv = latt
+            .try_inverse()
+            .expect("lattice matrix is singular in cart_to_frac");
+        let pos_cart = Vector3f64::new(pos_c[0], pos_c[1], pos_c[2]);
+        let pos_frac = latt_inv * pos_cart;
+        pos_f[..3].copy_from_slice(pos_frac.as_slice());
     }
 
     /// Save the lattice to a HDF5 file.

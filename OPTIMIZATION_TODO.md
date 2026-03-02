@@ -1404,10 +1404,13 @@ Finish an item only when:
 **Current Progress**
 - [x] Migrated `matrix::Matrix<T>` core storage from custom `{nrow, ncol, Vec<T>}` to `nalgebra::DMatrix<T>` while preserving external API surface.
 - [x] Updated `matrix_f64` and `matrix_c64` wrappers (`inv`, `pinv`, multiply, transpose/adjoint paths, HDF5 adapters) to operate on nalgebra-backed storage.
+- [x] Added explicit `DMatrix` adapters on `Matrix<T>` (`as_dmatrix`, `as_dmatrix_mut`, `from_dmatrix`, `into_dmatrix`) to enable direct nalgebra call-site migration.
+- [x] Migrated `kscf` subspace rotation kernel (`rotate_wfc`) from manual column loops to direct nalgebra matrix multiplication.
+- [x] Replaced custom 3x3 tensor algebra kernels in `stress`/`lattice` (cartesian-fractional transforms, symmetry projection products, cell-force transform) with `nalgebra::Matrix3` operations.
 - [x] Verified workspace compile gate: `cargo check --workspace`.
 - [x] Verified Docker regression gate: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
 - [x] Verified spin/MPI parity gate: `scripts/run_spin_mpi_parity.sh`.
-- [ ] Phase 2+ remaining: migrate algebra-heavy call sites to native nalgebra APIs and trim duplicated wrapper surface.
+- [ ] Phase 2 remaining: migrate remaining algebra-heavy call sites (notably in `eigensolver` and residual `kscf`/`stress` helper paths) to native nalgebra APIs, then trim duplicated wrappers.
 
 **Phase 0 - Inventory and API Freeze**
 - Catalog `matrix` APIs currently used by downstream crates:

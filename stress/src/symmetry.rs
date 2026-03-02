@@ -4,38 +4,25 @@ use control::Control;
 use crystal::Crystal;
 use lattice::Lattice;
 use matrix::Matrix;
+use nalgebra::Matrix3;
 use symmetry::SymmetryDriver;
 
-fn transpose_i32_3x3(m: &[[i32; 3]; 3]) -> [[i32; 3]; 3] {
-    let mut out = [[0; 3]; 3];
+fn array_to_matrix3(m: &[[f64; 3]; 3]) -> Matrix3<f64> {
+    let mut out = Matrix3::<f64>::zeros();
     for i in 0..3 {
         for j in 0..3 {
-            out[i][j] = m[j][i];
+            out[(i, j)] = m[i][j];
         }
     }
     out
 }
 
-fn transpose_f64_3x3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let mut out = [[0.0; 3]; 3];
+fn matrix3_to_matrix(m3: &Matrix3<f64>, m: &mut Matrix<f64>) {
     for i in 0..3 {
         for j in 0..3 {
-            out[i][j] = m[j][i];
+            m[[i, j]] = m3[(i, j)];
         }
     }
-    out
-}
-
-fn matmul_3x3(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let mut out = [[0.0; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            for k in 0..3 {
-                out[i][j] += a[i][k] * b[k][j];
-            }
-        }
-    }
-    out
 }
 
 fn rotation_cart_from_fractional(latt: &Lattice, rotation_frac: &[[i32; 3]; 3]) -> [[f64; 3]; 3] {
@@ -66,22 +53,14 @@ fn rotation_cart_from_fractional(latt: &Lattice, rotation_frac: &[[i32; 3]; 3]) 
     rot_cart
 }
 
-fn matrix_to_array_3x3(m: &Matrix<f64>) -> [[f64; 3]; 3] {
-    let mut out = [[0.0; 3]; 3];
+fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
+    let mut out = Matrix3::<f64>::zeros();
     for i in 0..3 {
         for j in 0..3 {
-            out[i][j] = m[[i, j]];
+            out[(i, j)] = m[[i, j]];
         }
     }
     out
-}
-
-fn array_3x3_to_matrix(a: &[[f64; 3]; 3], m: &mut Matrix<f64>) {
-    for i in 0..3 {
-        for j in 0..3 {
-            m[[i, j]] = a[i][j];
-        }
-    }
 }
 
 pub fn project_stress_by_symmetry(
@@ -95,30 +74,21 @@ pub fn project_stress_by_symmetry(
     }
 
     let latt = crystal.get_latt();
-    let stress_raw = matrix_to_array_3x3(stress);
-    let mut stress_proj = [[0.0; 3]; 3];
+    let stress_raw = matrix_to_matrix3(stress);
+    let mut stress_proj = Matrix3::<f64>::zeros();
 
     for isym in 0..n_sym {
-        let rot_cart = rotation_cart_from_fractional(latt, symdrv.get_rotation(isym));
-        let rot_cart_t = transpose_f64_3x3(&rot_cart);
-        let tmp = matmul_3x3(&rot_cart, &stress_raw);
-        let s_rot = matmul_3x3(&tmp, &rot_cart_t);
-
-        for i in 0..3 {
-            for j in 0..3 {
-                stress_proj[i][j] += s_rot[i][j];
-            }
-        }
+        let rot_cart = array_to_matrix3(&rotation_cart_from_fractional(
+            latt,
+            symdrv.get_rotation(isym),
+        ));
+        stress_proj += rot_cart * stress_raw * rot_cart.transpose();
     }
 
     let inv = 1.0 / n_sym as f64;
-    for i in 0..3 {
-        for j in 0..3 {
-            stress_proj[i][j] *= inv;
-        }
-    }
+    stress_proj *= inv;
 
-    array_3x3_to_matrix(&stress_proj, stress);
+    matrix3_to_matrix(&stress_proj, stress);
     stress.symmetrize();
 }
 

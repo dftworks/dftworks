@@ -11,6 +11,7 @@ use kscf::*;
 use lattice::*;
 use matrix::*;
 use ndarray::*;
+use nalgebra::Matrix3;
 use num_traits::identities::Zero;
 use pspot::*;
 use pwbasis::*;
@@ -604,42 +605,39 @@ pub fn get_max_stress(stress: &Matrix<f64>) -> f64 {
     // v_max
 }
 
-fn frac_to_cart(latt: &Lattice, mf: &Matrix<f64>, mc: &mut Matrix<f64>) {
-    let mat = latt.as_matrix().clone().transpose();
-
-    for c in mc.as_mut_slice().iter_mut() {
-        *c = 0.0;
-    }
-
+fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
+    let mut out = Matrix3::<f64>::zeros();
     for i in 0..3 {
         for j in 0..3 {
-            for k in 0..3 {
-                for l in 0..3 {
-                    mc[[i, j]] += mat[[i, k]] * mf[[k, l]] * mat[[j, l]];
-                }
-            }
+            out[(i, j)] = m[[i, j]];
+        }
+    }
+    out
+}
+
+fn matrix3_to_matrix(m3: &Matrix3<f64>, out: &mut Matrix<f64>) {
+    for i in 0..3 {
+        for j in 0..3 {
+            out[[i, j]] = m3[(i, j)];
         }
     }
 }
 
+fn frac_to_cart(latt: &Lattice, mf: &Matrix<f64>, mc: &mut Matrix<f64>) {
+    let lat_t = matrix_to_matrix3(&latt.as_matrix().transpose());
+    let m_frac = matrix_to_matrix3(mf);
+    let m_cart = lat_t * m_frac * lat_t.transpose();
+    matrix3_to_matrix(&m_cart, mc);
+}
+
 fn cart_to_frac(latt: &Lattice, mc: &Matrix<f64>, mf: &mut Matrix<f64>) {
-    let mut mat = latt.as_matrix().clone().transpose();
-
-    mat.inv();
-
-    for f in mf.as_mut_slice().iter_mut() {
-        *f = 0.0;
-    }
-
-    for i in 0..3 {
-        for j in 0..3 {
-            for k in 0..3 {
-                for l in 0..3 {
-                    mf[[i, j]] += mat[[i, k]] * mc[[k, l]] * mat[[j, l]];
-                }
-            }
-        }
-    }
+    let lat_t = matrix_to_matrix3(&latt.as_matrix().transpose());
+    let lat_t_inv = lat_t
+        .try_inverse()
+        .expect("lattice matrix transpose is singular in cart_to_frac");
+    let m_cart = matrix_to_matrix3(mc);
+    let m_frac = lat_t_inv * m_cart * lat_t_inv.transpose();
+    matrix3_to_matrix(&m_frac, mf);
 }
 
 fn vpsloc_of_g_one_atom(atompsp: &dyn AtomPSP, pwden: &PWDensity, volume: f64, vlocg: &mut [f64]) {
@@ -800,50 +798,13 @@ pub fn vdw(
 
 pub fn stress_to_force_on_cell(latt: &Lattice, stress: &Matrix<f64>) -> Matrix<f64> {
     let volume = latt.volume();
+    let a_inv = matrix_to_matrix3(latt.as_matrix())
+        .try_inverse()
+        .expect("lattice matrix is singular in stress_to_force_on_cell");
+    let stress_mat = matrix_to_matrix3(stress);
+    let cell_force_mat = (stress_mat * a_inv.transpose()) * volume;
 
     let mut cell_force = Matrix::<f64>::new(3, 3);
-
-    let mut ainv = Matrix::<f64>::new(3, 3);
-
-    // follow the derivation in "Analytical stress tensor and pressure calculations with the CRYSTAL code", Molecular Physics, 108, 223 (2010)
-    // but here we use column vectors for lattice vectors instead of row vectors in the paper
-
-    let latt_a = latt.get_vector_a();
-    let latt_b = latt.get_vector_b();
-    let latt_c = latt.get_vector_c();
-
-    ainv[[0, 0]] = latt_a.x;
-    ainv[[1, 0]] = latt_a.y;
-    ainv[[2, 0]] = latt_a.z;
-
-    ainv[[0, 1]] = latt_b.x;
-    ainv[[1, 1]] = latt_b.y;
-    ainv[[2, 1]] = latt_b.z;
-
-    ainv[[0, 2]] = latt_c.x;
-    ainv[[1, 2]] = latt_c.y;
-    ainv[[2, 2]] = latt_c.z;
-
-    ainv.inv();
-
-    cell_force.set_zeros();
-
-    for l in 0..3 {
-        for i in 0..3 {
-            //cell_force[[l, i]] = 0.0;
-
-            for m in 0..3 {
-                cell_force[[l, i]] += stress[[l, m]] * ainv[[i, m]];
-            }
-
-            //cell_force[[l, i]] *= volume;
-        }
-    }
-
-    cell_force
-        .as_mut_slice()
-        .iter_mut()
-        .for_each(|x| *x *= volume);
-
+    matrix3_to_matrix(&cell_force_mat, &mut cell_force);
     cell_force
 }

@@ -32,3 +32,4 @@ dfttypes = { path = "../dfttypes" }
 num-traits = "*"
 utility = { path = "../utility" }
 dwmpi = { path = "../dwmpi" }
+nalgebra = "0.32.6"

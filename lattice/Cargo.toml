@@ -11,3 +11,4 @@ matrix = { path = "../matrix" }
 types = { path = "../types" }
 itertools = "*"
 hdf5 = { package = "hdf5-metno", version = "0.9" }
+nalgebra = "0.32.6"
