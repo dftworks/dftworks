@@ -111,7 +111,7 @@ impl GVector {
 fn set_g_norm(g: &mut [f64], cart: &[Vector3f64]) {
     // |G| for each vector.
     for (x, y) in multizip((g.iter_mut(), cart.iter())) {
-        *x = y.norm2();
+        *x = y.norm();
     }
 }
 

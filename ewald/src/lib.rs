@@ -98,9 +98,9 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
     let b = latt.get_vector_b();
     let c = latt.get_vector_c();
 
-    let na = (rmax / a.norm2()).ceil() as i32 + 2;
-    let nb = (rmax / b.norm2()).ceil() as i32 + 2;
-    let nc = (rmax / c.norm2()).ceil() as i32 + 2;
+    let na = (rmax / a.norm()).ceil() as i32 + 2;
+    let nb = (rmax / b.norm()).ceil() as i32 + 2;
+    let nc = (rmax / c.norm()).ceil() as i32 + 2;
 
     // Candidate translation vectors and their squared lengths.
     let mut t_rs: Vec<Vector3i32> = Vec::new();
@@ -117,11 +117,7 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
 
                 if r2 < rmax * rmax {
                     t_r2.push(r2);
-                    t_rs.push(Vector3i32 {
-                        x: ia,
-                        y: ib,
-                        z: ic,
-                    });
+                    t_rs.push(Vector3i32::new(ia, ib, ic));
                 }
             }
         }
@@ -130,7 +126,7 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
     // Sort neighbors by distance to improve convergence behavior in loops.
     let ordered_index = utility::argsort(&t_r2);
 
-    let mut rs: Vec<Vector3i32> = vec![Vector3i32 { x: 0, y: 0, z: 0 }; t_rs.len()];
+    let mut rs: Vec<Vector3i32> = vec![Vector3i32::new(0, 0, 0); t_rs.len()];
 
     for (i, &j) in ordered_index.iter().enumerate() {
         rs[i] = t_rs[j];

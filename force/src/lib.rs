@@ -119,7 +119,7 @@ pub fn nlcc_xc_with_workspace(
     force: &mut [Vector3f64],
 ) {
     // NLCC force starts from zero and accumulates per atom.
-    force.iter_mut().for_each(|x| x.set_zeros());
+    force.iter_mut().for_each(|x| *x = Vector3f64::zeros());
 
     let volume = crystal.get_latt().volume();
 
@@ -197,7 +197,7 @@ pub fn vpsloc_with_workspace(
     force: &mut [Vector3f64],
 ) {
     // Local ionic force in reciprocal space.
-    force.iter_mut().for_each(|x| x.set_zeros());
+    force.iter_mut().for_each(|x| *x = Vector3f64::zeros());
 
     let volume = crystal.get_latt().volume();
 
@@ -355,11 +355,7 @@ pub fn vnl_of_one_atom_one_k(
     }
 
     // Factor 2 accounts for complex-conjugate pair in this formulation.
-    Vector3f64 {
-        x: 2.0 * v.x.re,
-        y: 2.0 * v.y.re,
-        z: 2.0 * v.z.re,
-    }
+    Vector3f64::new(2.0 * v.x.re, 2.0 * v.y.re, 2.0 * v.z.re)
 }
 
 pub fn get_total(

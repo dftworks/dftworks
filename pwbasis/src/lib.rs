@@ -108,7 +108,7 @@ impl PWBasis {
 
         dataset_pwbasis
             .new_attr_builder()
-            .with_data(&self.get_k_cart().to_vec())
+            .with_data(&self.get_k_cart().as_slice().to_vec())
             .create("k_cart")
             .expect("Failed to create k_cart attribute");
 
@@ -241,7 +241,7 @@ fn compute_kg_optimized(gvec: &GVector, k_cart: Vector3f64, gindex: &[usize], kg
         .zip(gindex.iter())
         .for_each(|(kg_val, &g_idx)| {
             let k_plus_g = k_cart + gcart[g_idx];
-            *kg_val = k_plus_g.norm2();
+            *kg_val = k_plus_g.norm();
         });
 }
 

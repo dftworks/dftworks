@@ -300,7 +300,7 @@ impl Crystal {
 
                     // Atomic position remains fractional.
                     self.atom_species.push(symbol);
-                    self.atom_positions.push(Vector3f64 { x, y, z });
+                    self.atom_positions.push(Vector3f64::new(x, y, z));
                 }
             }
 

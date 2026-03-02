@@ -1317,3 +1317,74 @@ Finish an item only when:
 - CI runs fixed-seed reproducibility test on every PR
 - Determinism test passes for 1-rank vs 2-rank runs (within tolerance)
 - Restart parity test validates checkpoint reproducibility
+
+
+### E30 - Migrate `vector3` to `nalgebra` and Retire Custom Vector Crate
+**Priority**: P1 (Correctness + maintainability)
+**Status**: In Progress (Phase 1 landed, 2026-03-02)
+**Files**: `vector3/`, `gvector/`, `lattice/`, `crystal/`, `force/`, `ewald/`, `geom/`, `kpts/`, `pwbasis/`, `utility/`, `special/`, `vdw/`, workspace `Cargo.toml`
+
+- Goal: replace project-local `vector3` math types with `nalgebra` `Vector3` equivalents, then remove `vector3` crate.
+- Rationale:
+  - remove layout-dependent `unsafe` slice casting in `vector3`
+  - standardize on one math backend (already used in `matrix`)
+  - reduce duplicated vector API maintenance
+
+**Phase 0 - Design and Compatibility Strategy**
+- Define canonical aliases:
+  - `type Vec3f = nalgebra::Vector3<f64>`
+  - `type Vec3i = nalgebra::Vector3<i32>`
+- Define migration policy for field/component access (`x/y/z`), dot/cross/norm semantics, and formatting behavior.
+- Identify all callsites using flattening helpers (`as_slice_of_element`, `as_mut_slice_of_element`) and classify:
+  - read-only flatten to scalar buffer
+  - mutable flatten for optimizer/BLAS-style APIs
+
+**Phase 1 - Introduce Bridging Layer**
+- Add a small `math3` compatibility module (in `vector3` crate first, then move/rename later) that wraps nalgebra types and exposes temporary compatibility helpers.
+- Keep API-compatible constructors and convenience methods used across crates (`new`, `zeros`, dot/cross/norm aliases).
+- Replace layout-dependent flattening with explicit safe representations where possible:
+  - prefer `Vec<[f64; 3]>`/`Vec<[i32; 3]>` for bulk contiguous data paths
+  - use explicit copy-in/copy-out adapters for mutable flat-slice APIs when zero-copy cannot be guaranteed safely
+
+**Phase 2 - Incremental Crate Migration**
+- Migrate leaf and utility crates first (`utility`, `special`, `fhkl`, `vdw`) to reduce risk.
+- Migrate core geometry/data crates next (`lattice`, `crystal`, `gvector`, `pwbasis`, `kpts`).
+- Migrate force/optimization paths last (`force`, `ewald`, `geom`) because they heavily use flat-slice mutation and are most regression-prone.
+- After each crate batch:
+  - run `cargo check` for full workspace
+  - run targeted crate tests
+  - run numerical spot checks for representative systems
+
+**Phase 3 - Remove Legacy APIs**
+- Deprecate and remove `vector3::as_slice_of_element` and `vector3::as_mut_slice_of_element`.
+- Remove custom impl duplication that nalgebra already provides (vector arithmetic traits, dot/cross/norm wrappers where redundant).
+- Switch all downstream crates from `vector3::Vector3f64/Vector3i32` imports to canonical nalgebra aliases.
+
+**Phase 4 - Retire `vector3` Crate**
+- Remove `vector3` crate from workspace members and crate dependencies.
+- If a compatibility shim is still needed, keep a thin `math3` module in a shared crate with no `unsafe`.
+- Update developer docs and migration notes with before/after API mapping examples.
+
+**Validation Gates**
+- `cargo check --workspace` and `cargo test --workspace` pass.
+- Docker correctness gate passes: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
+- If force/stress/geometry paths changed, run `scripts/run_spin_mpi_parity.sh`.
+- Numerical parity:
+  - energies/forces/stresses within existing tolerances versus pre-migration baseline
+  - no new non-determinism in fixed-seed replay tests.
+
+**Implementation Update (2026-03-02)**
+- [x] Replaced `vector3` crate core type with nalgebra alias (`Vector3<T> = nalgebra::Vector3<T>`)
+- [x] Removed custom `vector3_f64.rs` and `vector3_i32.rs` operator/method implementations
+- [x] Migrated existing callsites from custom methods to nalgebra API (`dot`, `cross`, `norm`, constructor literals)
+- [x] Replaced vector `.to_vec()` usages with `.as_slice().to_vec()` where needed
+- [x] Workspace compiles with `cargo check --workspace`
+- [ ] Run Docker physics regression gates and record parity deltas
+- [ ] Remove/replace remaining `as_slice_of_element` unsafe bridge with fully safe adapters
+- [ ] Retire `vector3` crate from workspace members and dependencies
+
+**Acceptance Criteria**
+- No layout-dependent `unsafe` remains in vector math access paths.
+- All current `vector3` callsites compile against nalgebra types (directly or via temporary compatibility alias).
+- Phase12 regression and spin/MPI parity gates pass after final cutover.
+- `vector3` crate is removed from workspace (or reduced to a zero-unsafe compatibility shim with deprecation plan and sunset date).

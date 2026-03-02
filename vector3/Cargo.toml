@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 types = { path = "../types" }
-num-traits = "*"
+nalgebra = "0.32.6"

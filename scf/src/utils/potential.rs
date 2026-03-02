@@ -74,9 +74,9 @@ fn axis_fraction_from_position(axis: ElectricFieldAxis, pos: &Vector3f64) -> f64
 #[inline]
 fn axis_length_bohr(axis: ElectricFieldAxis, crystal: &Crystal) -> f64 {
     match axis {
-        ElectricFieldAxis::A => crystal.get_latt().get_vector_a().norm2(),
-        ElectricFieldAxis::B => crystal.get_latt().get_vector_b().norm2(),
-        ElectricFieldAxis::C => crystal.get_latt().get_vector_c().norm2(),
+        ElectricFieldAxis::A => crystal.get_latt().get_vector_a().norm(),
+        ElectricFieldAxis::B => crystal.get_latt().get_vector_b().norm(),
+        ElectricFieldAxis::C => crystal.get_latt().get_vector_c().norm(),
     }
 }
 
@@ -197,7 +197,7 @@ pub fn validate_hse06_runtime_constraints(control: &Control, kpts: &dyn KPTS) {
     }
 
     let k0 = kpts.get_k_frac(0);
-    if k0.norm2() > 1.0E-10 {
+    if k0.norm() > 1.0E-10 {
         panic!(
             "xc_scheme='hse06' currently supports only Gamma point (in.kmesh must map to k=(0,0,0))"
         );

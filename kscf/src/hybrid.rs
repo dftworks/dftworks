@@ -105,7 +105,7 @@ impl HybridPotential {
 
         let k_cart = pwwfc.get_k_cart();
 
-        if k_cart.norm2() > 1.0E-10 {
+        if k_cart.norm() > 1.0E-10 {
             panic!("xc_scheme='hse06' currently supports only Gamma-only k-points (k_cart=0).");
         }
 

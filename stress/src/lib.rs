@@ -365,7 +365,7 @@ pub fn hartree(gvec: &GVector, pwden: &PWDensity, rhog: &[c64]) -> Matrix<f64> {
     let mut stress = Matrix::<f64>::new(3, 3);
 
     for ig in 1..npw {
-        let g = cart[gidx[ig]].to_vec();
+        let g = cart[gidx[ig]].as_slice().to_vec();
 
         for i in 0..3 {
             for j in 0..3 {
@@ -389,7 +389,7 @@ pub fn kinetic(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> 
 
         let gidx = kscf.get_pwwfc().get_gindex();
         let npw = kscf.get_pwwfc().get_n_plane_waves();
-        let xk = kscf.get_pwwfc().get_k_cart().to_vec();
+        let xk = kscf.get_pwwfc().get_k_cart().as_slice().to_vec();
         let nbnd = kscf.get_nbands();
         let occ = kscf.get_occ();
 
@@ -401,7 +401,7 @@ pub fn kinetic(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> 
             let cnk = evecs.get_col(ibnd);
 
             for ikg in 0..npw {
-                let g = cart[gidx[ikg]].to_vec();
+                let g = cart[gidx[ikg]].as_slice().to_vec();
 
                 for i in 0..3 {
                     for j in 0..3 {
@@ -504,7 +504,7 @@ pub fn vnl_of_one_specie_one_k(
     kscf: &KSCF,
     evecs: &Matrix<c64>,
 ) -> Matrix<c64> {
-    let xk = pwwfc.get_k_cart().to_vec();
+    let xk = pwwfc.get_k_cart().as_slice().to_vec();
 
     let kg = pwwfc.get_kg();
 
@@ -555,9 +555,9 @@ pub fn vnl_of_one_specie_one_k(
                     }
 
                     for ipw in 0..npw {
-                        let p_dylm = dylm[ipw].to_vec();
+                        let p_dylm = dylm[ipw].as_slice().to_vec();
 
-                        let g = cart[gidx[ipw]].to_vec();
+                        let g = cart[gidx[ipw]].as_slice().to_vec();
 
                         for i in 0..3 {
                             for j in 0..3 {

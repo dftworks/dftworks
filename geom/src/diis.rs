@@ -76,11 +76,7 @@ fn move_cell_and_ions(
     let natoms = crystal.get_n_atoms();
 
     let mut gmask = vec![
-        Vector3f64 {
-            x: 1.0,
-            y: 1.0,
-            z: 1.0
-        };
+        Vector3f64::new(1.0, 1.0, 1.0);
         3 + natoms
     ];
 
@@ -240,7 +236,7 @@ fn compute_generalized_forces(
     for i in 0..natoms {
         //let v = g.dot(&gforce[3 + i].to_vec());
 
-        let v = gforce[3 + i].to_vec();
+        let v = gforce[3 + i].as_slice().to_vec();
 
         gforce[3 + i].x = v[0] * factor;
         gforce[3 + i].y = v[1] * factor;

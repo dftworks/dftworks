@@ -81,7 +81,7 @@ fn compute_g(gvec: &GVector, gindex: &[usize], gnorm: &mut [f64]) {
     let gcart = gvec.get_cart();
 
     for (i, j) in gindex.iter().enumerate() {
-        gnorm[i] = gcart[*j].norm2();
+        gnorm[i] = gcart[*j].norm();
     }
 }
 

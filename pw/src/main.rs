@@ -487,11 +487,7 @@ fn main() {
 
         // if not converged, get the atom positions and (lattice vectors if cell is also relaxed) for the next optim iteration
         let geom_optim_mask_ions = vec![
-            Vector3f64 {
-                x: 1.0,
-                y: 1.0,
-                z: 1.0
-            };
+            Vector3f64::new(1.0, 1.0, 1.0);
             crystal.get_n_atoms()
         ];
 

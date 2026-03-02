@@ -75,21 +75,13 @@ impl KptsMesh {
             for ik in 0..nk {
                 let idx = k_unique[ik] as usize;
                 let k = kpts[idx];
-                k_frac[ik] = Vector3f64 {
-                    x: k[0],
-                    y: k[1],
-                    z: k[2],
-                };
+                k_frac[ik] = Vector3f64::new(k[0], k[1], k[2]);
                 k_degeneracy[ik] = nk_unique[ik];
                 k_weight[ik] = nk_unique[ik] as f64 / nk_total as f64;
             }
         } else {
             for (ik, k) in kpts.iter().enumerate() {
-                k_frac[ik] = Vector3f64 {
-                    x: k[0],
-                    y: k[1],
-                    z: k[2],
-                };
+                k_frac[ik] = Vector3f64::new(k[0], k[1], k[2]);
                 k_weight[ik] = 1.0 / nk_total as f64;
                 k_degeneracy[ik] = 1;
             }

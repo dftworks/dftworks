@@ -65,9 +65,9 @@ impl FFTGrid {
 
         let twopi = 2.0 * consts::PI;
 
-        let mut n1 = (2.0 * gmax * latt.get_vector_a().norm2() / twopi).ceil() as usize;
-        let mut n2 = (2.0 * gmax * latt.get_vector_b().norm2() / twopi).ceil() as usize;
-        let mut n3 = (2.0 * gmax * latt.get_vector_c().norm2() / twopi).ceil() as usize;
+        let mut n1 = (2.0 * gmax * latt.get_vector_a().norm() / twopi).ceil() as usize;
+        let mut n2 = (2.0 * gmax * latt.get_vector_b().norm() / twopi).ceil() as usize;
+        let mut n3 = (2.0 * gmax * latt.get_vector_c().norm() / twopi).ceil() as usize;
 
         n1 = get_fftwn(n1);
         n2 = get_fftwn(n2);

@@ -93,7 +93,7 @@ fn compute_ylm_batch(
     for (i, j) in gindex.iter().enumerate() {
         let mut xkg = xk + gcart[*j];
 
-        if xkg.norm2() < EPS16 {
+        if xkg.norm() < EPS16 {
             xkg.y = xkg.y.signum() * EPS16;
         }
 
@@ -119,7 +119,7 @@ fn compute_dylm_batch(
     for (i, j) in gindex.iter().enumerate() {
         let mut xkg = xk + gcart[*j];
 
-        if xkg.norm2() < EPS16 {
+        if xkg.norm() < EPS16 {
             xkg.y = EPS16 * xkg.y.signum();
         }
 

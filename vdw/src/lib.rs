@@ -169,7 +169,7 @@ impl VdwCorrection {
                     positions[j].y - positions[i].y,
                     positions[j].z - positions[i].z,
                 );
-                let rij = rij_vec.norm2();
+                let rij = rij_vec.norm();
 
                 if rij < 1e-6 {
                     continue; // Skip if atoms too close (shouldn't happen)
@@ -221,7 +221,7 @@ impl VdwCorrection {
                     positions[j].y - positions[i].y,
                     positions[j].z - positions[i].z,
                 );
-                let rij = rij_vec.norm2();
+                let rij = rij_vec.norm();
 
                 if rij < 1e-6 {
                     continue;
@@ -281,7 +281,7 @@ impl VdwCorrection {
                     positions[j].y - positions[i].y,
                     positions[j].z - positions[i].z,
                 );
-                let rij = rij_vec.norm2();
+                let rij = rij_vec.norm();
 
                 if rij < 1e-6 {
                     continue;

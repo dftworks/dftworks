@@ -34,17 +34,17 @@ impl Lattice {
         let b = self.get_vector_b();
         let c = self.get_vector_c();
 
-        g[[0, 0]] = a.dot_product(&a);
-        g[[0, 1]] = a.dot_product(&b);
-        g[[0, 2]] = a.dot_product(&c);
+        g[[0, 0]] = a.dot(&a);
+        g[[0, 1]] = a.dot(&b);
+        g[[0, 2]] = a.dot(&c);
 
-        g[[1, 0]] = b.dot_product(&a);
-        g[[1, 1]] = b.dot_product(&b);
-        g[[1, 2]] = b.dot_product(&c);
+        g[[1, 0]] = b.dot(&a);
+        g[[1, 1]] = b.dot(&b);
+        g[[1, 2]] = b.dot(&c);
 
-        g[[2, 0]] = c.dot_product(&a);
-        g[[2, 1]] = c.dot_product(&b);
-        g[[2, 2]] = c.dot_product(&c);
+        g[[2, 0]] = c.dot(&a);
+        g[[2, 1]] = c.dot(&b);
+        g[[2, 2]] = c.dot(&c);
 
         g
     }
@@ -90,7 +90,7 @@ impl Lattice {
         let b = self.get_vector_b();
         let c = self.get_vector_c();
 
-        a.cross_product(&b).dot_product(&c)
+        a.cross(&b).dot(&c)
     }
 
     // ra = 2 x PI x (b x c) / volume
@@ -104,41 +104,33 @@ impl Lattice {
         let b = self.get_vector_b();
         let c = self.get_vector_c();
 
-        let blatt_a = b.cross_product(&c) * factor;
-        let blatt_b = c.cross_product(&a) * factor;
-        let blatt_c = a.cross_product(&b) * factor;
+        let blatt_a = b.cross(&c) * factor;
+        let blatt_b = c.cross(&a) * factor;
+        let blatt_c = a.cross(&b) * factor;
 
-        Lattice::new(&blatt_a.to_vec(), &blatt_b.to_vec(), &blatt_c.to_vec())
+        Lattice::new(
+            &blatt_a.as_slice().to_vec(),
+            &blatt_b.as_slice().to_vec(),
+            &blatt_c.as_slice().to_vec(),
+        )
     }
 
     pub fn get_vector_a(&self) -> Vector3f64 {
         let v = self.data.get_col(0);
 
-        Vector3f64 {
-            x: v[0],
-            y: v[1],
-            z: v[2],
-        }
+        Vector3f64::new(v[0], v[1], v[2])
     }
 
     pub fn get_vector_b(&self) -> Vector3f64 {
         let v = self.data.get_col(1);
 
-        Vector3f64 {
-            x: v[0],
-            y: v[1],
-            z: v[2],
-        }
+        Vector3f64::new(v[0], v[1], v[2])
     }
 
     pub fn get_vector_c(&self) -> Vector3f64 {
         let v = self.data.get_col(2);
 
-        Vector3f64 {
-            x: v[0],
-            y: v[1],
-            z: v[2],
-        }
+        Vector3f64::new(v[0], v[1], v[2])
     }
 
     pub fn scaled_by(&mut self, f: f64) {
@@ -233,11 +225,7 @@ fn test_lattice() {
         latt.as_matrix().transpose().dot(blatt.as_matrix())
     );
 
-    let pos_f = Vector3f64 {
-        x: 0.2,
-        y: 0.3,
-        z: 0.4,
-    };
+    let pos_f = Vector3f64::new(0.2, 0.3, 0.4);
 
     let mut pos_c = Vector3f64::zeros();
 

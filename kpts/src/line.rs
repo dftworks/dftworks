@@ -189,7 +189,7 @@ fn read_k_line() -> Result<Vec<Vector3f64>, KptsError> {
             let y = y1 + if64 * yspace;
             let z = z1 + if64 * zspace;
 
-            kpts.push(Vector3f64 { x, y, z });
+            kpts.push(Vector3f64::new(x, y, z));
         }
     }
 

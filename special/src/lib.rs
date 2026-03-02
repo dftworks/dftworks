@@ -320,7 +320,7 @@ pub fn real_spherical_harmonics(l: usize, lm: i32, v: Vector3f64) -> f64 {
     let y = v.y;
     let z = v.z;
 
-    let rnorm = v.norm2();
+    let rnorm = v.norm();
 
     match (l, lm) {
         (0, 0) => 0.5 / (consts::PI).sqrt(),
@@ -387,20 +387,20 @@ pub fn real_spherical_harmonics_diff(l: usize, lm: i32, v: Vector3f64) -> Vector
     let y = v.y;
     let z = v.z;
 
-    let x2 = real_spherical_harmonics(l, lm, Vector3f64 { x: x + dx, y, z });
-    let x1 = real_spherical_harmonics(l, lm, Vector3f64 { x: x - dx, y, z });
+    let x2 = real_spherical_harmonics(l, lm, Vector3f64::new(x + dx, y, z));
+    let x1 = real_spherical_harmonics(l, lm, Vector3f64::new(x - dx, y, z));
 
-    let y2 = real_spherical_harmonics(l, lm, Vector3f64 { x, y: y + dx, z });
-    let y1 = real_spherical_harmonics(l, lm, Vector3f64 { x, y: y - dx, z });
+    let y2 = real_spherical_harmonics(l, lm, Vector3f64::new(x, y + dx, z));
+    let y1 = real_spherical_harmonics(l, lm, Vector3f64::new(x, y - dx, z));
 
-    let z2 = real_spherical_harmonics(l, lm, Vector3f64 { x, y, z: z + dx });
-    let z1 = real_spherical_harmonics(l, lm, Vector3f64 { x, y, z: z - dx });
+    let z2 = real_spherical_harmonics(l, lm, Vector3f64::new(x, y, z + dx));
+    let z1 = real_spherical_harmonics(l, lm, Vector3f64::new(x, y, z - dx));
 
-    Vector3f64 {
-        x: (x2 - x1) / dx / 2.0,
-        y: (y2 - y1) / dx / 2.0,
-        z: (z2 - z1) / dx / 2.0,
-    }
+    Vector3f64::new(
+        (x2 - x1) / dx / 2.0,
+        (y2 - y1) / dx / 2.0,
+        (z2 - z1) / dx / 2.0,
+    )
 }
 
 #[test]
