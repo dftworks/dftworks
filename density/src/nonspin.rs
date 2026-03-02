@@ -13,7 +13,6 @@ use pspot::PSPot;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
-use vector3::*;
 use std::cell::RefCell;
 
 struct DensityNonspinWorkspace {

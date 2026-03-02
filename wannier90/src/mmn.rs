@@ -95,7 +95,7 @@ fn compute_mmn_block(
     c_kb: &Matrix<c64>,
     gindex_k: &[usize],
     lookup_kb: &HashMap<(i32, i32, i32), usize>,
-    miller: &[vector3::Vector3i32],
+    miller: &[types::Vector3i32],
     gshift: [i32; 3],
     num_bands: usize,
 ) -> Vec<c64> {

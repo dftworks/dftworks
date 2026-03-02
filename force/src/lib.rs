@@ -13,7 +13,6 @@ use pspot::*;
 use pwbasis::*;
 use pwdensity::*;
 use types::*;
-use vector3::*;
 
 use itertools::multizip;
 use std::collections::HashMap;
@@ -377,10 +376,9 @@ pub fn get_total(
 
 pub fn get_max_force(force: &[Vector3f64]) -> f64 {
     // Infinity norm over Cartesian components and atoms.
-    let p_force = vector3::as_slice_of_element(force);
-
-    p_force
+    force
         .iter()
+        .flat_map(|f| f.as_slice().iter())
         .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
         .unwrap()
         .abs()

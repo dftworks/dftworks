@@ -1,5 +1,5 @@
 use gvector::GVector;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 pub struct PWDensity {
     npw: usize, // number of plane waves

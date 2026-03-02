@@ -9,7 +9,7 @@ use crystal::Crystal;
 use lattice::Lattice;
 use std::error::Error;
 use std::fmt;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KptsError {

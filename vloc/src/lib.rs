@@ -8,7 +8,6 @@ use num_traits::identities::Zero;
 use pspot::PSPot;
 use pwdensity::PWDensity;
 use types::*;
-use vector3::*;
 
 pub fn from_atomic_super_position(
     pspot: &PSPot,

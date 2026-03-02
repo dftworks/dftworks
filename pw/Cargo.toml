@@ -26,7 +26,6 @@ nlcc = { path = "../nlcc" }
 ndarray = { path = "../ndarray" }
 scf = { path = "../scf" }
 symmetry = { path = "../symmetry" }
-vector3 = { path = "../vector3" }
 force = { path = "../force" }
 stress = { path = "../stress" }
 geom = { path = "../geom" }

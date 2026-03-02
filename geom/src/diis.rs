@@ -2,7 +2,7 @@
 use crystal::Crystal;
 use lattice::Lattice;
 use matrix::*;
-use vector3::*;
+use types::*;
 
 use optimization::OptimizationDriver;
 
@@ -55,6 +55,23 @@ impl GeomOptimizationDriver for DIIS {
     }
 }
 
+fn flatten_vec3(v: &[Vector3f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(v.len() * 3);
+    for item in v {
+        out.extend_from_slice(item.as_slice());
+    }
+    out
+}
+
+fn scatter_vec3(flat: &[f64], out: &mut [Vector3f64]) {
+    debug_assert_eq!(flat.len(), out.len() * 3);
+    for (dst, chunk) in out.iter_mut().zip(flat.chunks_exact(3)) {
+        dst.x = chunk[0];
+        dst.y = chunk[1];
+        dst.z = chunk[2];
+    }
+}
+
 fn move_cell_and_ions(
     driver: &mut DIIS,
     crystal: &mut Crystal,
@@ -92,17 +109,16 @@ fn move_cell_and_ions(
         gmask[3 + i] = force_mask[i];
     }
 
-    let vin = vector3::as_mut_slice_of_element(&mut gcoord);
-
-    let vout = vector3::as_slice_of_element(&gforce);
-
-    let vmask = vector3::as_slice_of_element(&gmask);
+    let mut vin = flatten_vec3(&gcoord);
+    let vout = flatten_vec3(&gforce);
+    let vmask = flatten_vec3(&gmask);
 
     //println!("vin  = {:?}", vin);
     //println!("vout = {:?}", vout);
     //println!("mask = {:?}", vmask);
 
-    driver.optim.compute_next_input(vin, vout, vmask);
+    driver.optim.compute_next_input(vin.as_mut_slice(), vout.as_slice(), vmask.as_slice());
+    scatter_vec3(&vin, &mut gcoord);
 
     // set new lattice
 
@@ -137,13 +153,12 @@ fn move_ions(
 
     let mut atoms_frac = crystal.get_atom_positions().to_vec();
 
-    let vin = vector3::as_mut_slice_of_element(&mut atoms_frac);
+    let mut vin = flatten_vec3(&atoms_frac);
+    let vout = flatten_vec3(&gforce);
+    let mask = flatten_vec3(force_mask);
 
-    let vout = vector3::as_slice_of_element(&gforce);
-
-    let mask = vector3::as_slice_of_element(force_mask);
-
-    driver.optim.compute_next_input(vin, vout, mask);
+    driver.optim.compute_next_input(vin.as_mut_slice(), vout.as_slice(), mask.as_slice());
+    scatter_vec3(&vin, &mut atoms_frac);
 
     crystal.set_atom_positions_from_frac(&atoms_frac);
 }

@@ -2,7 +2,7 @@ use control::Control;
 use dfttypes::*;
 use dwconsts::*;
 use matrix::Matrix;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 pub(crate) fn persist_outputs(
     control: &Control,

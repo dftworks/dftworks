@@ -14,7 +14,7 @@ use pwdensity::*;
 use rayon::prelude::*;
 use rgtransform::RGTransform;
 use types::*;
-use vector3::Vector3f64;
+use types::Vector3f64;
 use xc::*;
 const PARALLEL_MIN_LEN: usize = 8192;
 

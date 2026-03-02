@@ -1,7 +1,7 @@
 use crystal::Crystal;
 use lattice::Lattice;
 use symmetry::*;
-use vector3::*;
+use types::*;
 
 use std::fs::File;
 use std::io::BufRead;

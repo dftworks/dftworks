@@ -23,7 +23,6 @@ types = { path = "../types" }
 itertools = "*"
 fhkl = { path = "../fhkl" }
 kgylm = { path = "../kgylm" }
-vector3 = { path = "../vector3" }
 utility = { path = "../utility" }
 dfttypes = { path = "../dfttypes" }
 num-traits =  "*"

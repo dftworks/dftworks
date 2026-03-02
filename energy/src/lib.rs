@@ -16,7 +16,7 @@ use pspot::PSPot;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use types::c64;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 // Energy decomposition utilities.
 //

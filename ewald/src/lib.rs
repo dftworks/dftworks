@@ -7,9 +7,9 @@ use matrix::*;
 use num_traits::identities::Zero;
 use pwdensity::*;
 use special;
-use types::*;
+use types::{Vector3c64, Vector3f64, Vector3i32};
 use utility;
-use vector3::*;
+use types::*;
 
 // Ewald ion-ion interaction decomposition for periodic crystals.
 //

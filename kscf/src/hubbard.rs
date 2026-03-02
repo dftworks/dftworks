@@ -7,7 +7,7 @@ use matrix::Matrix;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use types::c64;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 fn occ_index(iat: usize, m: usize, mp: usize, n_m: usize) -> usize {
     iat * n_m * n_m + m + mp * n_m

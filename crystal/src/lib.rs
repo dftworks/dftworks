@@ -3,7 +3,7 @@ use itertools::Itertools;
 use lattice::Lattice;
 use matrix::Matrix;
 use pspot::PSPot;
-use vector3::*;
+use types::*;
 
 use std::io::Write;
 use std::{

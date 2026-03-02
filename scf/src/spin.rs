@@ -26,7 +26,7 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
 use types::c64;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 //use rayon::prelude::*;
 
@@ -45,6 +45,23 @@ fn sum_spin_channels(rhog_up: &[c64], rhog_dn: &[c64], rhog_tot: &mut [c64]) {
 
     for i in 0..rhog_tot.len() {
         rhog_tot[i] = rhog_up[i] + rhog_dn[i];
+    }
+}
+
+fn flatten_vec3(v: &[Vector3f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(v.len() * 3);
+    for item in v {
+        out.extend_from_slice(item.as_slice());
+    }
+    out
+}
+
+fn scatter_vec3(flat: &[f64], out: &mut [Vector3f64]) {
+    debug_assert_eq!(flat.len(), out.len() * 3);
+    for (dst, chunk) in out.iter_mut().zip(flat.chunks_exact(3)) {
+        dst.x = chunk[0];
+        dst.y = chunk[1];
+        dst.z = chunk[2];
     }
 }
 
@@ -653,16 +670,16 @@ impl SCF for SCFSpin {
             }
         }
 
+        let force_vnl_local_flat = flatten_vec3(&force_vnl_local);
+        let mut force_vnl_flat = vec![0.0; force_vnl_local_flat.len()];
         dwmpi::reduce_slice_sum(
-            vector3::as_slice_of_element(&force_vnl_local),
-            vector3::as_mut_slice_of_element(&mut force_vnl),
+            force_vnl_local_flat.as_slice(),
+            force_vnl_flat.as_mut_slice(),
             MPI_COMM_WORLD,
         );
 
-        dwmpi::bcast_slice(
-            vector3::as_mut_slice_of_element(&mut force_vnl),
-            MPI_COMM_WORLD,
-        );
+        dwmpi::bcast_slice(force_vnl_flat.as_mut_slice(), MPI_COMM_WORLD);
+        scatter_vec3(&force_vnl_flat, &mut force_vnl);
 
         let mut force_ewald = ewald.get_force().to_vec();
 

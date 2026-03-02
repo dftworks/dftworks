@@ -1,5 +1,5 @@
 use lattice::Lattice;
-use vector3::*;
+use types::*;
 
 use std::fs::File;
 use std::io::BufRead;

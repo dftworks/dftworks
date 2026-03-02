@@ -17,7 +17,7 @@ use pwbasis::PWBasis;
 use pwdensity::*;
 use symmetry::SymmetryDriver;
 use types::*;
-use vector3::Vector3f64;
+use types::Vector3f64;
 use vnl::VNL;
 
 mod orchestration;

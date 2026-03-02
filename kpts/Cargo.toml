@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 control = { path = "../control" }
-vector3 = { path = "../vector3" }
+types = { path = "../types" }
 crystal = { path = "../crystal" }
 lattice = { path = "../lattice" }
 symmetry = { path = "../symmetry" }

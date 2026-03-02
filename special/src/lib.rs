@@ -5,7 +5,6 @@ use std::error::Error;
 use std::f64::consts;
 use std::fmt;
 use types::*;
-use vector3::*;
 
 pub fn erf(x: f64) -> f64 {
     libm::erf(x)

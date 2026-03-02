@@ -9,7 +9,6 @@ use pspot::PSPot;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::*;
-use vector3::*;
 
 pub fn from_atomic_super_position(
     pspot: &PSPot,

@@ -15,5 +15,4 @@ gvector = { path = "../gvector" }
 matrix = { path = "../matrix" }
 pwdensity = { path = "../pwdensity" }
 special = { path = "../special" }
-vector3 = { path = "../vector3" }
 num-traits = "*"

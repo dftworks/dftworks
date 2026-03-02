@@ -9,7 +9,6 @@ edition = "2018"
 [dependencies]
 control = { path = "../control" }
 types = { path = "../types" }
-vector3 = { path = "../vector3" }
 ndarray = { path = "../ndarray" }
 crystal = { path = "../crystal" }
 dwconsts = { path = "../dwconsts" }

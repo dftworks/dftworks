@@ -16,7 +16,6 @@ use pspot::*;
 use pwbasis::*;
 use pwdensity::*;
 use types::*;
-use vector3::*;
 use std::collections::HashMap;
 
 pub mod symmetry;

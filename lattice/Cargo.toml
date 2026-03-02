@@ -8,6 +8,6 @@ edition = "2018"
 
 [dependencies]
 matrix = { path = "../matrix" }
-vector3 = { path = "../vector3" }
+types = { path = "../types" }
 itertools = "*"
 hdf5 = { package = "hdf5-metno", version = "0.9" }

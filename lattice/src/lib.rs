@@ -1,5 +1,5 @@
 use matrix::*;
-use vector3::*;
+use types::*;
 
 use std::{f64::consts, fmt};
 

@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 num = "*"
+nalgebra = "0.32.6"

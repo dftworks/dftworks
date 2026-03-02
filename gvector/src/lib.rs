@@ -3,7 +3,7 @@
 use itertools::multizip;
 use lattice::Lattice;
 use utility;
-use vector3::{Vector3f64, Vector3i32};
+use types::{Vector3f64, Vector3i32};
 
 #[derive(Debug)]
 pub struct GVector {

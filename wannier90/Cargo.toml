@@ -24,4 +24,3 @@ pwbasis = { path = "../pwbasis" }
 special = { path = "../special" }
 types = { path = "../types" }
 utility = { path = "../utility" }
-vector3 = { path = "../vector3" }

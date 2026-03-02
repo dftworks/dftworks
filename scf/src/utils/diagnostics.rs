@@ -11,7 +11,7 @@ use pwbasis::PWBasis;
 use rgtransform::RGTransform;
 use std::io::Write;
 use types::c64;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 pub fn display_eigen_values(
     verbosity: VerbosityLevel,

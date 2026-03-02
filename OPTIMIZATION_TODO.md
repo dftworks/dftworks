@@ -1321,8 +1321,8 @@ Finish an item only when:
 
 ### E30 - Migrate `vector3` to `nalgebra` and Retire Custom Vector Crate
 **Priority**: P1 (Correctness + maintainability)
-**Status**: In Progress (Phase 1 landed, 2026-03-02)
-**Files**: `vector3/`, `gvector/`, `lattice/`, `crystal/`, `force/`, `ewald/`, `geom/`, `kpts/`, `pwbasis/`, `utility/`, `special/`, `vdw/`, workspace `Cargo.toml`
+**Status**: In Progress (final cleanup in progress, 2026-03-02)
+**Files**: `types/`, `gvector/`, `lattice/`, `crystal/`, `force/`, `ewald/`, `geom/`, `kpts/`, `pwbasis/`, `utility/`, `special/`, `vdw/`, workspace `Cargo.toml`
 
 - Goal: replace project-local `vector3` math types with `nalgebra` `Vector3` equivalents, then remove `vector3` crate.
 - Rationale:
@@ -1379,12 +1379,71 @@ Finish an item only when:
 - [x] Migrated existing callsites from custom methods to nalgebra API (`dot`, `cross`, `norm`, constructor literals)
 - [x] Replaced vector `.to_vec()` usages with `.as_slice().to_vec()` where needed
 - [x] Workspace compiles with `cargo check --workspace`
-- [ ] Run Docker physics regression gates and record parity deltas
-- [ ] Remove/replace remaining `as_slice_of_element` unsafe bridge with fully safe adapters
-- [ ] Retire `vector3` crate from workspace members and dependencies
+- [x] Ran Docker phase12 regression gate (`scripts/run_phase12_regression.sh` with `FORCE_BUILD=1`) and confirmed tolerance pass
+- [x] Removed/replaced remaining `as_slice_of_element` unsafe bridge usage with safe flatten/scatter adapters
+- [x] Retired `vector3` crate from workspace members and dependencies; vector aliases now live in `types`
 
 **Acceptance Criteria**
 - No layout-dependent `unsafe` remains in vector math access paths.
 - All current `vector3` callsites compile against nalgebra types (directly or via temporary compatibility alias).
 - Phase12 regression and spin/MPI parity gates pass after final cutover.
 - `vector3` crate is removed from workspace (or reduced to a zero-unsafe compatibility shim with deprecation plan and sunset date).
+
+
+### E31 - Replace `matrix` Core with `nalgebra` and Keep Only Domain-Specific Wrappers
+**Priority**: P1/P2 (Maintainability + numerical safety)
+**Status**: Open
+**Files**: `matrix/`, `linalg/`, `kscf/`, `eigensolver/`, `stress/`, `force/`, `dfttypes/`, `workflow/`
+
+- Goal: migrate matrix math/storage responsibilities to nalgebra, then reduce `matrix` crate to project-specific adapters only (I/O, checkpoints, compatibility helpers).
+- Rationale:
+  - remove duplicated linear algebra implementations
+  - standardize numerical behavior and APIs across crates
+  - reduce maintenance burden of custom indexing/ops code
+
+**Phase 0 - Inventory and API Freeze**
+- Catalog `matrix` APIs currently used by downstream crates:
+  - construction (`new`, shape helpers, identity/zeros)
+  - indexing and slicing patterns
+  - arithmetic ops and linear solves/inverse/pseudo-inverse
+  - file/HDF5 serialization hooks
+- Mark external-facing APIs into:
+  - keep (domain-specific wrappers)
+  - migrate (pure algebra API)
+  - deprecate (legacy compatibility methods)
+
+**Phase 1 - Introduce nalgebra-Backed Internal Representation**
+- Switch `matrix::Matrix<T>` storage internals to nalgebra-owned buffers (`DMatrix<T>` or static matrices where dimensions are fixed).
+- Preserve existing public API signatures initially to minimize downstream churn.
+- Add strict shape checks and convert panic-prone paths to `Result` where practical.
+
+**Phase 2 - Migrate Call Sites to Native nalgebra APIs**
+- Migrate hot and algebra-heavy call sites first (`linalg`, `eigensolver`, `kscf`, `stress`):
+  - use nalgebra decomposition/solve paths directly
+  - replace custom dot/matmul helper chains with nalgebra operations
+- Keep `matrix` wrapper only where project-specific semantics are required.
+
+**Phase 3 - Remove Duplicated Algebra Surface**
+- Deprecate/remove duplicated methods in `matrix` that are thin wrappers over nalgebra (manual inverse/pinv adapters, ad-hoc arithmetic helpers, etc.).
+- Keep only:
+  - project-specific HDF5/checkpoint encoding helpers
+  - compatibility constructors/parsers needed by control/workflow layers
+  - explicit conversion glue (`from_nalgebra`, `into_nalgebra`) where still needed
+
+**Phase 4 - Final Simplification**
+- Decide final structure:
+  - either retain `matrix` as a thin domain crate, or
+  - fully inline remaining wrappers into `dfttypes`/I/O modules and retire `matrix`.
+- Remove dead compatibility code and update developer docs with the new matrix policy.
+
+**Validation Gates**
+- `cargo check --workspace` and `cargo test --workspace` pass at each phase checkpoint.
+- Numerical parity checks for representative kernels (eigensolver convergence, stress tensor, force assembly) remain within documented tolerances.
+- Docker correctness gate passes: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
+- If force/stress/spin paths are touched, run `scripts/run_spin_mpi_parity.sh`.
+
+**Acceptance Criteria**
+- Algebra-heavy runtime paths use nalgebra directly or via zero-overhead wrappers.
+- No duplicated custom linear algebra implementation remains for operations already covered by nalgebra.
+- Project-specific `matrix` code is limited to domain adapters (I/O/checkpoint/compat), with clear boundaries.
+- Regression and parity gates remain green after final cutover.

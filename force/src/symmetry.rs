@@ -4,7 +4,7 @@ use control::Control;
 use crystal::Crystal;
 use lattice::Lattice;
 use symmetry::SymmetryDriver;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 fn transpose_i32_3x3(m: &[[i32; 3]; 3]) -> [[i32; 3]; 3] {
     let mut out = [[0; 3]; 3];

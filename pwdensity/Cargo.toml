@@ -9,4 +9,3 @@ edition = "2018"
 [dependencies]
 types = { path = "../types" }
 gvector = { path = "../gvector" }
-vector3 = { path = "../vector3" }

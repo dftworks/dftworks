@@ -26,7 +26,7 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
 use types::*;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 // Unified SCF driver interface.
 //

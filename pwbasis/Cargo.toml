@@ -10,5 +10,5 @@ edition = "2018"
 lattice = { path = "../lattice" }
 gvector = { path = "../gvector" }
 utility = { path = "../utility" }
-vector3 = { path = "../vector3" }
+types = { path = "../types" }
 hdf5 = { package = "hdf5-metno", version = "0.9" }

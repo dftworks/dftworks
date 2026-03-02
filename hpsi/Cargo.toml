@@ -13,7 +13,6 @@ utility = { path = "../utility" }
 types = { path = "../types" }
 itertools = "*"
 atompsp = { path = "../atompsp" }
-vector3 = { path = "../vector3" }
 pwbasis = { path = "../pwbasis" }
 gvector = { path = "../gvector" }
 dwconsts = { path = "../dwconsts" }

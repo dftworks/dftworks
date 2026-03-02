@@ -19,7 +19,7 @@ use smearing;
 use smearing::Smearing;
 use types::c64;
 use utility;
-use vector3::*;
+use types::*;
 use vnl::VNL;
 
 use itertools::multizip;

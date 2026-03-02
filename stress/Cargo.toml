@@ -22,7 +22,6 @@ pwbasis = { path = "../pwbasis" }
 pwdensity = { path = "../pwdensity" }
 types = { path = "../types" }
 symmetry = { path = "../symmetry" }
-vector3 = { path = "../vector3" }
 vloc = { path = "../vloc" }
 vdw = { path = "../vdw" }
 nlcc = { path = "../nlcc" }

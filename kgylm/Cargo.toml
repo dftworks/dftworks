@@ -11,5 +11,5 @@ dwconsts = { path = "../dwconsts" }
 gvector = { path = "../gvector" }
 pwbasis = { path = "../pwbasis" }
 special = { path = "../special" }
-vector3 = { path = "../vector3" }
+types = { path = "../types" }
 utility = { path = "../utility" }

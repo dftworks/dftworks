@@ -9,7 +9,7 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use stress;
 use types::c64;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::path::PathBuf;

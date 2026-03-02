@@ -6,7 +6,6 @@ use ndarray::*;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use std::f64::consts;
 use types::*;
-use vector3::*;
 
 const ZERO_C64: c64 = c64 { re: 0.0, im: 0.0 };
 

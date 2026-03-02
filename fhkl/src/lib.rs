@@ -1,7 +1,7 @@
 use dwconsts::*;
 use num_traits::Zero;
 use types::c64;
-use vector3::*;
+use types::*;
 
 pub fn compute_structure_factor(
     miller: &[Vector3i32],

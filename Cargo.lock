@@ -200,7 +200,7 @@ dependencies = [
  "lattice",
  "matrix",
  "pspot",
- "vector3",
+ "types",
 ]
 
 [[package]]
@@ -230,7 +230,6 @@ dependencies = [
  "symmetry",
  "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -314,7 +313,6 @@ dependencies = [
  "pwdensity",
  "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -348,7 +346,6 @@ dependencies = [
  "special",
  "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -379,7 +376,6 @@ dependencies = [
  "num-traits",
  "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -412,7 +408,6 @@ dependencies = [
  "types",
  "utility",
  "vdw",
- "vector3",
  "vloc",
 ]
 
@@ -426,7 +421,7 @@ dependencies = [
  "matrix",
  "optimization",
  "stress",
- "vector3",
+ "types",
 ]
 
 [[package]]
@@ -447,8 +442,8 @@ dependencies = [
  "dwconsts",
  "itertools",
  "lattice",
+ "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -538,7 +533,6 @@ dependencies = [
  "rgtransform",
  "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -590,8 +584,8 @@ dependencies = [
  "gvector",
  "pwbasis",
  "special",
+ "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -602,7 +596,7 @@ dependencies = [
  "crystal",
  "lattice",
  "symmetry",
- "vector3",
+ "types",
 ]
 
 [[package]]
@@ -641,7 +635,6 @@ dependencies = [
  "special",
  "types",
  "utility",
- "vector3",
  "vnl",
 ]
 
@@ -659,7 +652,7 @@ dependencies = [
  "hdf5-metno",
  "itertools",
  "matrix",
- "vector3",
+ "types",
 ]
 
 [[package]]
@@ -835,7 +828,6 @@ dependencies = [
  "special",
  "symmetry",
  "types",
- "vector3",
 ]
 
 [[package]]
@@ -1057,7 +1049,6 @@ dependencies = [
  "stress",
  "symmetry",
  "types",
- "vector3",
  "vnl",
  "wannier90",
  "xc",
@@ -1070,8 +1061,8 @@ dependencies = [
  "gvector",
  "hdf5-metno",
  "lattice",
+ "types",
  "utility",
- "vector3",
 ]
 
 [[package]]
@@ -1080,7 +1071,6 @@ version = "0.1.0"
 dependencies = [
  "gvector",
  "types",
- "vector3",
 ]
 
 [[package]]
@@ -1255,7 +1245,6 @@ dependencies = [
  "types",
  "utility",
  "vdw",
- "vector3",
  "vloc",
  "vnl",
  "xc",
@@ -1331,7 +1320,6 @@ dependencies = [
  "dwconsts",
  "libm",
  "types",
- "vector3",
 ]
 
 [[package]]
@@ -1362,7 +1350,6 @@ dependencies = [
  "types",
  "utility",
  "vdw",
- "vector3",
  "vloc",
 ]
 
@@ -1443,6 +1430,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 name = "types"
 version = "0.1.0"
 dependencies = [
+ "nalgebra",
  "num",
 ]
 
@@ -1467,7 +1455,6 @@ dependencies = [
  "ndarray 0.1.0",
  "rand",
  "types",
- "vector3",
 ]
 
 [[package]]
@@ -1475,15 +1462,6 @@ name = "vdw"
 version = "0.1.0"
 dependencies = [
  "crystal",
- "types",
- "vector3",
-]
-
-[[package]]
-name = "vector3"
-version = "0.1.0"
-dependencies = [
- "nalgebra",
  "types",
 ]
 
@@ -1505,7 +1483,6 @@ dependencies = [
  "rgtransform",
  "special",
  "types",
- "vector3",
 ]
 
 [[package]]
@@ -1544,7 +1521,6 @@ dependencies = [
  "special",
  "types",
  "utility",
- "vector3",
 ]
 
 [[package]]

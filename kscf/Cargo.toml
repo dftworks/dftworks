@@ -13,7 +13,6 @@ crystal = { path = "../crystal" }
 dwconsts = { path = "../dwconsts" }
 fftgrid = { path = "../fftgrid" }
 gvector = { path = "../gvector" }
-vector3 = { path = "../vector3" }
 kgylm = { path = "../kgylm" }
 kpts = { path = "../kpts" }
 lattice = { path = "../lattice" }

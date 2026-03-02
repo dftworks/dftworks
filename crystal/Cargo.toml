@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 dwconsts = { path = "../dwconsts" }
-vector3 = { path = "../vector3" }
+types = { path = "../types" }
 lattice = { path = "../lattice" }
 itertools = "*"
 pspot = { path = "../pspot" }

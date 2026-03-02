@@ -25,7 +25,7 @@
 //! ```
 
 use crystal::Crystal;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 mod d3_params;
 use d3_params::{get_atomic_number, get_c6_coefficient, get_r0};

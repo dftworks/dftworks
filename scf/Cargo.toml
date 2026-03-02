@@ -28,7 +28,6 @@ vnl = { path = "../vnl" }
 mixing = { path = "../mixing" }
 utility = { path = "../utility" }
 atompsp = { path = "../atompsp" }
-vector3 = { path = "../vector3" }
 fhkl = { path = "../fhkl" }
 kscf = { path = "../kscf" }
 matrix = { path = "../matrix" }

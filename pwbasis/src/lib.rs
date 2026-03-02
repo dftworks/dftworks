@@ -1,7 +1,7 @@
 #![allow(warnings)]
 use gvector::GVector;
 use utility;
-use vector3::Vector3f64;
+use types::Vector3f64;
 
 /// A plane wave basis set for a specific k-point
 ///
