@@ -10,7 +10,6 @@ build = "build.rs"
 [dependencies]
 types = { path = "../types" }
 dwconsts = { path = "../dwconsts" }
-matrix = { path = "../matrix" }
 crystal = { path = "../crystal" }
 control = { path = "../control" }
 kpts = { path = "../kpts" }
@@ -33,7 +32,6 @@ lattice = { path = "../lattice" }
 pwbasis = { path = "../pwbasis" }
 vnl = { path = "../vnl" }
 kscf = { path = "../kscf" }
-linalg = { path = "../linalg" }
 dfttypes = { path = "../dfttypes" }
 wannier90 = { path = "../wannier90" }
 num-traits = "*"

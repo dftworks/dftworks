@@ -1,7 +1,7 @@
 use control::Control;
 use dfttypes::{VKEigenVector, VKSCF};
 use kscf::KSCF;
-use matrix::Matrix;
+use types::Matrix;
 use mpi_sys::MPI_COMM_WORLD;
 use types::c64;
 

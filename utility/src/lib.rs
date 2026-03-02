@@ -1,7 +1,7 @@
 #![allow(warnings)]
 
 use itertools::multizip;
-use matrix::*;
+use types::*;
 use ndarray::*;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use std::f64::consts;

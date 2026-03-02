@@ -8,9 +8,7 @@ edition = "2018"
 
 [dependencies]
 types = { path = "../types" }
-matrix = { path = "../matrix" }
 dwconsts = { path = "../dwconsts" }
-linalg = { path = "../linalg" }
 utility = { path = "../utility" }
 num-traits = "*"
 control = { path = "../control" }

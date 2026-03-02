@@ -20,7 +20,6 @@ fhkl = { path = "../fhkl" }
 integral = { path = "../integral" }
 itertools = "*"
 kscf = { path = "../kscf" }
-matrix = { path = "../matrix" }
 fftgrid = { path = "../fftgrid" }
 special = { path = "../special" }
 symmetry = { path = "../symmetry" }

@@ -3,11 +3,12 @@
 use crate::EigenSolver;
 use control::*;
 use dwconsts::*;
-use matrix::*;
+use nalgebra::linalg::SymmetricEigen;
 use nalgebra::DVector;
 use nalgebra::Matrix2;
 use num_traits::identities::Zero;
 use types::c64;
+use types::*;
 use utility;
 
 pub struct EigenSolverPCG {
@@ -382,7 +383,9 @@ fn test_sparse_solver_pcg() {
 
     println!("eigenvalues converged = {}, niter = {}", nconv, niter);
 
-    let (es, _ev) = linalg::eigh(m.as_dmatrix());
+    let se = SymmetricEigen::new(m.as_dmatrix().clone());
+    let mut es = se.eigenvalues.as_slice().to_vec();
+    es.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     println!(" pcg \t\t eigh");
 

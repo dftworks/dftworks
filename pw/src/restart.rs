@@ -4,7 +4,7 @@ use control::{Control, SpinScheme};
 use dfttypes::*;
 use gvector::GVector;
 use kpts_distribution::KPointDomain;
-use matrix::Matrix;
+use types::Matrix;
 use ndarray::Array3;
 use std::path::Path;
 use types::c64;

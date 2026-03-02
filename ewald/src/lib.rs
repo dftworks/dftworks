@@ -3,7 +3,7 @@
 use crystal::*;
 use dwconsts::*;
 use gvector::*;
-use matrix::*;
+use types::*;
 use num_traits::identities::Zero;
 use pwdensity::*;
 use special;

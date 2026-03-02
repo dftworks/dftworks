@@ -1,7 +1,7 @@
 use control::Control;
 use dfttypes::*;
 use dwconsts::*;
-use matrix::Matrix;
+use types::Matrix;
 use types::Vector3f64;
 
 pub(crate) fn persist_outputs(

@@ -1,6 +1,6 @@
 use crate::types::MeshTopology;
 use gvector::GVector;
-use matrix::Matrix;
+use types::Matrix;
 use pwbasis::PWBasis;
 use std::collections::HashMap;
 use std::fs::File;

@@ -9,7 +9,7 @@ use itertools::multizip;
 use kgylm::KGYLM;
 use kscf::*;
 use lattice::*;
-use matrix::*;
+use types::*;
 use ndarray::*;
 use nalgebra::Matrix3;
 use num_traits::identities::Zero;

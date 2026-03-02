@@ -11,7 +11,7 @@ use ewald::Ewald;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
-use matrix::Matrix;
+use types::Matrix;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;

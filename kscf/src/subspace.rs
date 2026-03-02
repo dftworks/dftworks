@@ -1,6 +1,7 @@
 use dwconsts::*;
-use matrix::Matrix;
+use nalgebra::linalg::SymmetricEigen;
 use nalgebra::DMatrix;
+use types::Matrix;
 use num_traits::identities::Zero;
 use types::c64;
 
@@ -26,7 +27,24 @@ pub fn rotate_wfc(
         }
     }
 
-    let (evals, evs) = linalg::eigh(sbh.as_dmatrix());
+    let se = SymmetricEigen::new(sbh.as_dmatrix().clone());
+    let mut evals = se.eigenvalues.as_slice().to_vec();
+    let mut evs = se.eigenvectors;
+    let mut idx: Vec<usize> = (0..evals.len()).collect();
+    idx.sort_by(|&i, &j| {
+        evals[i]
+            .partial_cmp(&evals[j])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if !idx.iter().enumerate().all(|(i, &j)| i == j) {
+        let evals_old = evals.clone();
+        let evs_old = evs.clone();
+        for (dst, &src) in idx.iter().enumerate() {
+            evals[dst] = evals_old[src];
+            let col = evs_old.column(src).into_owned();
+            evs.set_column(dst, &col);
+        }
+    }
 
     eval_out[..nbnd].copy_from_slice(&evals[..nbnd]);
     let rotated: DMatrix<c64> = evc_in.as_dmatrix() * &evs;

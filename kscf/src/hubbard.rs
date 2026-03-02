@@ -3,7 +3,7 @@ use crystal::Crystal;
 use dwconsts::*;
 use gvector::GVector;
 use kgylm::KGYLM;
-use matrix::Matrix;
+use types::Matrix;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use types::c64;

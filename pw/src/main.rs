@@ -8,7 +8,7 @@ use gvector::GVector;
 use kpts::KPTS;
 use kpts_distribution::{KPointDomain, KPointScheduleMode, KPointSchedulePlan};
 use kscf::KSCF;
-use matrix::*;
+use types::*;
 use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::identities::Zero;

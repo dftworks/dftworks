@@ -1,6 +1,4 @@
 use crate::Matrix;
-
-use dwconsts::*;
 use std::ops::Mul;
 
 impl Mul<f64> for Matrix<f64> {
@@ -51,14 +49,13 @@ impl Matrix<f64> {
     pub fn inv(&mut self) {
         assert_eq!(self.nrow(), self.ncol(), "Matrix::inv requires a square matrix");
 
-        if let Some(inv) = self.data.clone().try_inverse() {
-            self.data = inv;
+        if let Some(inv) = self.as_dmatrix().clone().try_inverse() {
+            self.as_dmatrix_mut().copy_from(&inv);
         } else {
             self.pinv();
         }
     }
 
-    /// https://software.intel.com/content/www/us/en/develop/articles/implement-pseudoinverse-of-a-matrix-by-intel-mkl.html
     pub fn pinv(&mut self) {
         assert_eq!(
             self.nrow(),
@@ -67,25 +64,22 @@ impl Matrix<f64> {
         );
 
         let pinv = self
-            .data
+            .as_dmatrix()
             .clone()
             .svd(true, true)
-            .pseudo_inverse(EPS30)
+            .pseudo_inverse(1.0e-30)
             .expect("nalgebra SVD pseudo-inverse failed");
 
-        self.data = pinv;
+        self.as_dmatrix_mut().copy_from(&pinv);
     }
 
-    /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.
     pub fn save_hdf5(&self, group: &mut hdf5::Group) {
-        // Write nrow, ncol
         let _dataset_nrow = group
             .new_dataset_builder()
             .with_data(&[self.nrow(), self.ncol()])
             .create("shape")
             .unwrap();
 
-        // Write data
         let _dataset_real = group
             .new_dataset_builder()
             .with_data(self.as_slice())
@@ -93,7 +87,6 @@ impl Matrix<f64> {
             .unwrap();
     }
 
-    /// Fallible HDF5 loader used by restart/checkpoint paths.
     pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
         let shape_ds = group
             .dataset("shape")
@@ -130,7 +123,6 @@ impl Matrix<f64> {
         Ok(Self::from_column_slice(nrow, ncol, &data))
     }
 
-    /// Load the matrix from HDF5 and panic on malformed input.
     pub fn load_hdf5(group: &hdf5::Group) -> Self {
         Self::try_load_hdf5(group).expect("failed to load Matrix<f64> from HDF5")
     }

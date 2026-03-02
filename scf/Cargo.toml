@@ -30,7 +30,6 @@ utility = { path = "../utility" }
 atompsp = { path = "../atompsp" }
 fhkl = { path = "../fhkl" }
 kscf = { path = "../kscf" }
-matrix = { path = "../matrix" }
 fermilevel = { path = "../fermilevel" }
 density = { path = "../density" }
 energy = { path = "../energy" }

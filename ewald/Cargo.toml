@@ -12,7 +12,6 @@ utility = { path = "../utility" }
 crystal = { path = "../crystal" }
 dwconsts = { path = "../dwconsts" }
 gvector = { path = "../gvector" }
-matrix = { path = "../matrix" }
 pwdensity = { path = "../pwdensity" }
 special = { path = "../special" }
 num-traits = "*"

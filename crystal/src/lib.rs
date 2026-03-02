@@ -1,7 +1,7 @@
 use dwconsts::*;
 use itertools::Itertools;
 use lattice::Lattice;
-use matrix::Matrix;
+use types::Matrix;
 use pspot::PSPot;
 use types::*;
 

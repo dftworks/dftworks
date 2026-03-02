@@ -3,7 +3,7 @@ use crystal::Crystal;
 use fftgrid::FFTGrid;
 use force;
 use gvector::GVector;
-use matrix::Matrix;
+use types::Matrix;
 use pspot::PSPot;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;

@@ -1,7 +1,7 @@
 #![allow(warnings)]
 use crystal::Crystal;
 use lattice::Lattice;
-use matrix::*;
+use types::*;
 use types::*;
 
 use optimization::OptimizationDriver;

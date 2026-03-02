@@ -786,6 +786,38 @@ Run these after core engineering tasks (E1, E10, E24, E29) establish a stable fo
 - Combined IR and Raman mode assignment
 - Comparison with experimental vibrational spectroscopy
 
+### F29 - Shift Current (Nonlinear Optical Response)
+**Priority**: FP2
+**Status**: Open
+
+- [ ] Implement second-order optical conductivity (`sigma_abc`) for shift current in non-centrosymmetric systems
+- [ ] Add Berry-connection matrix-element workflow for velocity/position operators
+- [ ] Support dense k-mesh evaluation with symmetry reduction and deterministic MPI/thread reductions
+- [ ] Add frequency-dependent broadening options and polarization-resolved output channels
+- [ ] Validate against reference materials/literature benchmarks (for example, BaTiO3 and GaAs trends)
+- [ ] Integrate optional Wannier-interpolated acceleration path (depends on F11)
+
+**Deliverables**
+- `shift_current_spectrum.dat` with tensor components vs photon energy
+- `shift_current_tensor.json` with static/selected-frequency values and metadata
+- `shift_current_validation.md` with benchmark comparisons and convergence notes
+
+### F30 - Second Harmonic Generation (SHG)
+**Priority**: FP2
+**Status**: Open
+
+- [ ] Implement frequency-dependent second-order susceptibility (`chi^(2)`) for SHG tensors
+- [ ] Support length-gauge and velocity-gauge evaluation paths with gauge-consistency checks
+- [ ] Add polarization-resolved SHG spectra (`sss`, `spp`, `ppp`, crystal-axis tensor components)
+- [ ] Support symmetry-based tensor reduction and automatic zero-component validation
+- [ ] Add convergence workflow for k-mesh, empty bands, and broadening parameters
+- [ ] Validate against reference materials/literature trends (for example, GaAs, LiNbO3, ZnO)
+
+**Deliverables**
+- `shg_spectrum.dat` with `chi^(2)(2w; w, w)` components vs photon energy
+- `shg_tensor.json` with static/selected-frequency tensor values and units
+- `shg_validation.md` with benchmark comparisons and convergence settings
+
 ## Cross-Cutting Rules
 
 Apply to every sprint and feature milestone:
@@ -834,7 +866,7 @@ Finish an item only when:
 
 ### Feature Roadmap (Post-Stabilization)
 - **FP1 (High Priority)**: F1 (EOS), F2 (Elastic), F3 (Phonons), F9 (Convergence), F13 (Geometry Opt), F16 (vdW)
-- **FP2 (Medium Priority)**: F4 (Optical), F6 (NCL), F7 (Symmetry), F8 (HSE), F11 (MLWF), F12 (Magnetic), F14 (NEB), F15 (MD), F17 (Meta-GGA), F22 (GPU), F23 (Band||), F25 (ML), F26 (Mixing)
+- **FP2 (Medium Priority)**: F4 (Optical), F6 (NCL), F7 (Symmetry), F8 (HSE), F11 (MLWF), F12 (Magnetic), F14 (NEB), F15 (MD), F17 (Meta-GGA), F22 (GPU), F23 (Band||), F25 (ML), F26 (Mixing), F29 (Shift Current), F30 (SHG)
 - **FP3 (Advanced)**: F5 (Transport), F18 (Smearing), F19 (cDFT), F20 (TDDFT), F21 (GW), F24 (Solvation), F27 (Core-level), F28 (Raman)
 
 ### Priority Actions for Next Session
@@ -1410,8 +1442,9 @@ Finish an item only when:
 - [x] Migrated `mixing` (`broyden`, `pulay`) linear algebra internals to native `nalgebra::DMatrix` inversion/pseudo-inversion paths.
 - [x] Migrated `optimization::diis` coefficient solve from `Matrix<f64>` to native `nalgebra::DMatrix`.
 - [x] Migrated `eigensolver::pcg::get_alpha` from ad-hoc `Matrix` + `linalg::eigh` workflow to native `nalgebra` 2x2 algebra path.
+- [x] Migrated `linalg::eig/eigh` API to native `nalgebra::DMatrix` input/output and removed direct `matrix` dependency from `linalg`.
 - [x] Reduced duplicated `matrix` API surface by removing unused thin wrappers (`unit`, `action`, `mat_mul`, `sum`) and updating call sites.
-- [x] Retired direct `matrix` dependency from `mixing` and `optimization` crates (matrix-dependent crates reduced from 20 to 18).
+- [x] Retired direct `matrix` dependency from `mixing`, `optimization`, and `linalg` crates (matrix-dependent crates reduced from 20 to 17).
 - [x] Verified workspace compile gate: `cargo check --workspace`.
 - [x] Verified Docker regression gate: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
 - [x] Verified spin/MPI parity gate: `scripts/run_spin_mpi_parity.sh`.

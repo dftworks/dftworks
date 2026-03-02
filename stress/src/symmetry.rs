@@ -3,7 +3,7 @@
 use control::Control;
 use crystal::Crystal;
 use lattice::Lattice;
-use matrix::Matrix;
+use types::Matrix;
 use nalgebra::Matrix3;
 use symmetry::SymmetryDriver;
 

@@ -1,18 +1,17 @@
-#![allow(warnings)]
 // column-major memory layout
 // [i,j] : i + j * nrow
 //   0,0 0,1 0,2        0 2 4
 //   1,0 1,1 1,2        1 3 5
 
+#[path = "matrix_c64.rs"]
 mod matrix_c64;
 pub use matrix_c64::*;
 
+#[path = "matrix_f64.rs"]
 mod matrix_f64;
 pub use matrix_f64::*;
 
-//////////////////////////////////////////
-
-use dwconsts::*;
+use crate::c64;
 use itertools::multizip;
 use nalgebra::DMatrix;
 use std::ops::*;
@@ -20,7 +19,6 @@ use std::{
     fmt,
     fmt::{Debug, Display},
 };
-use types::c64;
 
 pub trait Dot<RHS = Self> {
     type Output;
@@ -81,7 +79,6 @@ impl<
 
         for i in 0..self.ncol() {
             let fact = rhs[i];
-
             let col = self.get_col(i);
 
             for j in 0..self.nrow() {
@@ -171,7 +168,6 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
     pub fn assign(&mut self, rhs: &Matrix<T>) {
         let src = rhs.as_slice();
         let dst = self.as_mut_slice();
-
         dst[..src.len()].copy_from_slice(src);
     }
 
@@ -234,34 +230,25 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
     pub fn set_col(&mut self, icol: usize, v: &[T]) {
         let n1 = icol * self.nrow();
         let n2 = n1 + self.nrow();
-
         self.as_mut_slice()[n1..n2].copy_from_slice(v);
-
-        // for i in 0..self.nrow {
-        //     self.data[icol * self.nrow + i] = v[i].clone();
-        // }
     }
 
     pub fn get_col(&self, icol: usize) -> &[T] {
         let n1 = icol * self.nrow();
         let n2 = n1 + self.nrow();
-
         &self.as_slice()[n1..n2]
     }
 
     pub fn get_col_to(&self, v: &mut [T], icol: usize) {
         let n1 = icol * self.nrow();
         let n2 = n1 + self.nrow();
-
         let v_src = &self.as_slice()[n1..n2];
-
         v[..v_src.len()].copy_from_slice(v_src);
     }
 
     pub fn get_mut_col(&mut self, icol: usize) -> &mut [T] {
         let n1 = icol * self.nrow();
         let n2 = n1 + self.nrow();
-
         &mut self.as_mut_slice()[n1..n2]
     }
 
@@ -306,69 +293,4 @@ impl<
         }
         write!(f, "")
     }
-}
-
-// TODO: Implement save_hdf5 and load_hdf5 here if the support of complex types in the hdf5 crate is released.
-//       See: https://github.com/aldanor/hdf5-rust/pull/210 and https://github.com/aldanor/hdf5-rust/issues/262
-
-#[test]
-fn test_matrix() {
-    let mut m: Matrix<f64> = Matrix::<f64>::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-    //    ma.set_col(0, &vec![1.0; n]);
-    //    ma.set_col(1, &vec![2.0; n]);
-    //m.output();
-    println!("{}", m);
-    m[[1, 1]] = 8.0;
-    println!("{}", m);
-    println!("{:?}", m.as_slice());
-    let mtrans = m.transpose();
-    println!("{}", mtrans);
-    println!("{:?}", mtrans.as_slice());
-
-    let vin = vec![1.0, 2.0, 3.0];
-    let mut vout = vec![0.0; 2];
-
-    let mv = m.as_dmatrix() * nalgebra::DVector::from_column_slice(vin.as_slice());
-    vout.copy_from_slice(mv.as_slice());
-    println!("m = \n{}", m);
-    println!("vin  = {:?}", vin);
-    println!("vout = {:?}", vout);
-
-    let cm = Matrix::<c64>::from_row_slice(
-        2,
-        2,
-        &[
-            c64 { re: 1.0, im: 0.1 },
-            c64 { re: 2.0, im: 0.01 },
-            c64 { re: 3.0, im: 0.0 },
-            c64 { re: 4.0, im: 0.001 },
-        ],
-    );
-
-    println!("{}", cm);
-    println!("{:?}", cm.adjoint());
-
-    let mut m: Matrix<f64> = Matrix::<f64>::from_row_slice(2, 2, &[1E-2, 0.0, 0.0, 6.0]);
-    let m2 = m.clone();
-    println!("{}", m);
-    m.inv();
-    println!("{}", m);
-    println!("m * minv = \n{}", m.dot(&m2));
-
-    let mut m: Matrix<c64> = Matrix::<c64>::from_row_slice(
-        2,
-        2,
-        &[
-            c64 { re: 0.0, im: 0.1 },
-            c64 { re: 0.01, im: 0.01 },
-            c64 { re: 0.0, im: 0.0 },
-            c64 { re: 6.0, im: 0.0 },
-        ],
-    );
-    let mut m2 = m.clone();
-
-    m2.pinv();
-    println!("pinv = \n{}", m2);
-
-    println!("m * minv = \n{}", m.dot(&m2));
 }

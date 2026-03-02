@@ -2,7 +2,7 @@ use control::Control;
 use control::XcScheme;
 use dwconsts::{EPS20, FOURPI};
 use gvector::GVector;
-use matrix::Matrix;
+use types::Matrix;
 use ndarray::Array3;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;

@@ -16,7 +16,7 @@ use itertools::multizip;
 use kpts::KPTS;
 use kscf::KSCF;
 use lattice::Lattice;
-use matrix::Matrix;
+use types::Matrix;
 use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use num_traits::identities::Zero;

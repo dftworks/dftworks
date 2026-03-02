@@ -8,7 +8,6 @@ edition = "2018"
 
 [dependencies]
 itertools = "*"
-matrix = { path = "../matrix" }
 types = { path = "../types" }
 ndarray = { path = "../ndarray" }
 rand = "0.7.3"

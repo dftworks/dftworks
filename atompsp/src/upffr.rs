@@ -2,7 +2,7 @@
 use crate::AtomPSP;
 
 use dwconsts::*;
-use matrix::*;
+use types::*;
 use utility;
 
 use std::{

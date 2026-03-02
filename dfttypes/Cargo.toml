@@ -8,7 +8,6 @@ edition = "2018"
 
 [dependencies]
 types = { path = "../types" }
-matrix = { path = "../matrix" }
 ndarray = { path = "../ndarray" }
 kscf = { path = "../kscf" }
 pwbasis = { path = "../pwbasis" }

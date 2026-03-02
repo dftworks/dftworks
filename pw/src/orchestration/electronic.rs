@@ -4,7 +4,7 @@ use control::SpinScheme;
 use dfttypes::*;
 use gvector::GVector;
 use kscf::KSCF;
-use matrix::Matrix;
+use types::Matrix;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use types::c64;

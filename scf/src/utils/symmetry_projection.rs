@@ -5,7 +5,7 @@ use crystal::Crystal;
 use dfttypes::*;
 use ewald::Ewald;
 use gvector::GVector;
-use matrix::Matrix;
+use types::Matrix;
 use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use pspot::PSPot;

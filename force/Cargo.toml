@@ -15,7 +15,6 @@ gvector = { path = "../gvector" }
 pspot = { path = "../pspot" }
 kscf = { path = "../kscf" }
 lattice = { path = "../lattice" }
-matrix = { path = "../matrix" }
 pwbasis = { path = "../pwbasis" }
 pwdensity = { path = "../pwdensity" }
 types = { path = "../types" }

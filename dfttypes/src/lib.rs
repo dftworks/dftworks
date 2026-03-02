@@ -1,6 +1,6 @@
 use kscf::*;
 use lattice::*;
-use matrix::*;
+use types::*;
 use ndarray::*;
 use pwbasis::PWBasis;
 use types::*;

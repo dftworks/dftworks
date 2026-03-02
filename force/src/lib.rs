@@ -7,7 +7,7 @@ use gvector::*;
 use kgylm::KGYLM;
 use kscf::*;
 use lattice::*;
-use matrix::*;
+use types::*;
 use num_traits::identities::Zero;
 use pspot::*;
 use pwbasis::*;

@@ -2,7 +2,7 @@
 
 use crate::{CheckpointMeta, VKEigenVector, RHOR};
 use lattice::Lattice;
-use matrix::Matrix;
+use types::Matrix;
 use ndarray::Array3;
 use pwbasis::PWBasis;
 use types::c64;

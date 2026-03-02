@@ -10,7 +10,6 @@ edition = "2018"
 types = { path = "../types" }
 optimization = { path = "../optimization" }
 crystal = { path = "../crystal" }
-matrix = { path = "../matrix" }
 lattice = { path = "../lattice" }
 force = { path = "../force" }
 stress = { path = "../stress" }

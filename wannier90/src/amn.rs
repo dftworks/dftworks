@@ -4,7 +4,7 @@ use dwconsts::TWOPI;
 use gvector::GVector;
 use kgylm::KGYLM;
 use kpts::KPTS;
-use matrix::Matrix;
+use types::Matrix;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use std::collections::HashMap;

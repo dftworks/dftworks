@@ -4,7 +4,7 @@ mod pcg;
 use pcg::*;
 
 use control::*;
-use matrix::Matrix;
+use types::Matrix;
 
 use types::c64;
 

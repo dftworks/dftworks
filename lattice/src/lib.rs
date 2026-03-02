@@ -1,4 +1,4 @@
-use matrix::*;
+use types::*;
 use nalgebra::Matrix3;
 use types::*;
 

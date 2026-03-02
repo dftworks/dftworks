@@ -12,4 +12,3 @@ types = { path = "../types" }
 lattice = { path = "../lattice" }
 itertools = "*"
 pspot = { path = "../pspot" }
-matrix = { path = "../matrix" }

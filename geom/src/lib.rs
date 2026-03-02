@@ -6,7 +6,7 @@ use diis::*;
 
 use crystal::Crystal;
 use lattice::Lattice;
-use matrix::*;
+use types::*;
 use types::*;
 
 pub trait GeomOptimizationDriver {

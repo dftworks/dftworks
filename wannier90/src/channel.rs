@@ -8,7 +8,7 @@ use dfttypes::VKEigenVector;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
-use matrix::Matrix;
+use types::Matrix;
 use pspot::PSPot;
 use std::io;
 use std::path::Path;

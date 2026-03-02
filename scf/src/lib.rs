@@ -18,7 +18,7 @@ use dfttypes::*;
 use ewald::Ewald;
 use gvector::GVector;
 use kpts::KPTS;
-use matrix::Matrix;
+use types::Matrix;
 use ndarray::Array3;
 use pspot::PSPot;
 use pwbasis::PWBasis;

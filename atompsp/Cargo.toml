@@ -10,7 +10,7 @@ edition = "2018"
 ndarray = { path = "../ndarray" }
 utility = { path = "../utility" }
 dwconsts = { path = "../dwconsts" }
-matrix = { path = "../matrix" }
+types = { path = "../types" }
 integral = { path = "../integral" }
 regex = "*"
 xml-rs = "*"
