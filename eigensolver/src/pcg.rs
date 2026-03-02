@@ -382,7 +382,7 @@ fn test_sparse_solver_pcg() {
 
     println!("eigenvalues converged = {}, niter = {}", nconv, niter);
 
-    let (es, _ev) = linalg::eigh(&m);
+    let (es, _ev) = linalg::eigh(m.as_dmatrix());
 
     println!(" pcg \t\t eigh");
 

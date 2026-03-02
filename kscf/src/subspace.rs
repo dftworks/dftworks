@@ -26,9 +26,9 @@ pub fn rotate_wfc(
         }
     }
 
-    let (evals, evs) = linalg::eigh(&sbh);
+    let (evals, evs) = linalg::eigh(sbh.as_dmatrix());
 
     eval_out[..nbnd].copy_from_slice(&evals[..nbnd]);
-    let rotated: DMatrix<c64> = evc_in.as_dmatrix() * evs.as_dmatrix();
+    let rotated: DMatrix<c64> = evc_in.as_dmatrix() * &evs;
     evc_out.as_mut_slice().copy_from_slice(rotated.as_slice());
 }

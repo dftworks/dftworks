@@ -691,7 +691,6 @@ name = "linalg"
 version = "0.1.0"
 dependencies = [
  "lapack_sys",
- "matrix",
  "nalgebra",
  "types",
 ]
