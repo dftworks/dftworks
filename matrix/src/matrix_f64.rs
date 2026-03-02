@@ -1,7 +1,6 @@
 use crate::Matrix;
 
 use dwconsts::*;
-use nalgebra::DMatrix;
 use std::ops::Mul;
 
 impl Mul<f64> for Matrix<f64> {
@@ -10,7 +9,7 @@ impl Mul<f64> for Matrix<f64> {
     fn mul(self, rhs: f64) -> Matrix<f64> {
         let mut mat = self.clone();
 
-        for v in mat.data.iter_mut() {
+        for v in mat.as_mut_slice() {
             *v *= rhs;
         }
 
@@ -50,36 +49,34 @@ impl Matrix<f64> {
     pub fn action(&self, vin: &[f64], vout: &mut [f64]) {
         vout.iter_mut().for_each(|x| *x = 0.0);
 
-        for i in 0..self.ncol {
-            for j in 0..self.nrow {
+        for i in 0..self.ncol() {
+            for j in 0..self.nrow() {
                 vout[j] += self[[j, i]] * vin[i];
             }
         }
     }
 
     pub fn symmetrize(&mut self) {
-        for i in 0..self.ncol {
-            for j in i..self.nrow {
-                let a = self[[j, i]].clone();
-                let b = self[[i, j]].clone();
+        for i in 0..self.ncol() {
+            for j in i..self.nrow() {
+                let a = self[[j, i]];
+                let b = self[[i, j]];
                 self[[i, j]] = (a + b) / 2.0;
             }
         }
 
-        for i in 0..self.ncol {
-            for j in i..self.nrow {
-                self[[j, i]] = self[[i, j]].clone();
+        for i in 0..self.ncol() {
+            for j in i..self.nrow() {
+                self[[j, i]] = self[[i, j]];
             }
         }
     }
 
     pub fn inv(&mut self) {
-        assert_eq!(self.nrow, self.ncol, "Matrix::inv requires a square matrix");
+        assert_eq!(self.nrow(), self.ncol(), "Matrix::inv requires a square matrix");
 
-        let mat = DMatrix::<f64>::from_column_slice(self.nrow, self.ncol, self.as_slice());
-
-        if let Some(inv) = mat.try_inverse() {
-            self.data.copy_from_slice(inv.as_slice());
+        if let Some(inv) = self.data.clone().try_inverse() {
+            self.data = inv;
         } else {
             self.pinv();
         }
@@ -88,21 +85,23 @@ impl Matrix<f64> {
     /// https://software.intel.com/content/www/us/en/develop/articles/implement-pseudoinverse-of-a-matrix-by-intel-mkl.html
     pub fn pinv(&mut self) {
         assert_eq!(
-            self.nrow, self.ncol,
+            self.nrow(),
+            self.ncol(),
             "Matrix::pinv requires a square matrix"
         );
 
-        let mat = DMatrix::<f64>::from_column_slice(self.nrow, self.ncol, self.as_slice());
-        let pinv = mat
+        let pinv = self
+            .data
+            .clone()
             .svd(true, true)
             .pseudo_inverse(EPS30)
             .expect("nalgebra SVD pseudo-inverse failed");
 
-        self.data.copy_from_slice(pinv.as_slice());
+        self.data = pinv;
     }
 
     pub fn sum(&self) -> f64 {
-        return self.data.iter().sum();
+        self.as_slice().iter().sum()
     }
 
     /// Save the matrix to a HDF5 file. The shape (an array [nrow, ncol]), and the real and the imaginary parts of the data are saved in their respective datasets.
@@ -110,14 +109,14 @@ impl Matrix<f64> {
         // Write nrow, ncol
         let _dataset_nrow = group
             .new_dataset_builder()
-            .with_data(&[self.nrow, self.ncol])
+            .with_data(&[self.nrow(), self.ncol()])
             .create("shape")
             .unwrap();
 
         // Write data
         let _dataset_real = group
             .new_dataset_builder()
-            .with_data(&self.data)
+            .with_data(self.as_slice())
             .create("data")
             .unwrap();
     }
@@ -156,7 +155,7 @@ impl Matrix<f64> {
             ));
         }
 
-        Ok(Self { nrow, ncol, data })
+        Ok(Self::from_column_slice(nrow, ncol, &data))
     }
 
     /// Load the matrix from HDF5 and panic on malformed input.

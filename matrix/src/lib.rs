@@ -28,11 +28,17 @@ pub trait Dot<RHS = Self> {
     fn dot(&self, other: &RHS) -> Self::Output;
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Matrix<T> {
-    nrow: usize,
-    ncol: usize,
-    data: Vec<T>,
+    data: DMatrix<T>,
+}
+
+impl<T: nalgebra::Scalar + Default + Clone> Default for Matrix<T> {
+    fn default() -> Self {
+        Matrix {
+            data: DMatrix::<T>::from_element(0, 0, T::default()),
+        }
+    }
 }
 
 impl Dot<Matrix<f64>> for Matrix<f64> {
@@ -40,14 +46,8 @@ impl Dot<Matrix<f64>> for Matrix<f64> {
 
     fn dot(&self, rhs: &Matrix<f64>) -> Self::Output {
         assert!(self.ncol() == rhs.nrow());
-
-        let lhs = DMatrix::<f64>::from_column_slice(self.nrow(), self.ncol(), self.as_slice());
-        let rhs = DMatrix::<f64>::from_column_slice(rhs.nrow(), rhs.ncol(), rhs.as_slice());
-        let prod = lhs * rhs;
-
-        let mut mdot = Matrix::<f64>::new(prod.nrows(), prod.ncols());
-        mdot.as_mut_slice().copy_from_slice(prod.as_slice());
-        mdot
+        let prod = &self.data * &rhs.data;
+        Matrix { data: prod }
     }
 }
 
@@ -56,19 +56,14 @@ impl Dot<Matrix<c64>> for Matrix<c64> {
 
     fn dot(&self, rhs: &Matrix<c64>) -> Self::Output {
         assert!(self.ncol() == rhs.nrow());
-
-        let lhs = DMatrix::<c64>::from_column_slice(self.nrow(), self.ncol(), self.as_slice());
-        let rhs = DMatrix::<c64>::from_column_slice(rhs.nrow(), rhs.ncol(), rhs.as_slice());
-        let prod = lhs * rhs;
-
-        let mut mdot = Matrix::<c64>::new(prod.nrows(), prod.ncols());
-        mdot.as_mut_slice().copy_from_slice(prod.as_slice());
-        mdot
+        let prod = &self.data * &rhs.data;
+        Matrix { data: prod }
     }
 }
 
 impl<
-        T: num_traits::identities::Zero
+        T: nalgebra::Scalar
+            + num_traits::identities::Zero
             + Default
             + Copy
             + Clone
@@ -98,7 +93,9 @@ impl<
     }
 }
 
-impl<T: num_traits::identities::Zero + Default + Copy + Clone + AddAssign> AddAssign for Matrix<T> {
+impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone + AddAssign>
+    AddAssign for Matrix<T>
+{
     fn add_assign(&mut self, rhs: Matrix<T>) {
         for (s, d) in multizip((rhs.as_slice().iter(), self.as_mut_slice().iter_mut())) {
             *d += *s;
@@ -107,7 +104,13 @@ impl<T: num_traits::identities::Zero + Default + Copy + Clone + AddAssign> AddAs
 }
 
 impl<
-        T: num_traits::identities::Zero + Default + Copy + Clone + Add + std::ops::Add<Output = T>,
+        T: nalgebra::Scalar
+            + num_traits::identities::Zero
+            + Default
+            + Copy
+            + Clone
+            + Add
+            + std::ops::Add<Output = T>,
     > Add for Matrix<T>
 {
     type Output = Self;
@@ -130,7 +133,13 @@ impl<
 }
 
 impl<
-        T: num_traits::identities::Zero + Default + Copy + Clone + Sub + std::ops::Sub<Output = T>,
+        T: nalgebra::Scalar
+            + num_traits::identities::Zero
+            + Default
+            + Copy
+            + Clone
+            + Sub
+            + std::ops::Sub<Output = T>,
     > Sub for Matrix<T>
 {
     type Output = Self;
@@ -152,12 +161,10 @@ impl<
     }
 }
 
-impl<T: num_traits::identities::Zero + Default + Copy + Clone> Matrix<T> {
+impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone> Matrix<T> {
     pub fn new(nrow: usize, ncol: usize) -> Matrix<T> {
         Matrix {
-            nrow,
-            ncol,
-            data: vec![T::default(); nrow * ncol],
+            data: DMatrix::<T>::from_element(nrow, ncol, T::default()),
         }
     }
 
@@ -169,19 +176,19 @@ impl<T: num_traits::identities::Zero + Default + Copy + Clone> Matrix<T> {
     }
 
     pub fn nrow(&self) -> usize {
-        self.nrow
+        self.data.nrows()
     }
 
     pub fn ncol(&self) -> usize {
-        self.ncol
+        self.data.ncols()
     }
 
     pub fn as_slice(&self) -> &[T] {
-        &self.data
+        self.data.as_slice()
     }
 
     pub fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self.data
+        self.data.as_mut_slice()
     }
 
     pub fn set_zeros(&mut self) {
@@ -189,15 +196,15 @@ impl<T: num_traits::identities::Zero + Default + Copy + Clone> Matrix<T> {
     }
 
     pub fn from_row_slice(nrow: usize, ncol: usize, s: &[T]) -> Matrix<T> {
-        let mut data: Vec<T> = vec![T::default(); nrow * ncol];
-        let mut n = 0;
-        for i in 0..nrow {
-            for j in 0..ncol {
-                data[i + j * nrow] = s[n];
-                n += 1;
-            }
+        Matrix {
+            data: DMatrix::<T>::from_row_slice(nrow, ncol, s),
         }
-        Matrix { nrow, ncol, data }
+    }
+
+    pub fn from_column_slice(nrow: usize, ncol: usize, s: &[T]) -> Matrix<T> {
+        Matrix {
+            data: DMatrix::<T>::from_column_slice(nrow, ncol, s),
+        }
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -209,10 +216,10 @@ impl<T: num_traits::identities::Zero + Default + Copy + Clone> Matrix<T> {
     }
 
     pub fn set_col(&mut self, icol: usize, v: &[T]) {
-        let n1 = icol * self.nrow;
-        let n2 = n1 + self.nrow;
+        let n1 = icol * self.nrow();
+        let n2 = n1 + self.nrow();
 
-        self.data[n1..n2].copy_from_slice(v);
+        self.as_mut_slice()[n1..n2].copy_from_slice(v);
 
         // for i in 0..self.nrow {
         //     self.data[icol * self.nrow + i] = v[i].clone();
@@ -220,39 +227,31 @@ impl<T: num_traits::identities::Zero + Default + Copy + Clone> Matrix<T> {
     }
 
     pub fn get_col(&self, icol: usize) -> &[T] {
-        let n1 = icol * self.nrow;
-        let n2 = n1 + self.nrow;
+        let n1 = icol * self.nrow();
+        let n2 = n1 + self.nrow();
 
-        &self.data[n1..n2]
+        &self.as_slice()[n1..n2]
     }
 
     pub fn get_col_to(&self, v: &mut [T], icol: usize) {
-        let n1 = icol * self.nrow;
-        let n2 = n1 + self.nrow;
+        let n1 = icol * self.nrow();
+        let n2 = n1 + self.nrow();
 
-        let v_src = &self.data[n1..n2];
+        let v_src = &self.as_slice()[n1..n2];
 
         v[..v_src.len()].copy_from_slice(v_src);
     }
 
     pub fn get_mut_col(&mut self, icol: usize) -> &mut [T] {
-        let n1 = icol * self.nrow;
-        let n2 = n1 + self.nrow;
+        let n1 = icol * self.nrow();
+        let n2 = n1 + self.nrow();
 
-        &mut self.data[n1..n2]
+        &mut self.as_mut_slice()[n1..n2]
     }
 
     pub fn transpose(&self) -> Matrix<T> {
-        let mut data = Vec::with_capacity(self.nrow * self.ncol);
-        for i in 0..self.nrow {
-            for j in 0..self.ncol {
-                data.push(self[[i, j]].clone())
-            }
-        }
         Matrix {
-            nrow: self.ncol,
-            ncol: self.nrow,
-            data,
+            data: self.data.transpose(),
         }
     }
 }
@@ -261,21 +260,30 @@ impl<T> std::ops::Index<[usize; 2]> for Matrix<T> {
     type Output = T;
 
     fn index(&self, idx: [usize; 2]) -> &T {
-        &self.data[idx[0] + idx[1] * self.nrow]
+        &self.data[(idx[0], idx[1])]
     }
 }
 
 impl<T> std::ops::IndexMut<[usize; 2]> for Matrix<T> {
     fn index_mut(&mut self, idx: [usize; 2]) -> &mut Self::Output {
-        &mut self.data[idx[0] + idx[1] * self.nrow]
+        &mut self.data[(idx[0], idx[1])]
     }
 }
 
-impl<T: Debug + Display> fmt::Display for Matrix<T> {
+impl<
+        T: Debug
+            + Display
+            + nalgebra::Scalar
+            + num_traits::identities::Zero
+            + Default
+            + Copy
+            + Clone,
+    > fmt::Display for Matrix<T>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for i in 0..self.nrow {
+        for i in 0..self.nrow() {
             write!(f, " | ")?;
-            for j in 0..self.ncol {
+            for j in 0..self.ncol() {
                 write!(f, "{:+8.3} ", self[[i, j]])?;
             }
             writeln!(f, "|")?;

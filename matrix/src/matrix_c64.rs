@@ -2,7 +2,6 @@ use crate::{Dot, Matrix};
 use dwconsts::*;
 
 use itertools::multizip;
-use nalgebra::DMatrix;
 use num_traits::Zero;
 use std::ops::AddAssign;
 use std::ops::Mul;
@@ -24,28 +23,24 @@ impl Matrix<c64> {
     }
 
     pub fn adjoint(&self) -> Matrix<c64> {
-        let mut data = Vec::with_capacity(self.nrow * self.ncol);
-        for i in 0..self.nrow {
-            for j in 0..self.ncol {
-                data.push(self[[i, j]].clone().conj())
+        let mut out = Matrix::<c64>::new(self.ncol(), self.nrow());
+        for i in 0..self.nrow() {
+            for j in 0..self.ncol() {
+                out[[j, i]] = self[[i, j]].conj();
             }
         }
-        Matrix {
-            nrow: self.ncol,
-            ncol: self.nrow,
-            data,
-        }
+        out
     }
 
     pub fn sum(&self) -> c64 {
-        return self.data.iter().sum();
+        self.as_slice().iter().copied().sum()
     }
 
     pub fn action(&self, vin: &[c64], vout: &mut [c64]) {
         vout.iter_mut().for_each(|x| *x = c64::zero());
 
-        for i in 0..self.ncol {
-            for j in 0..self.nrow {
+        for i in 0..self.ncol() {
+            for j in 0..self.nrow() {
                 vout[j] += self[[j, i]] * vin[i];
             }
         }
@@ -64,12 +59,10 @@ impl Matrix<c64> {
     // }
 
     pub fn inv(&mut self) {
-        assert_eq!(self.nrow, self.ncol, "Matrix::inv requires a square matrix");
+        assert_eq!(self.nrow(), self.ncol(), "Matrix::inv requires a square matrix");
 
-        let mat = DMatrix::<c64>::from_column_slice(self.nrow, self.ncol, self.as_slice());
-
-        if let Some(inv) = mat.try_inverse() {
-            self.data.copy_from_slice(inv.as_slice());
+        if let Some(inv) = self.data.clone().try_inverse() {
+            self.data = inv;
         } else {
             self.pinv();
         }
@@ -77,17 +70,19 @@ impl Matrix<c64> {
 
     pub fn pinv(&mut self) {
         assert_eq!(
-            self.nrow, self.ncol,
+            self.nrow(),
+            self.ncol(),
             "Matrix::pinv requires a square matrix"
         );
 
-        let mat = DMatrix::<c64>::from_column_slice(self.nrow, self.ncol, self.as_slice());
-        let pinv = mat
+        let pinv = self
+            .data
+            .clone()
             .svd(true, true)
             .pseudo_inverse(EPS30)
             .expect("nalgebra SVD pseudo-inverse failed");
 
-        self.data.copy_from_slice(pinv.as_slice());
+        self.data = pinv;
     }
 
     pub fn mat_mul(&self, rhs: &Matrix<c64>) -> Matrix<c64> {
@@ -99,12 +94,12 @@ impl Matrix<c64> {
         // Write nrow, ncol
         let _dataset_nrow = group
             .new_dataset_builder()
-            .with_data(&[self.nrow, self.ncol])
+            .with_data(&[self.nrow(), self.ncol()])
             .create("shape")
             .unwrap();
 
-        let real_data: Vec<f64> = self.data.iter().map(|&c| c.re.into()).collect();
-        let imag_data: Vec<f64> = self.data.iter().map(|&c| c.im.into()).collect();
+        let real_data: Vec<f64> = self.as_slice().iter().map(|&c| c.re).collect();
+        let imag_data: Vec<f64> = self.as_slice().iter().map(|&c| c.im).collect();
 
         // Write real part
         let _dataset_real = group
@@ -173,9 +168,9 @@ impl Matrix<c64> {
             .iter()
             .zip(imag_data)
             .map(|(&r, i)| c64::new(r, i))
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(Self { nrow, ncol, data })
+        Ok(Self::from_column_slice(nrow, ncol, &data))
     }
 
     /// Load the matrix from HDF5 and panic on malformed input.
@@ -190,7 +185,7 @@ impl Mul<f64> for Matrix<c64> {
     fn mul(self, rhs: f64) -> Matrix<c64> {
         let mut mat = self.clone();
 
-        for v in mat.data.iter_mut() {
+        for v in mat.as_mut_slice() {
             *v *= rhs;
         }
 

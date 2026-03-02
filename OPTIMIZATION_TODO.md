@@ -1392,7 +1392,7 @@ Finish an item only when:
 
 ### E31 - Replace `matrix` Core with `nalgebra` and Keep Only Domain-Specific Wrappers
 **Priority**: P1/P2 (Maintainability + numerical safety)
-**Status**: Open
+**Status**: In Progress (Phase 1 complete)
 **Files**: `matrix/`, `linalg/`, `kscf/`, `eigensolver/`, `stress/`, `force/`, `dfttypes/`, `workflow/`
 
 - Goal: migrate matrix math/storage responsibilities to nalgebra, then reduce `matrix` crate to project-specific adapters only (I/O, checkpoints, compatibility helpers).
@@ -1400,6 +1400,14 @@ Finish an item only when:
   - remove duplicated linear algebra implementations
   - standardize numerical behavior and APIs across crates
   - reduce maintenance burden of custom indexing/ops code
+
+**Current Progress**
+- [x] Migrated `matrix::Matrix<T>` core storage from custom `{nrow, ncol, Vec<T>}` to `nalgebra::DMatrix<T>` while preserving external API surface.
+- [x] Updated `matrix_f64` and `matrix_c64` wrappers (`inv`, `pinv`, multiply, transpose/adjoint paths, HDF5 adapters) to operate on nalgebra-backed storage.
+- [x] Verified workspace compile gate: `cargo check --workspace`.
+- [x] Verified Docker regression gate: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
+- [x] Verified spin/MPI parity gate: `scripts/run_spin_mpi_parity.sh`.
+- [ ] Phase 2+ remaining: migrate algebra-heavy call sites to native nalgebra APIs and trim duplicated wrapper surface.
 
 **Phase 0 - Inventory and API Freeze**
 - Catalog `matrix` APIs currently used by downstream crates:
