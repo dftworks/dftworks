@@ -6,7 +6,6 @@ use dwconsts::*;
 use fhkl;
 use gvector::GVector;
 use itertools::multizip;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -158,9 +157,9 @@ impl Density for DensityNonspin {
             dwmpi::reduce_slice_sum(
                 workspace.rho_3d_local.as_slice(),
                 rho_3d.as_mut_slice(),
-                MPI_COMM_WORLD,
+                dwmpi::comm_world(),
             );
-            dwmpi::bcast_slice(rho_3d.as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rho_3d.as_mut_slice(), dwmpi::comm_world());
         });
     }
 }

@@ -14,9 +14,10 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libssl-dev \
     libfftw3-dev liblapack-dev libblas-dev libhdf5-dev \
-    less curl vim emacs mpich pkg-config \
+    less curl vim emacs mpich openmpi-bin libopenmpi-dev clang pkg-config \
     wannier90 \
-    quantum-espresso
+    quantum-espresso && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 

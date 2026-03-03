@@ -4,7 +4,6 @@ use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
 use kscf::KSCF;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use pwdensity::PWDensity;
 use types::c64;
@@ -34,8 +33,8 @@ pub fn compute_total_energy(
 
     let mut etot_bands = 0.0;
 
-    dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&mut etot_bands, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, dwmpi::comm_world());
+    dwmpi::bcast_scalar(&mut etot_bands, dwmpi::comm_world());
 
     //
 
@@ -86,8 +85,8 @@ fn get_hybrid_exchange_energy(vkscf: &[KSCF]) -> f64 {
         .sum::<f64>();
 
     let mut total = 0.0;
-    dwmpi::reduce_scalar_sum(&local, &mut total, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&mut total, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_sum(&local, &mut total, dwmpi::comm_world());
+    dwmpi::bcast_scalar(&mut total, dwmpi::comm_world());
 
     total
 }

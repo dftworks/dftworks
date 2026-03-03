@@ -9,7 +9,6 @@ use kpts::KPTS;
 use kpts_distribution::{KPointDomain, KPointScheduleMode, KPointSchedulePlan};
 use kscf::KSCF;
 use types::*;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -322,7 +321,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("{}", err);
             }
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
             dwmpi::finalize();
             std::process::exit(1);
         }
@@ -390,8 +389,8 @@ fn main() {
         if matches!(spin_scheme, SpinScheme::Spin) {
             let local_saved = spin_cache_saved_bytes_local as f64;
             let mut saved_total = 0.0f64;
-            dwmpi::reduce_scalar_sum(&local_saved, &mut saved_total, MPI_COMM_WORLD);
-            dwmpi::bcast_scalar(&mut saved_total, MPI_COMM_WORLD);
+            dwmpi::reduce_scalar_sum(&local_saved, &mut saved_total, dwmpi::comm_world());
+            dwmpi::bcast_scalar(&mut saved_total, dwmpi::comm_world());
             if dwmpi::is_root() && saved_total > 0.0 {
                 println!(
                     "   spin_cache_dedup_saved ~= {:.3} MiB (shared immutable per-k caches)",
@@ -465,7 +464,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("failed to persist checkpoint/output artifacts: {}", err);
             }
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
             dwmpi::finalize();
             std::process::exit(1);
         }
@@ -527,7 +526,7 @@ fn main() {
 
     // last statement
 
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
 
     dwmpi::finalize();
 }

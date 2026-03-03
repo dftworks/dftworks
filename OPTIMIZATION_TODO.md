@@ -1497,3 +1497,65 @@ Finish an item only when:
 - No duplicated custom linear algebra implementation remains for operations already covered by nalgebra.
 - Project-specific `matrix` code is limited to domain adapters (I/O/checkpoint/compat), with clear boundaries.
 - Regression and parity gates remain green after final cutover.
+
+
+### E32 - Replace `mpi_sys`/`dwmpi` with `rsmpi`
+**Priority**: P1 (Portability + safety + maintainability)
+**Status**: In Progress (Phase 1 complete + validated; Phase 2 feature-gated backend added + validated in Docker, 2026-03-03)
+**Files**: `dwmpi/`, `mpi_sys/`, `pw/`, `scf/`, `density/`, `fermilevel/`, `wannier90/`, `kpts_distribution/`, `force/`, `stress/`, `test_mpi/`
+
+- Goal: migrate MPI runtime usage to the maintained `rsmpi` crate and retire project-local raw MPI bindings (`mpi_sys`) plus thin wrappers that duplicate `rsmpi`.
+- Rationale:
+  - avoid hard-coded vendor constants and custom FFI maintenance
+  - standardize MPI behavior on a widely used Rust MPI binding
+  - reduce unsafe surface area in communication paths
+
+**Current Progress**
+- [x] Added `dwmpi::comm_world()` compatibility accessor so call sites no longer need direct `mpi_sys::MPI_COMM_WORLD`.
+- [x] Replaced runtime call sites to use `dwmpi::comm_world()` across `pw`, `scf`, `density`, `fermilevel`, `wannier90`.
+- [x] Removed direct `mpi_sys` dependencies from runtime crates (`pw`, `scf`, `density`, `fermilevel`, `wannier90`, `test_mpi`).
+- [x] Implemented `dwmpi` `rsmpi` backend behind feature flag (`dwmpi/rsmpi_backend`) while preserving current `dwmpi` API.
+- [x] Made regression scripts feature-aware via `CARGO_FEATURES` so backend-specific builds can be validated without script forks.
+- [x] Validation on current default backend passed in Docker: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`) and `scripts/run_spin_mpi_parity.sh` (`FORCE_BUILD=1`) on 2026-03-03.
+- [x] Validation on `dwmpi/rsmpi_backend` passed in Docker: `scripts/run_phase12_regression.sh` and `scripts/run_spin_mpi_parity.sh` with `CARGO_FEATURES=dwmpi/rsmpi_backend` on 2026-03-03.
+- [ ] Remove remaining direct `mpi_sys` dependency from `dwmpi`.
+- [ ] Retire `mpi_sys` crate from workspace once no call sites remain.
+
+**Phase 0 - Inventory and API Freeze**
+- Enumerate active MPI operations used by runtime:
+  - init/finalize, rank/size, barrier
+  - root broadcast, root reductions (sum/max/min), typed slice/scalar send/recv
+- Confirm whether one-sided/RMA APIs are required in active call paths (currently declarations only).
+- Freeze transitional `dwmpi` API so runtime crates can migrate independently of backend choice.
+
+**Phase 1 - Decouple Runtime from `mpi_sys` Constants (Completed 2026-03-03)**
+- Introduce `dwmpi` communicator accessor(s) and route all runtime call sites through `dwmpi`.
+- Remove `mpi_sys` from runtime crate manifests where only `MPI_COMM_WORLD` was used.
+- Keep behavior unchanged; this phase is purely dependency/interface decoupling.
+
+**Phase 2 - Introduce `rsmpi` Backend in `dwmpi`**
+- Re-implement `dwmpi` communication primitives on `rsmpi` collectives/point-to-point APIs.
+- Preserve existing function signatures in `dwmpi` as temporary compatibility shims.
+- Add explicit datatype/equivalence mapping for `f64`, `i32`, `bool`, and complex (`c64`) paths.
+
+**Phase 3 - Flip Default Backend and Burn-In**
+- Make `rsmpi` path the default.
+- Run regression/parity sweeps on 1-rank and multi-rank runs.
+- Resolve any semantic differences (root reduction behavior, initialization lifecycle, rank-local output order).
+
+**Phase 4 - Retire Legacy MPI Layer**
+- Remove `mpi_sys` crate from workspace members and dependencies.
+- Remove transitional compatibility glue in `dwmpi` that only exists for legacy API shape.
+- Update build docs/env guidance to `rsmpi` requirements.
+
+**Validation Gates**
+- `cargo check --workspace` and `cargo test --workspace` pass for each phase checkpoint.
+- Docker correctness gate passes: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
+- Multi-rank parity gate passes: `scripts/run_spin_mpi_parity.sh`.
+- No regression in root/non-root control flow and checkpoint/orchestration behavior.
+
+**Acceptance Criteria**
+- Runtime crates do not import/use `mpi_sys` directly.
+- `dwmpi` is backed by `rsmpi` with equivalent behavior on current workloads.
+- `mpi_sys` is removed from workspace and dependency graph.
+- Phase12 and spin/MPI parity regressions stay green after final cutover.

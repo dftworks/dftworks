@@ -1,6 +1,5 @@
 use control::Control;
 use crystal::Crystal;
-use mpi_sys::MPI_COMM_WORLD;
 
 fn main() {
     dwmpi::init();
@@ -13,7 +12,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("failed to load control file: {}", err);
             }
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
             dwmpi::finalize();
             std::process::exit(1);
         }
@@ -57,7 +56,7 @@ fn main() {
         }
     }
 
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
     dwmpi::finalize();
 
     if exit_code != 0 {

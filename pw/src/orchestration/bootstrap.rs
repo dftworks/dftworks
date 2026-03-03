@@ -1,7 +1,6 @@
 use control::{Control, FftPlannerScheme, SpinScheme, VerbosityLevel};
 use crystal::Crystal;
 use kpts::KPTS;
-use mpi_sys::MPI_COMM_WORLD;
 use pspot::PSPot;
 
 pub(crate) struct BootstrapData {
@@ -71,7 +70,7 @@ pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
             println!("   provenance_manifest = {}", control.get_provenance_manifest());
         }
     }
-    dwmpi::bcast_scalar(&mut provenance_status, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut provenance_status, dwmpi::comm_world());
     if provenance_status != 0 {
         return Err("failed to initialize run provenance manifest".to_string());
     }

@@ -5,7 +5,6 @@ use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
 use kpts::KPTS;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use pwbasis::PWBasis;
 use rgtransform::RGTransform;
@@ -35,7 +34,7 @@ pub fn display_eigen_values(
 
     if ordered_rank_output {
         for irank in 0..dwmpi::get_comm_world_size() {
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
 
             if irank == rank {
                 debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
@@ -61,7 +60,7 @@ pub fn display_eigen_values(
             }
         }
 
-        dwmpi::barrier(MPI_COMM_WORLD);
+        dwmpi::barrier(dwmpi::comm_world());
     } else if dwmpi::is_root() {
         // Production path: avoid rank-serialized eigenvalue output.
         // Ordered rank-by-rank dumps are available with verbosity=verbose/debug.
@@ -106,7 +105,7 @@ pub fn display_spin_eigen_values(
 
     if ordered_rank_output {
         for irank in 0..dwmpi::get_comm_world_size() {
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
 
             if irank == rank {
                 if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
@@ -144,7 +143,7 @@ pub fn display_spin_eigen_values(
             }
         }
 
-        dwmpi::barrier(MPI_COMM_WORLD);
+        dwmpi::barrier(dwmpi::comm_world());
     } else if dwmpi::is_root() {
         if let VKSCF::Spin(vkscf_up, vkscf_dn) = vkscf {
             if let VKEigenValue::Spin(vkevals_up, vkevals_dn) = vkevals {

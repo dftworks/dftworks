@@ -8,4 +8,3 @@ edition = "2021"
 [dependencies]
 types = { path = "../types" }
 dwmpi = { path = "../dwmpi" }
-mpi_sys = { path = "../mpi_sys" }

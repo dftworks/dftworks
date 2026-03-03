@@ -17,7 +17,6 @@ use kpts::KPTS;
 use kscf::KSCF;
 use lattice::Lattice;
 use types::Matrix;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -675,10 +674,10 @@ impl SCF for SCFSpin {
         dwmpi::reduce_slice_sum(
             force_vnl_local_flat.as_slice(),
             force_vnl_flat.as_mut_slice(),
-            MPI_COMM_WORLD,
+            dwmpi::comm_world(),
         );
 
-        dwmpi::bcast_slice(force_vnl_flat.as_mut_slice(), MPI_COMM_WORLD);
+        dwmpi::bcast_slice(force_vnl_flat.as_mut_slice(), dwmpi::comm_world());
         scatter_vec3(&force_vnl_flat, &mut force_vnl);
 
         let mut force_ewald = ewald.get_force().to_vec();
@@ -755,15 +754,15 @@ impl SCF for SCFSpin {
         dwmpi::reduce_slice_sum(
             stress_kin_local.as_slice(),
             stress_kin.as_mut_slice(),
-            MPI_COMM_WORLD,
+            dwmpi::comm_world(),
         );
         dwmpi::reduce_slice_sum(
             stress_vnl_local.as_slice(),
             stress_vnl.as_mut_slice(),
-            MPI_COMM_WORLD,
+            dwmpi::comm_world(),
         );
-        dwmpi::bcast_slice(stress_kin.as_mut_slice(), MPI_COMM_WORLD);
-        dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
+        dwmpi::bcast_slice(stress_kin.as_mut_slice(), dwmpi::comm_world());
+        dwmpi::bcast_slice(stress_vnl.as_mut_slice(), dwmpi::comm_world());
 
         let mut stress_hartree = stress::hartree(gvec, pwden, &ws.rhog_tot);
         let mut stress_xc = stress::xc_spin(
@@ -879,8 +878,8 @@ pub fn compute_total_energy(
         }
     }
     let mut etot_bands = 0.0;
-    dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&mut etot_bands, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, dwmpi::comm_world());
+    dwmpi::bcast_scalar(&mut etot_bands, dwmpi::comm_world());
 
     let etot_vxc = energy::vxc_spin(latt, rho_3d, rhocore_3d.as_slice(), vxc_3d);
 
@@ -909,8 +908,8 @@ pub fn compute_total_energy(
             get_hybrid_exchange_energy(vkscf_up) + get_hybrid_exchange_energy(vkscf_dn);
     }
     let mut hybrid_exchange = 0.0;
-    dwmpi::reduce_scalar_sum(&hybrid_exchange_local, &mut hybrid_exchange, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&mut hybrid_exchange, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_sum(&hybrid_exchange_local, &mut hybrid_exchange, dwmpi::comm_world());
+    dwmpi::bcast_scalar(&mut hybrid_exchange, dwmpi::comm_world());
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
@@ -926,8 +925,8 @@ pub fn compute_total_energy(
 pub fn get_bands_energy(vkscf: &[KSCF], vevals: &Vec<Vec<f64>>) -> f64 {
     let etot_bands = energy::band_structure(vkscf, vevals);
 
-    //mpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, MPI_COMM_WORLD);
-    //mpi::bcast_scalar(&etot_bands, MPI_COMM_WORLD);
+    //mpi::reduce_scalar_sum(&etot_bands_local, &mut etot_bands, dwmpi::comm_world());
+    //mpi::bcast_scalar(&etot_bands, dwmpi::comm_world());
 
     etot_bands
 }

@@ -2,7 +2,6 @@ use control::Control;
 use dfttypes::{VKEigenVector, VKSCF};
 use kscf::KSCF;
 use types::Matrix;
-use mpi_sys::MPI_COMM_WORLD;
 use types::c64;
 
 fn occ_index(iat: usize, m: usize, mp: usize, n_m: usize) -> usize {
@@ -81,8 +80,8 @@ fn update_hubbard_for_channel<'a>(
     }
 
     let mut occ_global = vec![c64::new(0.0, 0.0); occ_len];
-    dwmpi::reduce_slice_sum(&occ_local, &mut occ_global, MPI_COMM_WORLD);
-    dwmpi::bcast_slice(&mut occ_global, MPI_COMM_WORLD);
+    dwmpi::reduce_slice_sum(&occ_local, &mut occ_global, dwmpi::comm_world());
+    dwmpi::bcast_slice(&mut occ_global, dwmpi::comm_world());
     symmetrize_occupation(&mut occ_global, n_atoms, n_m);
 
     for kscf in kscf_channel.iter_mut() {
