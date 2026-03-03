@@ -879,14 +879,23 @@ Finish an item only when:
 
 ### E1 - Build Portability and Correctness
 **Priority**: P0 (BLOCKER - prevents team expansion and cross-platform development)
-**Status**: Open
-**Files**: `matrix/build.rs`, `symmetry/build.rs`, `dwfft3d/build.rs`
+**Status**: In Progress (core build-script portability hardening merged, 2026-03-03)
+**Files**: `dwfft3d/build.rs`, `pw/build.rs`, `BUILD.md`, `.github/workflows/ci.yml`
 
 - Replace hard-coded local linker paths with environment-driven discovery (`LAPACK_DIR`, `FFTW_DIR`) or `pkg-config`
 - Add explicit build-time diagnostics when required libraries are missing
 - Support common package managers (Homebrew, apt, conda) for dependency discovery
 - Add build documentation with platform-specific instructions (macOS, Linux, HPC clusters)
 - Keep optional platform-specific fallback only behind explicit env flags
+
+**Implementation Update (2026-03-03)**
+- [x] Hardened `dwfft3d/build.rs` discovery order to env vars + `pkg-config` first, with standard-system probing and explicit failure diagnostics when FFTW cannot be located.
+- [x] Gated platform-manager fallback probing (`/opt/homebrew`, `/usr/local`, `/opt/local`) behind explicit `DFTWORKS_ALLOW_PATH_FALLBACK` in build scripts.
+- [x] Completed MPI portability cutover by removing legacy `mpi_sys` crate and standardizing on `rsmpi` backend in `dwmpi`.
+- [x] Updated `pw/build.rs` rpath behavior so implicit package-manager path injection is no longer default and is only enabled via `DFTWORKS_ALLOW_PATH_FALLBACK`.
+- [x] Updated `BUILD.md` with new environment controls (`MPI_DIR`, `DFTWORKS_ALLOW_PATH_FALLBACK`) and revised guidance.
+- [ ] Validate on at least three environments (macOS, Linux, HPC) and record outcomes.
+- [x] Added multi-platform portability CI job (`ubuntu-latest`, `macos-latest`) in `.github/workflows/ci.yml` to enforce build discovery behavior.
 
 **Acceptance Criteria**
 - `cargo check` works on at least three different machines (macOS, Linux, HPC) without local path edits
@@ -1501,8 +1510,8 @@ Finish an item only when:
 
 ### E32 - Replace `mpi_sys`/`dwmpi` with `rsmpi`
 **Priority**: P1 (Portability + safety + maintainability)
-**Status**: In Progress (Phase 1 complete + validated; Phase 2 feature-gated backend added + validated in Docker, 2026-03-03)
-**Files**: `dwmpi/`, `mpi_sys/`, `pw/`, `scf/`, `density/`, `fermilevel/`, `wannier90/`, `kpts_distribution/`, `force/`, `stress/`, `test_mpi/`
+**Status**: In Progress (Phase 1 complete + validated; rsmpi backend now default and mpi_sys retired, 2026-03-03)
+**Files**: `dwmpi/`, `pw/`, `scf/`, `density/`, `fermilevel/`, `wannier90/`, `kpts_distribution/`, `force/`, `stress/`, `test_mpi/`
 
 - Goal: migrate MPI runtime usage to the maintained `rsmpi` crate and retire project-local raw MPI bindings (`mpi_sys`) plus thin wrappers that duplicate `rsmpi`.
 - Rationale:
@@ -1518,8 +1527,8 @@ Finish an item only when:
 - [x] Made regression scripts feature-aware via `CARGO_FEATURES` so backend-specific builds can be validated without script forks.
 - [x] Validation on current default backend passed in Docker: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`) and `scripts/run_spin_mpi_parity.sh` (`FORCE_BUILD=1`) on 2026-03-03.
 - [x] Validation on `dwmpi/rsmpi_backend` passed in Docker: `scripts/run_phase12_regression.sh` and `scripts/run_spin_mpi_parity.sh` with `CARGO_FEATURES=dwmpi/rsmpi_backend` on 2026-03-03.
-- [ ] Remove remaining direct `mpi_sys` dependency from `dwmpi`.
-- [ ] Retire `mpi_sys` crate from workspace once no call sites remain.
+- [x] Removed remaining direct `mpi_sys` dependency from `dwmpi` by switching to rsmpi-only backend implementation.
+- [x] Retired `mpi_sys` crate from workspace members and dependency graph.
 
 **Phase 0 - Inventory and API Freeze**
 - Enumerate active MPI operations used by runtime:

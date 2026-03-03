@@ -339,7 +339,6 @@ name = "dwmpi"
 version = "0.1.0"
 dependencies = [
  "mpi",
- "mpi_sys",
  "types",
 ]
 
@@ -840,13 +839,6 @@ dependencies = [
  "bindgen",
  "build-probe-mpi",
  "cc",
-]
-
-[[package]]
-name = "mpi_sys"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]

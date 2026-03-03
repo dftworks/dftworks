@@ -5,11 +5,9 @@ edition = "2021"
 
 [features]
 default = []
-rsmpi_backend = ["dep:mpi"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# Backward-compatible no-op feature; rsmpi is now always used.
+rsmpi_backend = []
 
 [dependencies]
 types = { path = "../types" }
-mpi_sys = { path = "../mpi_sys" }
-mpi = { version = "0.8.1", default-features = false, features = ["complex"], optional = true }
+mpi = { version = "0.8.1", default-features = false, features = ["complex"] }
