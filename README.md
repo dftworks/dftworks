@@ -40,6 +40,7 @@ Running <code>source ~/.bash_profile</code> will update PATH.
 ## Symmetry analysis
 
 Symmetry detection and operations are implemented in-tree (self-contained) via the `symmetry` and `symops` crates. No external symmetry library installation is required.
+Detailed workflow documentation: `symmetry/SYMMETRY_DETECTION_WORKFLOW.md`.
 
 ## HDF5
 
