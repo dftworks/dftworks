@@ -12,7 +12,6 @@ mod matrix_f64;
 pub use matrix_f64::*;
 
 use crate::c64;
-use itertools::multizip;
 use nalgebra::DMatrix;
 use std::ops::*;
 use std::{
@@ -94,7 +93,7 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
     AddAssign for Matrix<T>
 {
     fn add_assign(&mut self, rhs: Matrix<T>) {
-        for (s, d) in multizip((rhs.as_slice().iter(), self.as_mut_slice().iter_mut())) {
+        for (s, d) in rhs.as_slice().iter().zip(self.as_mut_slice().iter_mut()) {
             *d += *s;
         }
     }
@@ -117,11 +116,12 @@ impl<
 
         let mut m = Matrix::<T>::new(self.nrow(), self.ncol());
 
-        for (d, s1, s2) in multizip((
-            m.as_mut_slice().iter_mut(),
-            self.as_slice().iter(),
-            rhs.as_slice().iter(),
-        )) {
+        for ((d, s1), s2) in m
+            .as_mut_slice()
+            .iter_mut()
+            .zip(self.as_slice().iter())
+            .zip(rhs.as_slice().iter())
+        {
             *d = *s1 + *s2;
         }
 
@@ -146,11 +146,12 @@ impl<
 
         let mut m = Matrix::<T>::new(self.nrow(), self.ncol());
 
-        for (d, s1, s2) in multizip((
-            m.as_mut_slice().iter_mut(),
-            self.as_slice().iter(),
-            rhs.as_slice().iter(),
-        )) {
+        for ((d, s1), s2) in m
+            .as_mut_slice()
+            .iter_mut()
+            .zip(self.as_slice().iter())
+            .zip(rhs.as_slice().iter())
+        {
             *d = *s1 - *s2;
         }
 
@@ -195,14 +196,6 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
         &mut self.data
     }
 
-    pub fn from_dmatrix(data: DMatrix<T>) -> Matrix<T> {
-        Matrix { data }
-    }
-
-    pub fn into_dmatrix(self) -> DMatrix<T> {
-        self.data
-    }
-
     pub fn set_zeros(&mut self) {
         self.data.iter_mut().for_each(|x| *x = T::zero());
     }
@@ -219,14 +212,6 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
         }
     }
 
-    pub fn as_ptr(&self) -> *const T {
-        self.data.as_ptr()
-    }
-
-    pub fn as_mut_ptr(&mut self) -> *mut T {
-        self.data.as_mut_ptr()
-    }
-
     pub fn set_col(&mut self, icol: usize, v: &[T]) {
         let n1 = icol * self.nrow();
         let n2 = n1 + self.nrow();
@@ -237,13 +222,6 @@ impl<T: nalgebra::Scalar + num_traits::identities::Zero + Default + Copy + Clone
         let n1 = icol * self.nrow();
         let n2 = n1 + self.nrow();
         &self.as_slice()[n1..n2]
-    }
-
-    pub fn get_col_to(&self, v: &mut [T], icol: usize) {
-        let n1 = icol * self.nrow();
-        let n2 = n1 + self.nrow();
-        let v_src = &self.as_slice()[n1..n2];
-        v[..v_src.len()].copy_from_slice(v_src);
     }
 
     pub fn get_mut_col(&mut self, icol: usize) -> &mut [T] {

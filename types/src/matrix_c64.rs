@@ -1,5 +1,4 @@
 use crate::Matrix;
-use itertools::multizip;
 use std::ops::AddAssign;
 use std::ops::Mul;
 
@@ -18,16 +17,6 @@ impl Matrix<c64> {
         }
 
         mat
-    }
-
-    pub fn adjoint(&self) -> Matrix<c64> {
-        let mut out = Matrix::<c64>::new(self.ncol(), self.nrow());
-        for i in 0..self.nrow() {
-            for j in 0..self.ncol() {
-                out[[j, i]] = self[[i, j]].conj();
-            }
-        }
-        out
     }
 
     pub fn inv(&mut self) {
@@ -157,7 +146,7 @@ impl Mul<f64> for Matrix<c64> {
 
 impl AddAssign<Matrix<f64>> for Matrix<c64> {
     fn add_assign(&mut self, rhs: Matrix<f64>) {
-        for (s, d) in multizip((rhs.as_slice().iter(), self.as_mut_slice().iter_mut())) {
+        for (s, d) in rhs.as_slice().iter().zip(self.as_mut_slice().iter_mut()) {
             *d += *s;
         }
     }
