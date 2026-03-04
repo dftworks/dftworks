@@ -548,9 +548,9 @@ fn matrix3x3_to_vector3(mat: &Matrix<f64>) -> Vec<Vector3f64> {
     let mut v = vec![Vector3f64::zeros(); 3];
 
     for i in 0..3 {
-        v[i].x = mat[[0, i]];
-        v[i].y = mat[[1, i]];
-        v[i].z = mat[[2, i]];
+        v[i].x = mat[(0, i)];
+        v[i].y = mat[(1, i)];
+        v[i].z = mat[(2, i)];
     }
 
     v

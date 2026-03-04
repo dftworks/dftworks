@@ -5,6 +5,7 @@ use gvector::GVector;
 use kgylm::KGYLM;
 use kpts::KPTS;
 use types::Matrix;
+use types::MatrixExt;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use std::collections::HashMap;
@@ -794,7 +795,7 @@ pub(crate) fn write_amn_file(
                 let mut overlap = c64::new(0.0, 0.0);
                 for ig in 0..npw {
                     let g_n = ylm[ig] * chi_kg[ig] * sfact[ig];
-                    overlap += eigvecs[ik][[ig, mband]].conj() * g_n;
+                    overlap += eigvecs[ik][(ig, mband)].conj() * g_n;
                 }
 
                 overlaps[mband + n * num_bands] = overlap;

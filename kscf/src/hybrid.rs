@@ -3,6 +3,7 @@ use control::XcScheme;
 use dwconsts::{EPS20, FOURPI};
 use gvector::GVector;
 use types::Matrix;
+use types::MatrixExt;
 use ndarray::Array3;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;

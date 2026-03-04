@@ -4,6 +4,7 @@ use fftgrid::FFTGrid;
 use force;
 use gvector::GVector;
 use types::Matrix;
+use types::MatrixExt;
 use pspot::PSPot;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;

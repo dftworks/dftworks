@@ -5,6 +5,7 @@ use dfttypes::*;
 use gvector::GVector;
 use kscf::KSCF;
 use types::Matrix;
+use types::MatrixExt;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use types::c64;

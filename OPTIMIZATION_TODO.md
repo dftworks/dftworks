@@ -1433,7 +1433,7 @@ Finish an item only when:
 
 ### E31 - Replace `matrix` Core with `nalgebra` and Keep Only Domain-Specific Wrappers
 **Priority**: P1/P2 (Maintainability + numerical safety)
-**Status**: In Progress (Phase 2/3 underway)
+**Status**: Completed (2026-03-04)
 **Files**: `matrix/`, `linalg/`, `kscf/`, `eigensolver/`, `stress/`, `force/`, `dfttypes/`, `workflow/`
 
 - Goal: migrate matrix math/storage responsibilities to nalgebra, then reduce `matrix` crate to project-specific adapters only (I/O, checkpoints, compatibility helpers).
@@ -1457,8 +1457,9 @@ Finish an item only when:
 - [x] Verified workspace compile gate: `cargo check --workspace`.
 - [x] Verified Docker regression gate: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
 - [x] Verified spin/MPI parity gate: `scripts/run_spin_mpi_parity.sh`.
-- [ ] Phase 2 remaining: migrate remaining algebra-heavy call sites in geometry/mixing-force coupling (`geom`, `force`, `ewald`) from `Matrix` helper chains to native nalgebra operations.
-- [ ] Phase 3/4 remaining: move HDF5/checkpoint matrix adapters out of core algebra paths, then decide whether `matrix` stays as a minimal compatibility shim or is fully retired.
+- [x] Completed remaining Phase 2 migration in geometry/mixing-force coupling (`geom`, `force`, `ewald`) by replacing local `Matrix` helper chains with native `nalgebra::Matrix3` math at runtime boundaries (2026-03-04).
+- [x] Started Phase 3 by moving matrix HDF5/checkpoint serialization out of `Matrix` impl methods into dedicated codec helpers (`types::matrix_codec`) and updating `dfttypes`/`lattice` call sites (2026-03-04).
+- [x] Completed Phase 3/4 by removing dead legacy matrix compatibility implementation files (`types/src/matrix.rs`, `types/src/matrix_f64.rs`, `types/src/matrix_c64.rs`) and keeping only nalgebra-backed aliases plus domain-specific adapters (`matrix_codec`, compatibility traits) (2026-03-04).
 
 **Phase 0 - Inventory and API Freeze**
 - Catalog `matrix` APIs currently used by downstream crates:

@@ -29,7 +29,7 @@ enum UPF {
     NULL,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AtomPSPUPFFR {
     element: String,
     pseudo_type: String,
@@ -59,6 +59,39 @@ pub struct AtomPSPUPFFR {
     lbeta_soc: Vec<usize>,
 }
 
+impl Default for AtomPSPUPFFR {
+    fn default() -> Self {
+        Self {
+            element: String::new(),
+            pseudo_type: String::new(),
+            relativistic: false,
+            core_correction: false,
+            zion: 0.0,
+            lmax: 0,
+            lloc: 0,
+            lbeta: Vec::new(),
+            nbeta: 0,
+            mmax: 0,
+            rad: Vec::new(),
+            rab: Vec::new(),
+            vloc: Vec::new(),
+            vbeta: Vec::new(),
+            dij: Matrix::<f64>::new(0, 0),
+            chi: HashMap::new(),
+            rhocore: Vec::new(),
+            rhoatom: Vec::new(),
+            dij_j: Matrix::<f64>::new(0, 0),
+            vbeta_j: Vec::new(),
+            lbeta_j: Vec::new(),
+            vjjj: Vec::new(),
+            vlll: Vec::new(),
+            dij_soc: Matrix::<f64>::new(0, 0),
+            vbeta_soc: Vec::new(),
+            lbeta_soc: Vec::new(),
+        }
+    }
+}
+
 impl AtomPSP for AtomPSPUPFFR {
     fn get_nlcc(&self) -> bool {
         self.core_correction
@@ -77,7 +110,7 @@ impl AtomPSP for AtomPSPUPFFR {
     }
 
     fn get_dfact(&self, ibeta: usize) -> f64 {
-        self.dij[[ibeta, ibeta]]
+        self.dij[(ibeta, ibeta)]
     }
 
     fn get_nbeta_soc(&self) -> usize {
@@ -93,7 +126,7 @@ impl AtomPSP for AtomPSPUPFFR {
     }
 
     fn get_dfact_soc(&self, ibeta: usize) -> f64 {
-        self.dij_soc[[ibeta, ibeta]]
+        self.dij_soc[(ibeta, ibeta)]
     }
 
     fn get_zatom(&self) -> f64 {
@@ -178,8 +211,8 @@ impl AtomPSPUPFFR {
                 jbeta += 1;
             } else {
                 let l_f64 = l as f64;
-                let dminus = self.dij_j[[jbeta, jbeta]];
-                let dplus = self.dij_j[[jbeta + 1, jbeta + 1]];
+                let dminus = self.dij_j[(jbeta, jbeta)];
+                let dplus = self.dij_j[(jbeta + 1, jbeta + 1)];
 
                 let dpm = ((l_f64 + 1.0) * dplus + l_f64 * dminus) / (2.0 * l_f64 + 1.0);
 
@@ -209,7 +242,7 @@ impl AtomPSPUPFFR {
         let nbeta = self.lbeta_soc.len();
         self.dij_soc = Matrix::<f64>::new(nbeta, nbeta);
         for ibeta in 0..nbeta {
-            self.dij_soc[[ibeta, ibeta]] = dij_soc[ibeta];
+            self.dij_soc[(ibeta, ibeta)] = dij_soc[ibeta];
         }
     }
 
@@ -239,14 +272,14 @@ impl AtomPSPUPFFR {
 
             if l == 0 {
                 self.vbeta.push(self.vbeta_j[jbeta].clone());
-                self.dij[[ibeta, ibeta]] = self.dij_j[[jbeta, jbeta]];
+                self.dij[(ibeta, ibeta)] = self.dij_j[(jbeta, jbeta)];
                 self.lbeta[ibeta] = self.vlll[jbeta];
 
                 jbeta += 1;
             } else {
                 let l_f64 = l as f64;
-                let dminus = self.dij_j[[jbeta, jbeta]];
-                let dplus = self.dij_j[[jbeta + 1, jbeta + 1]];
+                let dminus = self.dij_j[(jbeta, jbeta)];
+                let dplus = self.dij_j[(jbeta + 1, jbeta + 1)];
 
                 let dpm = ((l_f64 + 1.0) * dplus + l_f64 * dminus) / (2.0 * l_f64 + 1.0);
                 //let dpm = 1.0;
@@ -265,7 +298,7 @@ impl AtomPSPUPFFR {
                     self.vbeta[ibeta][i] /= 2.0 * l_f64 + 1.0;
                 }
 
-                self.dij[[ibeta, ibeta]] = dpm;
+                self.dij[(ibeta, ibeta)] = dpm;
 
                 self.lbeta[ibeta] = self.vlll[jbeta];
 

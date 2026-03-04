@@ -2,10 +2,9 @@
 
 use crate::{CheckpointMeta, VKEigenVector, RHOR};
 use lattice::Lattice;
-use types::Matrix;
 use ndarray::Array3;
 use pwbasis::PWBasis;
-use types::c64;
+use types::{c64, load_matrix_c64_hdf5, save_matrix_c64_hdf5, Matrix};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckpointCodec {
@@ -192,7 +191,8 @@ impl Hdf5FilePerKCheckpointRepository {
         let mut eig_group = hdf5_file
             .create_group("EigenVector")
             .map_err(|e| format!("failed to create EigenVector in '{}': {}", filename, e))?;
-        eigen_vec.save_hdf5(&mut eig_group);
+        save_matrix_c64_hdf5(eigen_vec, &mut eig_group)
+            .map_err(|e| format!("{} in '{}'", e, filename))?;
 
         let mut pw_group = hdf5_file
             .create_group("PWBasis")
@@ -223,7 +223,7 @@ impl Hdf5FilePerKCheckpointRepository {
         let eig_group = hdf5_file
             .group("EigenVector")
             .map_err(|e| format!("failed to open EigenVector in '{}': {}", filename, e))?;
-        let eigen_vec = Matrix::<c64>::try_load_hdf5(&eig_group)
+        let eigen_vec = load_matrix_c64_hdf5(&eig_group)
             .map_err(|e| format!("{} in '{}'", e, filename))?;
 
         if !need_basis_and_lattice {

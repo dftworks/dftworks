@@ -17,7 +17,7 @@ use std::{
 // - lattice vectors stored in Bohr
 // - atomic positions stored in fractional coordinates
 // - helper conversions provide Cartesian views when needed
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Crystal {
     scale_a: f64,
     scale_b: f64,
@@ -27,6 +27,21 @@ pub struct Crystal {
     atom_positions: Vec<Vector3f64>,
     atom_species: Vec<String>,
     atom_indices_by_specie: Vec<Vec<usize>>,
+}
+
+impl Default for Crystal {
+    fn default() -> Self {
+        Self {
+            scale_a: 0.0,
+            scale_b: 0.0,
+            scale_c: 0.0,
+            latt: Lattice::default(),
+            cell_mask: Matrix::<f64>::new(0, 0),
+            atom_positions: Vec::new(),
+            atom_species: Vec::new(),
+            atom_indices_by_specie: Vec::new(),
+        }
+    }
 }
 
 impl Crystal {
@@ -211,21 +226,21 @@ impl Crystal {
                     }
 
                     if s[3].to_lowercase() == "t" {
-                        self.cell_mask[[0, 0]] = 1.0;
+                        self.cell_mask[(0, 0)] = 1.0;
                     } else {
-                        self.cell_mask[[0, 0]] = 0.0;
+                        self.cell_mask[(0, 0)] = 0.0;
                     }
 
                     if s[4].to_lowercase() == "t" {
-                        self.cell_mask[[1, 0]] = 1.0;
+                        self.cell_mask[(1, 0)] = 1.0;
                     } else {
-                        self.cell_mask[[1, 0]] = 0.0;
+                        self.cell_mask[(1, 0)] = 0.0;
                     }
 
                     if s[5].to_lowercase() == "t" {
-                        self.cell_mask[[2, 0]] = 1.0;
+                        self.cell_mask[(2, 0)] = 1.0;
                     } else {
-                        self.cell_mask[[2, 0]] = 0.0;
+                        self.cell_mask[(2, 0)] = 0.0;
                     }
                 }
 
@@ -240,21 +255,21 @@ impl Crystal {
                     }
 
                     if s[3].to_lowercase() == "t" {
-                        self.cell_mask[[0, 1]] = 1.0;
+                        self.cell_mask[(0, 1)] = 1.0;
                     } else {
-                        self.cell_mask[[0, 1]] = 0.0;
+                        self.cell_mask[(0, 1)] = 0.0;
                     }
 
                     if s[4].to_lowercase() == "t" {
-                        self.cell_mask[[1, 1]] = 1.0;
+                        self.cell_mask[(1, 1)] = 1.0;
                     } else {
-                        self.cell_mask[[1, 1]] = 0.0;
+                        self.cell_mask[(1, 1)] = 0.0;
                     }
 
                     if s[5].to_lowercase() == "t" {
-                        self.cell_mask[[2, 1]] = 1.0;
+                        self.cell_mask[(2, 1)] = 1.0;
                     } else {
-                        self.cell_mask[[2, 1]] = 0.0;
+                        self.cell_mask[(2, 1)] = 0.0;
                     }
                 }
 
@@ -269,21 +284,21 @@ impl Crystal {
                     }
 
                     if s[3].to_lowercase() == "t" {
-                        self.cell_mask[[0, 2]] = 1.0;
+                        self.cell_mask[(0, 2)] = 1.0;
                     } else {
-                        self.cell_mask[[0, 2]] = 0.0;
+                        self.cell_mask[(0, 2)] = 0.0;
                     }
 
                     if s[4].to_lowercase() == "t" {
-                        self.cell_mask[[1, 2]] = 1.0;
+                        self.cell_mask[(1, 2)] = 1.0;
                     } else {
-                        self.cell_mask[[1, 2]] = 0.0;
+                        self.cell_mask[(1, 2)] = 0.0;
                     }
 
                     if s[5].to_lowercase() == "t" {
-                        self.cell_mask[[2, 2]] = 1.0;
+                        self.cell_mask[(2, 2)] = 1.0;
                     } else {
-                        self.cell_mask[[2, 2]] = 0.0;
+                        self.cell_mask[(2, 2)] = 0.0;
                     }
                 }
 
@@ -339,9 +354,9 @@ impl Crystal {
             a.x / self.scale_a * BOHR_TO_ANG,
             a.y / self.scale_a * BOHR_TO_ANG,
             a.z / self.scale_a * BOHR_TO_ANG,
-            float_to_char(self.cell_mask[[0, 0]]),
-            float_to_char(self.cell_mask[[1, 0]]),
-            float_to_char(self.cell_mask[[2, 0]])
+            float_to_char(self.cell_mask[(0, 0)]),
+            float_to_char(self.cell_mask[(1, 0)]),
+            float_to_char(self.cell_mask[(2, 0)])
         )
         .unwrap();
 
@@ -353,9 +368,9 @@ impl Crystal {
             b.x / self.scale_b * BOHR_TO_ANG,
             b.y / self.scale_b * BOHR_TO_ANG,
             b.z / self.scale_b * BOHR_TO_ANG,
-            float_to_char(self.cell_mask[[0, 1]]),
-            float_to_char(self.cell_mask[[1, 1]]),
-            float_to_char(self.cell_mask[[2, 1]])
+            float_to_char(self.cell_mask[(0, 1)]),
+            float_to_char(self.cell_mask[(1, 1)]),
+            float_to_char(self.cell_mask[(2, 1)])
         )
         .unwrap();
 
@@ -366,9 +381,9 @@ impl Crystal {
             c.x / self.scale_c * BOHR_TO_ANG,
             c.y / self.scale_c * BOHR_TO_ANG,
             c.z / self.scale_c * BOHR_TO_ANG,
-            float_to_char(self.cell_mask[[0, 2]]),
-            float_to_char(self.cell_mask[[1, 2]]),
-            float_to_char(self.cell_mask[[2, 2]])
+            float_to_char(self.cell_mask[(0, 2)]),
+            float_to_char(self.cell_mask[(1, 2)]),
+            float_to_char(self.cell_mask[(2, 2)])
         )
         .unwrap();
 

@@ -10,6 +10,7 @@ use kgylm::KGYLM;
 use kscf::KSCF;
 use lattice::Lattice;
 use types::Matrix;
+use types::MatrixExt;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;

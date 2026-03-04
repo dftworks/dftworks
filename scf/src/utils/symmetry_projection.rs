@@ -6,6 +6,7 @@ use dfttypes::*;
 use ewald::Ewald;
 use gvector::GVector;
 use types::Matrix;
+use types::MatrixExt;
 use ndarray::Array3;
 use pspot::PSPot;
 use pwdensity::PWDensity;

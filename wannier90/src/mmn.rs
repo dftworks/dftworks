@@ -1,6 +1,7 @@
 use crate::types::MeshTopology;
 use gvector::GVector;
 use types::Matrix;
+use types::MatrixExt;
 use pwbasis::PWBasis;
 use std::collections::HashMap;
 use std::fs::File;
@@ -112,10 +113,10 @@ fn compute_mmn_block(
         };
 
         for ib in 0..num_bands {
-            let c1_conj = c_k[[row_k, ib]].conj();
+            let c1_conj = c_k[(row_k, ib)].conj();
             for jb in 0..num_bands {
                 // Accumulate c_k^*(G,m) * c_{k+b}(G+b,n).
-                out[ib + jb * num_bands] += c1_conj * c_kb[[row_kb, jb]];
+                out[ib + jb * num_bands] += c1_conj * c_kb[(row_kb, jb)];
             }
         }
     }

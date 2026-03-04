@@ -5,6 +5,7 @@ use dfttypes::*;
 use gvector::GVector;
 use kpts_distribution::KPointDomain;
 use types::Matrix;
+use types::MatrixExt;
 use ndarray::Array3;
 use std::path::Path;
 use types::c64;

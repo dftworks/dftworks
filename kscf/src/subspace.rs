@@ -2,6 +2,7 @@ use dwconsts::*;
 use nalgebra::linalg::SymmetricEigen;
 use nalgebra::DMatrix;
 use types::Matrix;
+use types::MatrixExt;
 use num_traits::identities::Zero;
 use types::c64;
 
@@ -23,7 +24,7 @@ pub fn rotate_wfc(
         for j in 0..nbnd {
             let xj = evc_in.get_col(j);
 
-            sbh[[j, i]] = utility::zdot_product(&xj, &hxi);
+            sbh[(j, i)] = utility::zdot_product(&xj, &hxi);
         }
     }
 

@@ -17,6 +17,7 @@ use kpts::KPTS;
 use kscf::KSCF;
 use lattice::Lattice;
 use types::Matrix;
+use types::MatrixExt;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -801,8 +802,8 @@ impl SCF for SCFSpin {
 
         for i in 0..3 {
             for j in 0..3 {
-                stress_xc_nlcc[[i, j]] =
-                    (stress_xc_nlcc_up[[i, j]] + stress_xc_nlcc_dn[[i, j]]) / 2.0;
+                stress_xc_nlcc[(i, j)] =
+                    (stress_xc_nlcc_up[(i, j)] + stress_xc_nlcc_dn[(i, j)]) / 2.0;
             }
         }
 

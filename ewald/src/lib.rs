@@ -3,13 +3,13 @@
 use crystal::*;
 use dwconsts::*;
 use gvector::*;
-use types::*;
+use nalgebra::Matrix3;
 use num_traits::identities::Zero;
 use pwdensity::*;
 use special;
 use types::{Vector3c64, Vector3f64, Vector3i32};
-use utility;
 use types::*;
+use utility;
 
 // Ewald ion-ion interaction decomposition for periodic crystals.
 //
@@ -23,6 +23,16 @@ pub struct Ewald {
     energy: f64,
     force: Vec<Vector3f64>,
     stress: Matrix<f64>,
+}
+
+fn matrix3_to_matrix(m: &Matrix3<f64>) -> Matrix<f64> {
+    let mut out = Matrix::<f64>::new(3, 3);
+    for i in 0..3 {
+        for j in 0..3 {
+            out[(i, j)] = m[(i, j)];
+        }
+    }
+    out
 }
 
 impl Ewald {
@@ -60,21 +70,16 @@ impl Ewald {
 
         // Stress decomposition (real + reciprocal).
 
-        let mut stress = Matrix::<f64>::new(3, 3);
         let stress_r = compute_stress_real_space_part(crystal, zions, eta, &nn_cells);
         let stress_g = compute_stress_g_space_part(crystal, zions, gvec, pwden, eta);
 
         let volume = crystal.get_latt().volume();
-        for i in 0..3 {
-            for j in 0..3 {
-                stress[[i, j]] = -1.0 * (stress_r[[i, j]] + stress_g[[i, j]]) / volume;
-            }
-        }
+        let stress = -(stress_r + stress_g) / volume;
 
         Ewald {
             energy,
             force,
-            stress,
+            stress: matrix3_to_matrix(&stress),
         }
     }
 
@@ -420,7 +425,7 @@ pub fn compute_stress_real_space_part(
     zions: &[f64],
     eta: f64,
     nn_cells: &[Vector3i32],
-) -> Matrix<f64> {
+) -> Matrix3<f64> {
     let latt = crystal.get_latt();
 
     let a = latt.get_vector_a();
@@ -434,7 +439,7 @@ pub fn compute_stress_real_space_part(
     let eta_sqrt = eta.sqrt();
 
     // Real-space screened stress tensor contribution.
-    let mut stress = Matrix::<f64>::new(3, 3);
+    let mut stress = Matrix3::<f64>::zeros();
 
     for cell in nn_cells.iter() {
         for i in 0..natoms {
@@ -465,7 +470,7 @@ pub fn compute_stress_real_space_part(
 
                 for ii in 0..3 {
                     for jj in 0..3 {
-                        stress[[jj, ii]] += 0.5
+                        stress[(jj, ii)] += 0.5
                             * eta_sqrt
                             * zions[i]
                             * zions[j]
@@ -490,7 +495,7 @@ pub fn compute_stress_g_space_part(
     gvec: &GVector,
     pwden: &PWDensity,
     eta: f64,
-) -> Matrix<f64> {
+) -> Matrix3<f64> {
     let npw = pwden.get_n_plane_waves();
 
     let volume = crystal.get_latt().volume();
@@ -505,10 +510,10 @@ pub fn compute_stress_g_space_part(
 
     let atoms = crystal.get_atom_positions();
 
-    let unit_mat = Matrix::<f64>::identity(3);
+    let unit_mat = Matrix3::<f64>::identity();
 
     // Reciprocal-space stress tensor contribution.
-    let mut stress = Matrix::<f64>::new(3, 3);
+    let mut stress = Matrix3::<f64>::zeros();
 
     for ipw in 1..npw {
         let mill = miller[gidx[ipw]];
@@ -528,13 +533,13 @@ pub fn compute_stress_g_space_part(
 
         let comm = s.norm_sqr() * (-g2 / 4.0 / eta).exp() / g2 * FOURPI / volume / 2.0;
 
-        let gcoord = cart[gidx[ipw]].as_slice();
+        let gcoord = cart[gidx[ipw]];
 
         for i in 0..3 {
             for j in 0..3 {
-                stress[[j, i]] += comm
+                stress[(j, i)] += comm
                     * (2.0 / g2 * gcoord[i] * gcoord[j] * (g2 / 4.0 / eta + 1.0)
-                        - unit_mat[[j, i]]);
+                        - unit_mat[(j, i)]);
             }
         }
     }
@@ -546,7 +551,7 @@ pub fn compute_stress_g_space_part(
     }
 
     for i in 0..3 {
-        stress[[i, i]] += s * s * PI / 2.0 / volume / eta;
+        stress[(i, i)] += s * s * PI / 2.0 / volume / eta;
     }
 
     stress

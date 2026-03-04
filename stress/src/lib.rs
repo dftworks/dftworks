@@ -196,7 +196,7 @@ pub fn nlcc_xc_with_workspace(
     out.set_zeros();
     for i in 0..3 {
         for j in 0..3 {
-            out[[i, j]] = stress_c64[i][j].re;
+            out[(i, j)] = stress_c64[i][j].re;
         }
     }
 }
@@ -298,7 +298,7 @@ pub fn vpsloc_with_workspace(
     out.set_zeros();
     for i in 0..3 {
         for j in 0..3 {
-            out[[i, j]] = stress_c64[i][j].re;
+            out[(i, j)] = stress_c64[i][j].re;
         }
     }
 }
@@ -324,7 +324,7 @@ pub fn xc(
     let mut stress = Matrix::<f64>::new(3, 3);
 
     for i in 0..3 {
-        stress[[i, i]] = -(stress_exc - stress_vxc_rho);
+        stress[(i, i)] = -(stress_exc - stress_vxc_rho);
     }
 
     stress
@@ -346,7 +346,7 @@ pub fn xc_spin(
     let mut stress = Matrix::<f64>::new(3, 3);
 
     for i in 0..3 {
-        stress[[i, i]] = -(stress_exc - stress_vxc_rho);
+        stress[(i, i)] = -(stress_exc - stress_vxc_rho);
     }
 
     stress
@@ -360,7 +360,7 @@ pub fn hartree(gvec: &GVector, pwden: &PWDensity, rhog: &[c64]) -> Matrix<f64> {
     let gidx = pwden.get_gindex();
     let npw = pwden.get_n_plane_waves();
 
-    let unit_mat = Matrix::<f64>::identity(3);
+    let unit_mat = Matrix::<f64>::identity(3, 3);
 
     let mut stress = Matrix::<f64>::new(3, 3);
 
@@ -369,8 +369,8 @@ pub fn hartree(gvec: &GVector, pwden: &PWDensity, rhog: &[c64]) -> Matrix<f64> {
 
         for i in 0..3 {
             for j in 0..3 {
-                stress[[j, i]] += -FOURPI / 2.0 * rhog[ig].norm_sqr() / gnorm[ig] / gnorm[ig]
-                    * (2.0 * g[i] * g[j] / gnorm[ig] / gnorm[ig] - unit_mat[[j, i]]);
+                stress[(j, i)] += -FOURPI / 2.0 * rhog[ig].norm_sqr() / gnorm[ig] / gnorm[ig]
+                    * (2.0 * g[i] * g[j] / gnorm[ig] / gnorm[ig] - unit_mat[(j, i)]);
             }
         }
     }
@@ -405,7 +405,7 @@ pub fn kinetic(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> 
 
                 for i in 0..3 {
                     for j in 0..3 {
-                        stress[[j, i]] += cnk[ikg].norm_sqr()
+                        stress[(j, i)] += cnk[ikg].norm_sqr()
                             * (xk[j] + g[j])
                             * (xk[i] + g[i])
                             * occ[ibnd]
@@ -465,7 +465,7 @@ pub fn vnl(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> Matr
                 &kylms,
                 kscf,
                 evecs,
-            ) * kscf.get_k_weight();
+            ) * c64::new(kscf.get_k_weight(), 0.0);
         }
     }
 
@@ -473,7 +473,7 @@ pub fn vnl(crystal: &Crystal, vkscf: &[KSCF], vevecs: &Vec<Matrix<c64>>) -> Matr
 
     for i in 0..3 {
         for j in 0..3 {
-            stress_f64[[j, i]] = 2.0 * stress[[j, i]].re;
+            stress_f64[(j, i)] = 2.0 * stress[(j, i)].re;
         }
     }
 
@@ -520,7 +520,7 @@ pub fn vnl_of_one_specie_one_k(
 
     let occ = kscf.get_occ();
 
-    let unit_mat = Matrix::<f64>::identity(3);
+    let unit_mat = Matrix::<f64>::identity(3, 3);
     let mut stress = Matrix::<c64>::new(3, 3);
 
     for ibnd in 0..kscf.get_nbands() {
@@ -561,12 +561,12 @@ pub fn vnl_of_one_specie_one_k(
 
                         for i in 0..3 {
                             for j in 0..3 {
-                                stress_band[[j, i]] += dfact
+                                stress_band[(j, i)] += dfact
                                     * beta_kg_cnk
                                     * cnk[ipw]
                                     * sfact[ipw].conj()
                                     * (beta[ipw] * (xk[i] + g[i]) * p_dylm[j]
-                                        + 0.5 * unit_mat[[i, j]] * beta[ipw] * ylm[ipw]
+                                        + 0.5 * unit_mat[(i, j)] * beta[ipw] * ylm[ipw]
                                         - dbeta[ipw] * ylm[ipw] * (xk[i] + g[i]) * (xk[j] + g[j])
                                             / kg[ipw].max(EPS20));
                             }
@@ -576,7 +576,7 @@ pub fn vnl_of_one_specie_one_k(
             }
         }
 
-        stress += stress_band * occ[ibnd];
+        stress += stress_band * c64::new(occ[ibnd], 0.0);
     }
 
     stress
@@ -609,7 +609,7 @@ fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
     let mut out = Matrix3::<f64>::zeros();
     for i in 0..3 {
         for j in 0..3 {
-            out[(i, j)] = m[[i, j]];
+            out[(i, j)] = m[(i, j)];
         }
     }
     out
@@ -618,7 +618,7 @@ fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
 fn matrix3_to_matrix(m3: &Matrix3<f64>, out: &mut Matrix<f64>) {
     for i in 0..3 {
         for j in 0..3 {
-            out[[i, j]] = m3[(i, j)];
+            out[(i, j)] = m3[(i, j)];
         }
     }
 }
@@ -712,7 +712,7 @@ pub fn disp_stress(stress: &Matrix<f64>) {
         print!("                  | ");
 
         for j in 0..3 {
-            print!("{:20.6} ", stress[[i, j]] * STRESS_HA_TO_KB);
+            print!("{:20.6} ", stress[(i, j)] * STRESS_HA_TO_KB);
         }
 
         println!("  |");
@@ -786,7 +786,7 @@ pub fn vdw(
         Ok(stress_array) => {
             for i in 0..3 {
                 for j in 0..3 {
-                    stress_vdw[[i, j]] = stress_array[i][j];
+                    stress_vdw[(i, j)] = stress_array[i][j];
                 }
             }
         }
