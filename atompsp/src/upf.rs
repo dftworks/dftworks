@@ -29,7 +29,7 @@ enum UPF {
     NULL,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AtomPSPUPF {
     element: String,
     pseudo_type: String,
@@ -51,6 +51,31 @@ pub struct AtomPSPUPF {
     rhoatom: Vec<f64>,
 }
 
+impl Default for AtomPSPUPF {
+    fn default() -> Self {
+        Self {
+            element: String::new(),
+            pseudo_type: String::new(),
+            relativistic: false,
+            core_correction: false,
+            zion: 0.0,
+            lmax: 0,
+            lloc: 0,
+            lbeta: Vec::new(),
+            nbeta: 0,
+            mmax: 0,
+            rad: Vec::new(),
+            rab: Vec::new(),
+            vloc: Vec::new(),
+            vbeta: Vec::new(),
+            dij: Matrix::<f64>::new(0, 0),
+            chi: HashMap::new(),
+            rhocore: Vec::new(),
+            rhoatom: Vec::new(),
+        }
+    }
+}
+
 impl AtomPSP for AtomPSPUPF {
     fn get_nlcc(&self) -> bool {
         self.core_correction
@@ -70,7 +95,7 @@ impl AtomPSP for AtomPSPUPF {
 
     // dij is not always positive, so absorbing it into beta will make beta complex numbers
     fn get_dfact(&self, ibeta: usize) -> f64 {
-        self.dij[[ibeta, ibeta]]
+        self.dij[(ibeta, ibeta)]
     }
 
     fn get_zatom(&self) -> f64 {

@@ -7,7 +7,6 @@ use diis::*;
 use crystal::Crystal;
 use lattice::Lattice;
 use types::*;
-use types::*;
 
 pub trait GeomOptimizationDriver {
     fn compute_next_configuration(

@@ -166,16 +166,16 @@ pub fn make_matrix(n: usize) -> Matrix<c64> {
 
     for i in 0..n {
         for j in (i + 1)..n {
-            m[[j, i]] = c64 {
+            m[(j, i)] = c64 {
                 //re: rng.gen_range(0.0, 1.0),
                 //im: rng.gen_range(0.0, 0.01),
                 re: 0.1 * i as f64,
                 im: 0.001 * j as f64,
             };
 
-            m[[i, j]] = m[[j, i]].conj();
+            m[(i, j)] = m[(j, i)].conj();
         }
-        m[[i, i]] = c64 {
+        m[(i, i)] = c64 {
             //re: rng.gen_range(1.0, 1000.0),
             re: ((i + 1) as f64) * 1.0 - 0.1,
             im: 0.0,
@@ -595,9 +595,9 @@ mod tests {
         assert_eq!(m.ncol(), n);
 
         for i in 0..n {
-            assert_close_f64(m[[i, i]].im, 0.0, 1.0e-12);
+            assert_close_f64(m[(i, i)].im, 0.0, 1.0e-12);
             for j in 0..n {
-                assert_close_c64(m[[i, j]], m[[j, i]].conj(), 1.0e-12);
+                assert_close_c64(m[(i, j)], m[(j, i)].conj(), 1.0e-12);
             }
         }
     }

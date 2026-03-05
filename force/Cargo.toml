@@ -29,3 +29,4 @@ num-traits = "*"
 utility = { path = "../utility" }
 symmetry = { path = "../symmetry" }
 dwmpi = { path = "../dwmpi" }
+nalgebra = "0.32.6"

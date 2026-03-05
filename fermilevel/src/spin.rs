@@ -4,7 +4,6 @@ use crate::FermiLevel;
 use dfttypes::*;
 use dwconsts::*;
 use kscf::KSCF;
-use mpi_sys::MPI_COMM_WORLD;
 
 pub struct FermiLevelSpin {}
 
@@ -99,11 +98,11 @@ fn get_initial_fermi_level(nelec: f64, vevals: &Vec<Vec<f64>>) -> f64 {
     let mut homo = 0.0;
     let mut lumo = 0.0;
 
-    dwmpi::reduce_scalar_max(&homo_local, &mut homo, MPI_COMM_WORLD);
-    dwmpi::reduce_scalar_min(&lumo_local, &mut lumo, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_max(&homo_local, &mut homo, dwmpi::comm_world());
+    dwmpi::reduce_scalar_min(&lumo_local, &mut lumo, dwmpi::comm_world());
 
     let mut fermi = (homo + lumo) / 2.0;
-    dwmpi::bcast_scalar(&mut fermi, MPI_COMM_WORLD);
+    dwmpi::bcast_scalar(&mut fermi, dwmpi::comm_world());
 
     fermi
 }
@@ -120,8 +119,8 @@ pub fn get_total_electrons(vkscf: &mut [KSCF], vevals: &Vec<Vec<f64>>, fermi: f6
     }
 
     let mut ntot = 0.0;
-    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&mut ntot, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, dwmpi::comm_world());
+    dwmpi::bcast_scalar(&mut ntot, dwmpi::comm_world());
 
     ntot
 }
@@ -148,7 +147,7 @@ fn get_total_electrons_spin(
     }
 
     let mut ntot = 0.0;
-    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, MPI_COMM_WORLD);
-    dwmpi::bcast_scalar(&mut ntot, MPI_COMM_WORLD);
+    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, dwmpi::comm_world());
+    dwmpi::bcast_scalar(&mut ntot, dwmpi::comm_world());
     ntot
 }

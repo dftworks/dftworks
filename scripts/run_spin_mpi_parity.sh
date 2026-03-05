@@ -5,6 +5,7 @@ ROOT_DIR="$(git rev-parse --show-toplevel)"
 SCF_TEMPLATE_DIR="$ROOT_DIR/test_example/si-oncv/scf"
 PW_BIN="${PW_BIN:-$ROOT_DIR/target/debug/pw}"
 FORCE_BUILD="${FORCE_BUILD:-0}"
+CARGO_FEATURES="${CARGO_FEATURES:-}"
 
 MPI_LAUNCH="${MPI_LAUNCH:-mpirun}"
 MPI_FLAG_N="${MPI_FLAG_N:--n}"
@@ -21,9 +22,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+build_pw() {
+    if [[ -n "$CARGO_FEATURES" ]]; then
+        cargo build -p pw --features "$CARGO_FEATURES"
+    else
+        cargo build -p pw
+    fi
+}
+
 if [[ "$FORCE_BUILD" == "1" || ! -x "$PW_BIN" ]]; then
     echo "Building pw binary at $PW_BIN ..."
-    cargo build -p pw
+    build_pw
 fi
 
 if ! command -v "$MPI_LAUNCH" >/dev/null 2>&1; then

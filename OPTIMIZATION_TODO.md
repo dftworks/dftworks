@@ -879,14 +879,23 @@ Finish an item only when:
 
 ### E1 - Build Portability and Correctness
 **Priority**: P0 (BLOCKER - prevents team expansion and cross-platform development)
-**Status**: Open
-**Files**: `matrix/build.rs`, `symmetry/build.rs`, `dwfft3d/build.rs`
+**Status**: In Progress (core build-script portability hardening merged, 2026-03-03)
+**Files**: `dwfft3d/build.rs`, `pw/build.rs`, `BUILD.md`, `.github/workflows/ci.yml`
 
 - Replace hard-coded local linker paths with environment-driven discovery (`LAPACK_DIR`, `FFTW_DIR`) or `pkg-config`
 - Add explicit build-time diagnostics when required libraries are missing
 - Support common package managers (Homebrew, apt, conda) for dependency discovery
 - Add build documentation with platform-specific instructions (macOS, Linux, HPC clusters)
 - Keep optional platform-specific fallback only behind explicit env flags
+
+**Implementation Update (2026-03-03)**
+- [x] Hardened `dwfft3d/build.rs` discovery order to env vars + `pkg-config` first, with standard-system probing and explicit failure diagnostics when FFTW cannot be located.
+- [x] Gated platform-manager fallback probing (`/opt/homebrew`, `/usr/local`, `/opt/local`) behind explicit `DFTWORKS_ALLOW_PATH_FALLBACK` in build scripts.
+- [x] Completed MPI portability cutover by removing legacy `mpi_sys` crate and standardizing on `rsmpi` backend in `dwmpi`.
+- [x] Updated `pw/build.rs` rpath behavior so implicit package-manager path injection is no longer default and is only enabled via `DFTWORKS_ALLOW_PATH_FALLBACK`.
+- [x] Updated `BUILD.md` with new environment controls (`MPI_DIR`, `DFTWORKS_ALLOW_PATH_FALLBACK`) and revised guidance.
+- [ ] Validate on at least three environments (macOS, Linux, HPC) and record outcomes.
+- [x] Added multi-platform portability CI job (`ubuntu-latest`, `macos-latest`) in `.github/workflows/ci.yml` to enforce build discovery behavior.
 
 **Acceptance Criteria**
 - `cargo check` works on at least three different machines (macOS, Linux, HPC) without local path edits
@@ -1243,7 +1252,7 @@ Finish an item only when:
 
 ### E24 - Capability Matrix and Unsupported-Mode Policy
 **Priority**: P1 (Critical - prevents runtime panics and improves user experience)
-**Status**: Open
+**Status**: Completed (2026-03-04)
 **Files**: `control/src/lib.rs`, `pw/src/main.rs`, `scf/src/lib.rs`
 
 - Define explicit capability matrix for `{spin_scheme, xc_scheme, task, restart, eigensolver}` combinations
@@ -1252,6 +1261,13 @@ Finish an item only when:
 - Ensure checkpoint metadata validation also enforces capability compatibility
 - Document supported feature combinations in user guide
 - Add validation tests for all unsupported combinations
+
+**Implementation Update (2026-03-04)**
+- [x] Added explicit central runtime capability matrix in `control` for `{task, spin_scheme, xc_scheme, restart, eigen_solver}` and routed compatibility checks through one table-driven validator.
+- [x] Added task-mode validation (`task` now rejects unsupported values with clear supported-list diagnostics).
+- [x] Added runtime preflight in `pw` bootstrap for HSE06 Gamma-only k-point constraints, returning actionable errors before SCF setup.
+- [x] Replaced panic-based unsupported-mode setup paths in `pw` orchestration (`construct_geometry_phase`, SCF state/eigen allocation) with `Result`-based error returns.
+- [x] Added/updated control validation tests for unsupported task modes and supported cross-product combinations.
 
 **Acceptance Criteria**
 - Unsupported runtime combinations fail at input validation/preflight phase with helpful error messages
@@ -1424,7 +1440,7 @@ Finish an item only when:
 
 ### E31 - Replace `matrix` Core with `nalgebra` and Keep Only Domain-Specific Wrappers
 **Priority**: P1/P2 (Maintainability + numerical safety)
-**Status**: In Progress (Phase 2/3 underway)
+**Status**: Completed (2026-03-04)
 **Files**: `matrix/`, `linalg/`, `kscf/`, `eigensolver/`, `stress/`, `force/`, `dfttypes/`, `workflow/`
 
 - Goal: migrate matrix math/storage responsibilities to nalgebra, then reduce `matrix` crate to project-specific adapters only (I/O, checkpoints, compatibility helpers).
@@ -1448,8 +1464,9 @@ Finish an item only when:
 - [x] Verified workspace compile gate: `cargo check --workspace`.
 - [x] Verified Docker regression gate: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
 - [x] Verified spin/MPI parity gate: `scripts/run_spin_mpi_parity.sh`.
-- [ ] Phase 2 remaining: migrate remaining algebra-heavy call sites in geometry/mixing-force coupling (`geom`, `force`, `ewald`) from `Matrix` helper chains to native nalgebra operations.
-- [ ] Phase 3/4 remaining: move HDF5/checkpoint matrix adapters out of core algebra paths, then decide whether `matrix` stays as a minimal compatibility shim or is fully retired.
+- [x] Completed remaining Phase 2 migration in geometry/mixing-force coupling (`geom`, `force`, `ewald`) by replacing local `Matrix` helper chains with native `nalgebra::Matrix3` math at runtime boundaries (2026-03-04).
+- [x] Started Phase 3 by moving matrix HDF5/checkpoint serialization out of `Matrix` impl methods into dedicated codec helpers (`types::matrix_codec`) and updating `dfttypes`/`lattice` call sites (2026-03-04).
+- [x] Completed Phase 3/4 by removing dead legacy matrix compatibility implementation files (`types/src/matrix.rs`, `types/src/matrix_f64.rs`, `types/src/matrix_c64.rs`) and keeping only nalgebra-backed aliases plus domain-specific adapters (`matrix_codec`, compatibility traits) (2026-03-04).
 
 **Phase 0 - Inventory and API Freeze**
 - Catalog `matrix` APIs currently used by downstream crates:
@@ -1497,3 +1514,65 @@ Finish an item only when:
 - No duplicated custom linear algebra implementation remains for operations already covered by nalgebra.
 - Project-specific `matrix` code is limited to domain adapters (I/O/checkpoint/compat), with clear boundaries.
 - Regression and parity gates remain green after final cutover.
+
+
+### E32 - Replace `mpi_sys`/`dwmpi` with `rsmpi`
+**Priority**: P1 (Portability + safety + maintainability)
+**Status**: In Progress (Phase 1 complete + validated; rsmpi backend now default and mpi_sys retired, 2026-03-03)
+**Files**: `dwmpi/`, `pw/`, `scf/`, `density/`, `fermilevel/`, `wannier90/`, `kpts_distribution/`, `force/`, `stress/`, `test_mpi/`
+
+- Goal: migrate MPI runtime usage to the maintained `rsmpi` crate and retire project-local raw MPI bindings (`mpi_sys`) plus thin wrappers that duplicate `rsmpi`.
+- Rationale:
+  - avoid hard-coded vendor constants and custom FFI maintenance
+  - standardize MPI behavior on a widely used Rust MPI binding
+  - reduce unsafe surface area in communication paths
+
+**Current Progress**
+- [x] Added `dwmpi::comm_world()` compatibility accessor so call sites no longer need direct `mpi_sys::MPI_COMM_WORLD`.
+- [x] Replaced runtime call sites to use `dwmpi::comm_world()` across `pw`, `scf`, `density`, `fermilevel`, `wannier90`.
+- [x] Removed direct `mpi_sys` dependencies from runtime crates (`pw`, `scf`, `density`, `fermilevel`, `wannier90`, `test_mpi`).
+- [x] Implemented `dwmpi` `rsmpi` backend behind feature flag (`dwmpi/rsmpi_backend`) while preserving current `dwmpi` API.
+- [x] Made regression scripts feature-aware via `CARGO_FEATURES` so backend-specific builds can be validated without script forks.
+- [x] Validation on current default backend passed in Docker: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`) and `scripts/run_spin_mpi_parity.sh` (`FORCE_BUILD=1`) on 2026-03-03.
+- [x] Validation on `dwmpi/rsmpi_backend` passed in Docker: `scripts/run_phase12_regression.sh` and `scripts/run_spin_mpi_parity.sh` with `CARGO_FEATURES=dwmpi/rsmpi_backend` on 2026-03-03.
+- [x] Removed remaining direct `mpi_sys` dependency from `dwmpi` by switching to rsmpi-only backend implementation.
+- [x] Retired `mpi_sys` crate from workspace members and dependency graph.
+
+**Phase 0 - Inventory and API Freeze**
+- Enumerate active MPI operations used by runtime:
+  - init/finalize, rank/size, barrier
+  - root broadcast, root reductions (sum/max/min), typed slice/scalar send/recv
+- Confirm whether one-sided/RMA APIs are required in active call paths (currently declarations only).
+- Freeze transitional `dwmpi` API so runtime crates can migrate independently of backend choice.
+
+**Phase 1 - Decouple Runtime from `mpi_sys` Constants (Completed 2026-03-03)**
+- Introduce `dwmpi` communicator accessor(s) and route all runtime call sites through `dwmpi`.
+- Remove `mpi_sys` from runtime crate manifests where only `MPI_COMM_WORLD` was used.
+- Keep behavior unchanged; this phase is purely dependency/interface decoupling.
+
+**Phase 2 - Introduce `rsmpi` Backend in `dwmpi`**
+- Re-implement `dwmpi` communication primitives on `rsmpi` collectives/point-to-point APIs.
+- Preserve existing function signatures in `dwmpi` as temporary compatibility shims.
+- Add explicit datatype/equivalence mapping for `f64`, `i32`, `bool`, and complex (`c64`) paths.
+
+**Phase 3 - Flip Default Backend and Burn-In**
+- Make `rsmpi` path the default.
+- Run regression/parity sweeps on 1-rank and multi-rank runs.
+- Resolve any semantic differences (root reduction behavior, initialization lifecycle, rank-local output order).
+
+**Phase 4 - Retire Legacy MPI Layer**
+- Remove `mpi_sys` crate from workspace members and dependencies.
+- Remove transitional compatibility glue in `dwmpi` that only exists for legacy API shape.
+- Update build docs/env guidance to `rsmpi` requirements.
+
+**Validation Gates**
+- `cargo check --workspace` and `cargo test --workspace` pass for each phase checkpoint.
+- Docker correctness gate passes: `scripts/run_phase12_regression.sh` (`FORCE_BUILD=1`).
+- Multi-rank parity gate passes: `scripts/run_spin_mpi_parity.sh`.
+- No regression in root/non-root control flow and checkpoint/orchestration behavior.
+
+**Acceptance Criteria**
+- Runtime crates do not import/use `mpi_sys` directly.
+- `dwmpi` is backed by `rsmpi` with equivalent behavior on current workloads.
+- `mpi_sys` is removed from workspace and dependency graph.
+- Phase12 and spin/MPI parity regressions stay green after final cutover.

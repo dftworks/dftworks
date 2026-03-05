@@ -4,6 +4,7 @@ use control::Control;
 use crystal::Crystal;
 use lattice::Lattice;
 use types::Matrix;
+use types::MatrixF64Ext;
 use nalgebra::Matrix3;
 use symmetry::SymmetryDriver;
 
@@ -20,7 +21,7 @@ fn array_to_matrix3(m: &[[f64; 3]; 3]) -> Matrix3<f64> {
 fn matrix3_to_matrix(m3: &Matrix3<f64>, m: &mut Matrix<f64>) {
     for i in 0..3 {
         for j in 0..3 {
-            m[[i, j]] = m3[(i, j)];
+            m[(i, j)] = m3[(i, j)];
         }
     }
 }
@@ -57,7 +58,7 @@ fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
     let mut out = Matrix3::<f64>::zeros();
     for i in 0..3 {
         for j in 0..3 {
-            out[(i, j)] = m[[i, j]];
+            out[(i, j)] = m[(i, j)];
         }
     }
     out
@@ -119,14 +120,14 @@ pub fn finalize_stress_by_parts(
 
     for i in 0..3 {
         for j in 0..3 {
-            stress_total[[i, j]] = stress_kin[[i, j]]
-                + stress_hartree[[i, j]]
-                + stress_xc[[i, j]]
-                + stress_xc_nlcc[[i, j]]
-                + stress_loc[[i, j]]
-                + stress_vnl[[i, j]]
-                + stress_ewald[[i, j]]
-                + stress_vdw[[i, j]];
+            stress_total[(i, j)] = stress_kin[(i, j)]
+                + stress_hartree[(i, j)]
+                + stress_xc[(i, j)]
+                + stress_xc_nlcc[(i, j)]
+                + stress_loc[(i, j)]
+                + stress_vnl[(i, j)]
+                + stress_ewald[(i, j)]
+                + stress_vdw[(i, j)];
         }
     }
 

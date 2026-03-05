@@ -3,7 +3,6 @@ use crystal::Crystal;
 use dfttypes::*;
 use dwconsts::*;
 use kpts::KPTS;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -35,7 +34,7 @@ pub(crate) struct GeometryPhaseArtifacts<'a> {
 
 pub(crate) fn construct_geometry_phase<'a, 'ws>(
     input: GeometryPhaseInput<'a, 'ws>,
-) -> GeometryPhaseArtifacts<'a> {
+) -> Result<GeometryPhaseArtifacts<'a>, String> {
     let verbosity = input.control.get_verbosity_enum();
 
     let geom_ctx = crate::GeometryStepContext::new(input.crystal, input.control.get_ecutrho());
@@ -61,7 +60,10 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         SpinScheme::NonSpin => RHOG::NonSpin(vec![c64::zero(); npw_rho]),
         SpinScheme::Spin => RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
         SpinScheme::Ncl => {
-            panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            return Err(
+                "unsupported capability: spin_scheme='ncl' is not implemented in pw initialization"
+                    .to_string(),
+            )
         }
     };
 
@@ -72,7 +74,10 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
             Array3::<c64>::new([n1, n2, n3]),
         ),
         SpinScheme::Ncl => {
-            panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            return Err(
+                "unsupported capability: spin_scheme='ncl' is not implemented in pw initialization"
+                    .to_string(),
+            )
         }
     };
 
@@ -95,7 +100,10 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
                     loaded_from_restart = true;
                 }
                 Err(err) => {
-                    panic!("{}", err);
+                    return Err(format!(
+                        "failed to load restart density checkpoint: {}",
+                        err
+                    ));
                 }
             }
         }
@@ -129,20 +137,25 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         SpinScheme::Spin => {
             let (rhog_up, rhog_dn) = rhog.as_spin_mut().unwrap();
 
-            dwmpi::bcast_slice(rhog_up.as_mut_slice(), MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rhog_dn.as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rhog_up.as_mut_slice(), dwmpi::comm_world());
+            dwmpi::bcast_slice(rhog_dn.as_mut_slice(), dwmpi::comm_world());
 
             let (rho_3d_up, rho_3d_dn) = rho_3d.as_spin_mut().unwrap();
 
-            dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), dwmpi::comm_world());
+            dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), dwmpi::comm_world());
         }
         SpinScheme::NonSpin => {
-            dwmpi::bcast_slice(rhog.as_non_spin_mut().unwrap().as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rhog.as_non_spin_mut().unwrap().as_mut_slice(), dwmpi::comm_world());
 
-            dwmpi::bcast_slice(rho_3d.as_non_spin_mut().unwrap().as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rho_3d.as_non_spin_mut().unwrap().as_mut_slice(), dwmpi::comm_world());
         }
-        SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in pw broadcast"),
+        SpinScheme::Ncl => {
+            return Err(
+                "unsupported capability: spin_scheme='ncl' is not implemented in pw broadcast"
+                    .to_string(),
+            )
+        }
     }
 
     let mut total_rho = 0.0;
@@ -221,7 +234,7 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
 
     let electronic_ctx = crate::ElectronicStepContext::build(&runtime_ctx, geom_ctx.blatt(), geom_ctx.gvec());
 
-    GeometryPhaseArtifacts {
+    Ok(GeometryPhaseArtifacts {
         geom_ctx,
         runtime_ctx,
         expected_checkpoint_meta,
@@ -230,5 +243,5 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         rho_3d,
         symdrv,
         electronic_ctx,
-    }
+    })
 }

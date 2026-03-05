@@ -9,7 +9,6 @@ use kpts::KPTS;
 use kpts_distribution::{KPointDomain, KPointScheduleMode, KPointSchedulePlan};
 use kscf::KSCF;
 use types::*;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -269,7 +268,7 @@ impl ElectronicStepContext {
         gvec: &'a GVector,
         pwden: &'a PWDensity,
         fft_shape: [usize; 3],
-    ) -> (VKSCF<'a>, VKEigenValue, VKEigenVector, usize) {
+    ) -> Result<(VKSCF<'a>, VKEigenValue, VKEigenVector, usize), String> {
         let nband = runtime.control.get_nband();
         let my_nkpt = self.local_nkpt();
 
@@ -287,18 +286,26 @@ impl ElectronicStepContext {
                     );
                 (VKSCF::Spin(channel_up, channel_dn), saved_bytes)
             }
-            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
+            SpinScheme::Ncl => {
+                return Err(
+                    "unsupported capability: spin_scheme='ncl' is not implemented in KSCF setup"
+                        .to_string(),
+                )
+            }
         };
 
-        let vkevals =
-            orchestration::electronic::allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt);
+        let vkevals = orchestration::electronic::allocate_eigenvalues(
+            runtime.spin_scheme,
+            nband,
+            my_nkpt,
+        )?;
         let vkevecs = orchestration::electronic::allocate_eigenvectors(
             runtime.spin_scheme,
             nband,
             &self.vpwwfc,
-        );
+        )?;
 
-        (vkscf, vkevals, vkevecs, spin_cache_saved_bytes_local)
+        Ok((vkscf, vkevals, vkevecs, spin_cache_saved_bytes_local))
     }
 }
 
@@ -322,7 +329,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("{}", err);
             }
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
             dwmpi::finalize();
             std::process::exit(1);
         }
@@ -365,7 +372,7 @@ fn main() {
     // crystal.display();
 
     loop {
-        let mut phase = orchestration::construction::construct_geometry_phase(
+        let mut phase = match orchestration::construction::construct_geometry_phase(
             orchestration::construction::GeometryPhaseInput {
                 control: &control,
                 crystal: &crystal,
@@ -377,21 +384,42 @@ fn main() {
                 density_driver: density_driver.as_ref(),
                 orchestration_workspace: &mut orchestration_workspace,
             },
-        );
+        ) {
+            Ok(phase) => phase,
+            Err(err) => {
+                if dwmpi::is_root() {
+                    eprintln!("failed to construct geometry phase: {}", err);
+                }
+                dwmpi::barrier(dwmpi::comm_world());
+                dwmpi::finalize();
+                std::process::exit(1);
+            }
+        };
 
-        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) =
-            phase.electronic_ctx.build_scf_state(
+        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) = match phase
+            .electronic_ctx
+            .build_scf_state(
                 &phase.runtime_ctx,
                 phase.geom_ctx.gvec(),
                 phase.geom_ctx.pwden(),
                 phase.geom_ctx.fft_shape(),
-            );
+            ) {
+            Ok(state) => state,
+            Err(err) => {
+                if dwmpi::is_root() {
+                    eprintln!("failed to initialize SCF state: {}", err);
+                }
+                dwmpi::barrier(dwmpi::comm_world());
+                dwmpi::finalize();
+                std::process::exit(1);
+            }
+        };
 
         if matches!(spin_scheme, SpinScheme::Spin) {
             let local_saved = spin_cache_saved_bytes_local as f64;
             let mut saved_total = 0.0f64;
-            dwmpi::reduce_scalar_sum(&local_saved, &mut saved_total, MPI_COMM_WORLD);
-            dwmpi::bcast_scalar(&mut saved_total, MPI_COMM_WORLD);
+            dwmpi::reduce_scalar_sum(&local_saved, &mut saved_total, dwmpi::comm_world());
+            dwmpi::bcast_scalar(&mut saved_total, dwmpi::comm_world());
             if dwmpi::is_root() && saved_total > 0.0 {
                 println!(
                     "   spin_cache_dedup_saved ~= {:.3} MiB (shared immutable per-k caches)",
@@ -465,7 +493,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("failed to persist checkpoint/output artifacts: {}", err);
             }
-            dwmpi::barrier(MPI_COMM_WORLD);
+            dwmpi::barrier(dwmpi::comm_world());
             dwmpi::finalize();
             std::process::exit(1);
         }
@@ -527,7 +555,7 @@ fn main() {
 
     // last statement
 
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
 
     dwmpi::finalize();
 }
@@ -549,9 +577,9 @@ fn matrix3x3_to_vector3(mat: &Matrix<f64>) -> Vec<Vector3f64> {
     let mut v = vec![Vector3f64::zeros(); 3];
 
     for i in 0..3 {
-        v[i].x = mat[[0, i]];
-        v[i].y = mat[[1, i]];
-        v[i].z = mat[[2, i]];
+        v[i].x = mat[(0, i)];
+        v[i].y = mat[(1, i)];
+        v[i].z = mat[(2, i)];
     }
 
     v

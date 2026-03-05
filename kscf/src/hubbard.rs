@@ -4,6 +4,7 @@ use dwconsts::*;
 use gvector::GVector;
 use kgylm::KGYLM;
 use types::Matrix;
+use types::MatrixExt;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use types::c64;
@@ -227,7 +228,7 @@ impl HubbardPotential {
                         d += c64::new(0.5 * self.u_eff, 0.0);
                     }
 
-                    self.d_by_atom[iat][[m, mp]] = d;
+                    self.d_by_atom[iat][(m, mp)] = d;
                 }
             }
         }
@@ -249,7 +250,7 @@ impl HubbardPotential {
             for m in 0..self.n_m {
                 let mut val = c64::new(0.0, 0.0);
                 for mp in 0..self.n_m {
-                    val += self.d_by_atom[iat][[m, mp]] * beta[mp];
+                    val += self.d_by_atom[iat][(m, mp)] * beta[mp];
                 }
 
                 coeff[m] = val;

@@ -96,10 +96,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "bindgen"
+version = "0.69.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "271383c67ccabffb7381723dea0672a673f292304fcb45c01cc648c7a8d58088"
+dependencies = [
+ "bitflags",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.12.1",
+ "lazy_static",
+ "lazycell",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex",
+ "syn",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+
+[[package]]
+name = "build-probe-mpi"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d78ace2bb02fc18ad937f1599a853fcf3da2327bc1eb3c8e62b1f2fe4573bfd6"
+dependencies = [
+ "pkg-config",
+ "shell-words",
+]
 
 [[package]]
 name = "bytemuck"
@@ -108,10 +138,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbdf580320f38b612e485521afda1ee26d10cc9884efaaa750d383e13e3c5f4"
 
 [[package]]
+name = "cc"
+version = "1.2.56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aebf35691d1bfb0ac386a69bac2fde4dd276fb618cf8bf4f5318fe285e821bb2"
+dependencies = [
+ "find-msvc-tools",
+ "shlex",
+]
+
+[[package]]
+name = "cexpr"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
+dependencies = [
+ "nom",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "clang-sys"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
+dependencies = [
+ "glob",
+ "libc",
+ "libloading",
+]
 
 [[package]]
 name = "clap"
@@ -167,6 +227,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "conv"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78ff10625fd0ac447827aa30ea8b861fead473bb60aeb73af6c1c58caf0d1299"
+dependencies = [
+ "custom_derive",
+]
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -196,11 +265,17 @@ name = "crystal"
 version = "0.1.0"
 dependencies = [
  "dwconsts",
- "itertools",
+ "itertools 0.14.0",
  "lattice",
  "pspot",
  "types",
 ]
+
+[[package]]
+name = "custom_derive"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
 
 [[package]]
 name = "density"
@@ -216,10 +291,9 @@ dependencies = [
  "fhkl",
  "gvector",
  "integral",
- "itertools",
+ "itertools 0.14.0",
  "kscf",
  "magmom",
- "mpi_sys",
  "ndarray 0.1.0",
  "num-traits",
  "pspot",
@@ -264,7 +338,7 @@ dependencies = [
 name = "dwmpi"
 version = "0.1.0"
 dependencies = [
- "mpi_sys",
+ "mpi",
  "types",
 ]
 
@@ -297,7 +371,7 @@ dependencies = [
  "dwconsts",
  "fhkl",
  "gvector",
- "itertools",
+ "itertools 0.14.0",
  "kgylm",
  "kscf",
  "lattice",
@@ -335,6 +409,7 @@ dependencies = [
  "crystal",
  "dwconsts",
  "gvector",
+ "nalgebra",
  "num-traits",
  "pwdensity",
  "special",
@@ -351,7 +426,6 @@ dependencies = [
  "dwconsts",
  "dwmpi",
  "kscf",
- "mpi_sys",
 ]
 
 [[package]]
@@ -377,6 +451,12 @@ name = "fifo"
 version = "0.1.0"
 
 [[package]]
+name = "find-msvc-tools"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
 name = "force"
 version = "0.1.0"
 dependencies = [
@@ -387,10 +467,11 @@ dependencies = [
  "dwmpi",
  "fhkl",
  "gvector",
- "itertools",
+ "itertools 0.14.0",
  "kgylm",
  "kscf",
  "lattice",
+ "nalgebra",
  "ndarray 0.1.0",
  "nlcc",
  "num-traits",
@@ -411,6 +492,7 @@ dependencies = [
  "crystal",
  "force",
  "lattice",
+ "nalgebra",
  "optimization",
  "stress",
  "types",
@@ -428,11 +510,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
 name = "gvector"
 version = "0.1.0"
 dependencies = [
  "dwconsts",
- "itertools",
+ "itertools 0.14.0",
  "lattice",
  "types",
  "utility",
@@ -516,7 +604,7 @@ dependencies = [
  "dwconsts",
  "fhkl",
  "gvector",
- "itertools",
+ "itertools 0.14.0",
  "kgylm",
  "ndarray 0.1.0",
  "num-traits",
@@ -549,6 +637,15 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "itertools"
@@ -611,7 +708,7 @@ dependencies = [
  "gvector",
  "hpsi",
  "integral",
- "itertools",
+ "itertools 0.14.0",
  "kgylm",
  "kpts",
  "lattice",
@@ -634,7 +731,7 @@ name = "lattice"
 version = "0.1.0"
 dependencies = [
  "hdf5-metno",
- "itertools",
+ "itertools 0.14.0",
  "nalgebra",
  "types",
 ]
@@ -644,6 +741,12 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
+name = "lazycell"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
@@ -697,6 +800,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "mixing"
 version = "0.1.0"
 dependencies = [
@@ -710,10 +819,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpi_sys"
-version = "0.1.0"
+name = "mpi"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41457b69d35846af2fec1877a4f3b866a72b6ab2c9500218f115e65e10993b21"
 dependencies = [
- "libc",
+ "build-probe-mpi",
+ "conv",
+ "mpi-sys",
+ "num-complex",
+ "once_cell",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
+name = "mpi-sys"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f655543f54b263cbc3d2456bf714bd807d66a33eff8f70136687f0776d34f76"
+dependencies = [
+ "bindgen",
+ "build-probe-mpi",
+ "cc",
 ]
 
 [[package]]
@@ -749,7 +877,7 @@ version = "0.1.0"
 dependencies = [
  "dwconsts",
  "hdf5-metno",
- "itertools",
+ "itertools 0.14.0",
  "ndarray 0.15.6",
  "num",
  "rayon",
@@ -780,7 +908,7 @@ dependencies = [
  "fhkl",
  "gvector",
  "integral",
- "itertools",
+ "itertools 0.14.0",
  "kscf",
  "ndarray 0.1.0",
  "num-traits",
@@ -790,6 +918,16 @@ dependencies = [
  "special",
  "symmetry",
  "types",
+]
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
 ]
 
 [[package]]
@@ -864,6 +1002,12 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "once_cell"
+version = "1.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "once_cell_polyfill"
@@ -995,7 +1139,6 @@ dependencies = [
  "kpts_distribution",
  "kscf",
  "lattice",
- "mpi_sys",
  "ndarray 0.1.0",
  "nlcc",
  "num-traits",
@@ -1159,6 +1302,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
 name = "safe_arch"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1185,12 +1334,11 @@ dependencies = [
  "fhkl",
  "force",
  "gvector",
- "itertools",
+ "itertools 0.14.0",
  "kpts",
  "kscf",
  "lattice",
  "mixing",
- "mpi_sys",
  "ndarray 0.1.0",
  "num-traits",
  "pspot",
@@ -1244,6 +1392,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
+
+[[package]]
+name = "shlex"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
 name = "simba"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1293,7 +1453,7 @@ dependencies = [
  "energy",
  "fhkl",
  "gvector",
- "itertools",
+ "itertools 0.14.0",
  "kgylm",
  "kscf",
  "lattice",
@@ -1344,8 +1504,27 @@ name = "test_mpi"
 version = "0.1.0"
 dependencies = [
  "dwmpi",
- "mpi_sys",
  "types",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1410,7 +1589,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 name = "utility"
 version = "0.1.0"
 dependencies = [
- "itertools",
+ "itertools 0.14.0",
  "ndarray 0.1.0",
  "rand",
  "types",
@@ -1434,7 +1613,7 @@ dependencies = [
  "fhkl",
  "gvector",
  "integral",
- "itertools",
+ "itertools 0.14.0",
  "ndarray 0.1.0",
  "num-traits",
  "pspot",
@@ -1473,7 +1652,6 @@ dependencies = [
  "integral",
  "kgylm",
  "kpts",
- "mpi_sys",
  "pspot",
  "pwbasis",
  "special",

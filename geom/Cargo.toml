@@ -13,3 +13,4 @@ crystal = { path = "../crystal" }
 lattice = { path = "../lattice" }
 force = { path = "../force" }
 stress = { path = "../stress" }
+nalgebra = "0.32.6"

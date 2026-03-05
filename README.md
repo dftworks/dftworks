@@ -40,6 +40,7 @@ Running <code>source ~/.bash_profile</code> will update PATH.
 ## Symmetry analysis
 
 Symmetry detection and operations are implemented in-tree (self-contained) via the `symmetry` and `symops` crates. No external symmetry library installation is required.
+Detailed workflow documentation: `symmetry/SYMMETRY_DETECTION_WORKFLOW.md`.
 
 ## HDF5
 
@@ -539,4 +540,23 @@ npw_rho = 10777
    -------------------------------------- statistics --------------------------------------
 
    Total           :                9.77 seconds             0.00 hours
+
+# Runtime capability matrix (`pw`)
+
+Unsupported mode combinations are rejected during input validation/preflight with actionable
+errors (instead of reaching late runtime panics).
+
+Current supported core combinations:
+
+| Axis | Supported values |
+| --- | --- |
+| `task` | `scf`, `band` |
+| `spin_scheme` | `nonspin`, `spin` |
+| `xc_scheme` | `lda-pz`, `lsda-pz`, `pbe`, `hse06` |
+| `eigen_solver` | `pcg` |
+| `restart=true` | `spin_scheme=nonspin` or `spin_scheme=spin` |
+
+Additional runtime constraint:
+
+- `xc_scheme = hse06` currently requires exactly one Gamma k-point (`k=(0,0,0)`).
 ```

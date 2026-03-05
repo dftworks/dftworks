@@ -13,6 +13,55 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  portability-matrix:
+    name: Build Portability (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      DFTWORKS_ALLOW_PATH_FALLBACK: "1"
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libhdf5-dev \
+            libfftw3-dev \
+            liblapack-dev \
+            libblas-dev \
+            libopenmpi-dev \
+            gfortran
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install pkg-config open-mpi fftw lapack hdf5 gcc
+          echo "MPI_DIR=$(brew --prefix open-mpi)" >> "$GITHUB_ENV"
+          echo "FFTW_DIR=$(brew --prefix fftw)" >> "$GITHUB_ENV"
+          echo "LAPACK_DIR=$(brew --prefix lapack)/lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix open-mpi)/lib/pkgconfig:$(brew --prefix fftw)/lib/pkgconfig:${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: dftworks-v1
+
+      - name: Cargo check workspace
+        run: cargo check --workspace --locked
+
   # Fast check job - runs first for quick feedback
   check:
     name: Cargo Check

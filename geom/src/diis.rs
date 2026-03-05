@@ -1,7 +1,7 @@
 #![allow(warnings)]
 use crystal::Crystal;
 use lattice::Lattice;
-use types::*;
+use nalgebra::Matrix3;
 use types::*;
 
 use optimization::OptimizationDriver;
@@ -72,6 +72,21 @@ fn scatter_vec3(flat: &[f64], out: &mut [Vector3f64]) {
     }
 }
 
+fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
+    Matrix3::<f64>::from_column_slice(m.as_slice())
+}
+
+fn matrix3_to_lattice(m: &Matrix3<f64>) -> Lattice {
+    let a = [m[(0, 0)], m[(1, 0)], m[(2, 0)]];
+    let b = [m[(0, 1)], m[(1, 1)], m[(2, 1)]];
+    let c = [m[(0, 2)], m[(1, 2)], m[(2, 2)]];
+    Lattice::new(&a, &b, &c)
+}
+
+fn lattice_to_matrix3(latt: &Lattice) -> Matrix3<f64> {
+    Matrix3::<f64>::from_column_slice(latt.as_matrix().as_slice())
+}
+
 fn move_cell_and_ions(
     driver: &mut DIIS,
     crystal: &mut Crystal,
@@ -81,9 +96,6 @@ fn move_cell_and_ions(
     stress_mask: &Matrix<f64>,
     latt0: &Lattice,
 ) {
-    let volume = crystal.get_latt().volume();
-    let precon = volume.powf(1.0 / 3.0);
-
     let mut gcoord = compute_generalized_coordinates(crystal, latt0);
 
     let gforce = compute_generalized_forces(crystal, latt0, force, stress);
@@ -98,11 +110,9 @@ fn move_cell_and_ions(
     ];
 
     for i in 0..3 {
-        let t = stress_mask.get_col(i);
-
-        gmask[i].x = t[0];
-        gmask[i].y = t[1];
-        gmask[i].z = t[2];
+        gmask[i].x = stress_mask[(0, i)];
+        gmask[i].y = stress_mask[(1, i)];
+        gmask[i].z = stress_mask[(2, i)];
     }
 
     for i in 0..natoms {
@@ -163,21 +173,17 @@ fn move_ions(
     crystal.set_atom_positions_from_frac(&atoms_frac);
 }
 
-fn set_lattice_vectors_with_strain(crystal: &mut Crystal, latt0: &Lattice, strain: &Matrix<f64>) {
+fn set_lattice_vectors_with_strain(crystal: &mut Crystal, latt0: &Lattice, strain: &Matrix3<f64>) {
     let mut factor = strain.clone();
-
     for i in 0..3 {
-        factor[[i, i]] += 1.0;
+        factor[(i, i)] += 1.0;
     }
-
-    let mlatt = factor.dot(latt0.as_matrix());
-
-    let new_latt = Lattice::new(mlatt.get_col(0), mlatt.get_col(1), mlatt.get_col(2));
-
+    let mlatt = factor * lattice_to_matrix3(latt0);
+    let new_latt = matrix3_to_lattice(&mlatt);
     crystal.set_lattice_vectors(&new_latt);
 }
 
-fn compute_generalized_coordinates(crystal: &Crystal, latt0: &Lattice) -> Vec<Vector3f64> {
+fn compute_generalized_coordinates(crystal: &Crystal, _latt0: &Lattice) -> Vec<Vector3f64> {
     let natoms = crystal.get_n_atoms();
 
     let mut gcoord = vec![Vector3f64::zeros(); 3 + natoms];
@@ -185,9 +191,9 @@ fn compute_generalized_coordinates(crystal: &Crystal, latt0: &Lattice) -> Vec<Ve
     // cell : lattice vectors
     let latt = crystal.get_latt().as_matrix();
     for i in 0..3 {
-        gcoord[i].x = latt[[0, i]];
-        gcoord[i].y = latt[[1, i]];
-        gcoord[i].z = latt[[2, i]];
+        gcoord[i].x = latt[(0, i)];
+        gcoord[i].y = latt[(1, i)];
+        gcoord[i].z = latt[(2, i)];
     }
 
     // atoms : fractional coordinates
@@ -203,7 +209,7 @@ fn compute_generalized_coordinates(crystal: &Crystal, latt0: &Lattice) -> Vec<Ve
 
 fn compute_generalized_forces(
     crystal: &Crystal,
-    latt0: &Lattice,
+    _latt0: &Lattice,
     force: &[Vector3f64],
     stress: &Matrix<f64>,
 ) -> Vec<Vector3f64> {
@@ -211,51 +217,34 @@ fn compute_generalized_forces(
 
     let mut gforce = vec![Vector3f64::zeros(); 3 + natoms];
 
-    let volume = crystal.get_latt().volume();
-
     // cell : stress
-
-    let mut latt0_inv = latt0.as_matrix().clone();
-
-    latt0_inv.inv();
-
-    let mut epsilon_plus_inv = crystal.get_latt().as_matrix().dot(&latt0_inv);
-    epsilon_plus_inv.inv();
-
-    let gstress = stress.dot(&epsilon_plus_inv);
+    let volume = crystal.get_latt().volume();
+    let latt_inv = lattice_to_matrix3(crystal.get_latt())
+        .try_inverse()
+        .expect("lattice matrix is singular in DIIS generalized forces");
+    let stress_mat = matrix_to_matrix3(stress);
+    let cforce = (stress_mat * latt_inv.transpose()) * volume;
 
     let factor = -1.0;
 
     // transform stress to forces on lattice vectors
 
-    let cforce = stress::stress_to_force_on_cell(crystal.get_latt(), stress);
-
     for i in 0..3 {
-        let t = cforce.get_col(i);
-
-        gforce[i].x = t[0] * factor;
-        gforce[i].y = t[1] * factor;
-        gforce[i].z = t[2] * factor;
+        gforce[i].x = cforce[(0, i)] * factor;
+        gforce[i].y = cforce[(1, i)] * factor;
+        gforce[i].z = cforce[(2, i)] * factor;
     }
 
     // atoms : force
 
     force::cart_to_frac(crystal.get_latt(), force, &mut gforce[3..]);
 
-    let g = crystal.get_latt().get_metric_tensor();
-
-    let volume = crystal.get_latt().volume();
-
     let factor = -1.0; // / volume.powf(2.0 / 3.0);
 
     for i in 0..natoms {
-        //let v = g.dot(&gforce[3 + i].to_vec());
-
-        let v = gforce[3 + i].as_slice().to_vec();
-
-        gforce[3 + i].x = v[0] * factor;
-        gforce[3 + i].y = v[1] * factor;
-        gforce[3 + i].z = v[2] * factor;
+        gforce[3 + i].x *= factor;
+        gforce[3 + i].y *= factor;
+        gforce[3 + i].z *= factor;
     }
 
     gforce

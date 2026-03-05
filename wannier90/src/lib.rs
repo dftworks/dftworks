@@ -14,7 +14,6 @@ use crystal::Crystal;
 use dfttypes::VKEigenValue;
 use eig::{merge_rank_parts, write_local_eig_part_files};
 use mesh::validate_k_mesh;
-use mpi_sys::MPI_COMM_WORLD;
 pub use projected::{run_projected_analysis, ProjectedConfig, ProjectedSummary};
 use pspot::PSPot;
 use std::io;
@@ -41,7 +40,7 @@ pub fn write_win_inputs(
 
     let mut summary = ExportSummary::default();
 
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
     if dwmpi::is_root() {
         let pots = PSPot::new(control.get_pot_scheme_enum());
         match control.get_spin_scheme_enum() {
@@ -78,7 +77,7 @@ pub fn write_win_inputs(
             }
         }
     }
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
 
     Ok(summary)
 }
@@ -92,7 +91,7 @@ pub fn write_overlap_inputs(
     let mut summary = ExportSummary::default();
 
     // Ensure all ranks have reached post-processing after SCF outputs are on disk.
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
     if dwmpi::is_root() {
         let pots = PSPot::new(control.get_pot_scheme_enum());
         match control.get_spin_scheme_enum() {
@@ -136,7 +135,7 @@ pub fn write_overlap_inputs(
             }
         }
     }
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
 
     Ok(summary)
 }
@@ -149,7 +148,7 @@ pub fn write_eig_inputs(
     let seedname = validate_seedname(control)?;
     let mut summary = ExportSummary::default();
     write_local_eig_part_files(seedname, vkevals, k_indices)?;
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
 
     if dwmpi::is_root() {
         // Merge rank-local .eig parts into one file per exported channel.
@@ -183,7 +182,7 @@ pub fn write_eig_inputs(
         }
     }
 
-    dwmpi::barrier(MPI_COMM_WORLD);
+    dwmpi::barrier(dwmpi::comm_world());
     Ok(summary)
 }
 

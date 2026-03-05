@@ -15,3 +15,4 @@ gvector = { path = "../gvector" }
 pwdensity = { path = "../pwdensity" }
 special = { path = "../special" }
 num-traits = "*"
+nalgebra = "0.32.6"

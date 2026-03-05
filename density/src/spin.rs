@@ -7,7 +7,6 @@ use fhkl;
 use gvector::GVector;
 use itertools::multizip;
 use magmom::*;
-use mpi_sys::MPI_COMM_WORLD;
 use ndarray::*;
 use num_traits::Zero;
 use pspot::PSPot;
@@ -214,16 +213,16 @@ impl Density for DensitySpin {
             dwmpi::reduce_slice_sum(
                 workspace.rho_3d_up_local.as_slice(),
                 rho_3d_up.as_mut_slice(),
-                MPI_COMM_WORLD,
+                dwmpi::comm_world(),
             );
             dwmpi::reduce_slice_sum(
                 workspace.rho_3d_dn_local.as_slice(),
                 rho_3d_dn.as_mut_slice(),
-                MPI_COMM_WORLD,
+                dwmpi::comm_world(),
             );
 
-            dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), MPI_COMM_WORLD);
-            dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), MPI_COMM_WORLD);
+            dwmpi::bcast_slice(rho_3d_up.as_mut_slice(), dwmpi::comm_world());
+            dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), dwmpi::comm_world());
         });
     }
 }

@@ -1,6 +1,5 @@
 use types::*;
 use nalgebra::Matrix3;
-use types::*;
 
 use std::{f64::consts, fmt};
 
@@ -10,9 +9,17 @@ use std::{f64::consts, fmt};
 // - internal matrix stores lattice vectors by columns
 // - direct and reciprocal transforms follow physics convention:
 //   b_i · a_j = 2*pi*delta_ij
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Lattice {
     data: Matrix<f64>,
+}
+
+impl Default for Lattice {
+    fn default() -> Self {
+        Self {
+            data: Matrix::<f64>::new(0, 0),
+        }
+    }
 }
 
 impl Lattice {
@@ -35,17 +42,17 @@ impl Lattice {
         let b = self.get_vector_b();
         let c = self.get_vector_c();
 
-        g[[0, 0]] = a.dot(&a);
-        g[[0, 1]] = a.dot(&b);
-        g[[0, 2]] = a.dot(&c);
+        g[(0, 0)] = a.dot(&a);
+        g[(0, 1)] = a.dot(&b);
+        g[(0, 2)] = a.dot(&c);
 
-        g[[1, 0]] = b.dot(&a);
-        g[[1, 1]] = b.dot(&b);
-        g[[1, 2]] = b.dot(&c);
+        g[(1, 0)] = b.dot(&a);
+        g[(1, 1)] = b.dot(&b);
+        g[(1, 2)] = b.dot(&c);
 
-        g[[2, 0]] = c.dot(&a);
-        g[[2, 1]] = c.dot(&b);
-        g[[2, 2]] = c.dot(&c);
+        g[(2, 0)] = c.dot(&a);
+        g[(2, 1)] = c.dot(&b);
+        g[(2, 2)] = c.dot(&c);
 
         g
     }
@@ -64,7 +71,7 @@ impl Lattice {
 
         for i in 0..3 {
             for j in 0..3 {
-                latt[j][i] = self.data[[j, i]];
+                latt[j][i] = self.data[(j, i)];
             }
         }
 
@@ -77,7 +84,7 @@ impl Lattice {
 
         for i in 0..3 {
             for j in 0..3 {
-                latt[i][j] = self.data[[j, i]];
+                latt[i][j] = self.data[(j, i)];
             }
         }
 
@@ -160,7 +167,7 @@ impl Lattice {
 
     /// Save the lattice to a HDF5 file.
     pub fn save_hdf5(&self, group: &mut hdf5::Group) {
-        self.data.save_hdf5(group);
+        save_matrix_f64_hdf5(&self.data, group).expect("failed to save Lattice to HDF5");
     }
 
     /// Load the lattice from a HDF5 file.
@@ -170,7 +177,7 @@ impl Lattice {
 
     /// Fallible HDF5 loader used by restart/checkpoint paths.
     pub fn try_load_hdf5(group: &hdf5::Group) -> Result<Self, String> {
-        let data = Matrix::<f64>::try_load_hdf5(group)?;
+        let data = load_matrix_f64_hdf5(group)?;
         if data.nrow() != 3 || data.ncol() != 3 {
             return Err(format!(
                 "invalid lattice matrix shape: expected 3x3, got {}x{}",

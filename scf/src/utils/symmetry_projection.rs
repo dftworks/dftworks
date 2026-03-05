@@ -6,7 +6,7 @@ use dfttypes::*;
 use ewald::Ewald;
 use gvector::GVector;
 use types::Matrix;
-use mpi_sys::MPI_COMM_WORLD;
+use types::MatrixExt;
 use ndarray::Array3;
 use pspot::PSPot;
 use pwdensity::PWDensity;
@@ -78,10 +78,10 @@ pub fn compute_force(
     dwmpi::reduce_slice_sum(
         force_vnl_local_flat.as_slice(),
         force_vnl_flat.as_mut_slice(),
-        MPI_COMM_WORLD,
+        dwmpi::comm_world(),
     );
 
-    dwmpi::bcast_slice(force_vnl_flat.as_mut_slice(), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(force_vnl_flat.as_mut_slice(), dwmpi::comm_world());
     scatter_vec3(&force_vnl_flat, &mut force_vnl);
 
     let mut force_ewald = ewald.get_force().to_vec();
@@ -143,10 +143,10 @@ pub fn compute_stress(
     dwmpi::reduce_slice_sum(
         stress_kin_local.as_slice(),
         stress_kin.as_mut_slice(),
-        MPI_COMM_WORLD,
+        dwmpi::comm_world(),
     );
 
-    dwmpi::bcast_slice(stress_kin.as_mut_slice(), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(stress_kin.as_mut_slice(), dwmpi::comm_world());
 
     let mut stress_vnl_local = stress::vnl(
         crystal,
@@ -159,10 +159,10 @@ pub fn compute_stress(
     dwmpi::reduce_slice_sum(
         stress_vnl_local.as_slice(),
         stress_vnl.as_mut_slice(),
-        MPI_COMM_WORLD,
+        dwmpi::comm_world(),
     );
 
-    dwmpi::bcast_slice(stress_vnl.as_mut_slice(), MPI_COMM_WORLD);
+    dwmpi::bcast_slice(stress_vnl.as_mut_slice(), dwmpi::comm_world());
 
     let mut stress_hartree = stress::hartree(gvec, pwden, rhog.as_non_spin().unwrap());
     let mut stress_spectral_ws = stress::SpectralWorkspace::new();

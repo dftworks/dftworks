@@ -28,9 +28,9 @@ cargo build --release
 cargo check
 ```
 
-**Note for Apple Silicon (M1/M2/M3)**: Homebrew installs to `/opt/homebrew`. The build scripts automatically detect this location.
+**Note for Apple Silicon (M1/M2/M3)**: Homebrew installs to `/opt/homebrew`.
 
-**Note for Intel Macs**: Homebrew installs to `/usr/local`. The build scripts automatically detect this location.
+**Note for Intel Macs**: Homebrew installs to `/usr/local`.
 
 ### macOS (MacPorts)
 
@@ -42,7 +42,7 @@ sudo port install rust mpich-default fftw-3 lapack gcc13 hdf5
 cargo build --release
 ```
 
-**Note**: MacPorts installs to `/opt/local`. The build scripts automatically detect this location.
+**Note**: MacPorts installs to `/opt/local`.
 
 ### macOS (Conda)
 
@@ -91,6 +91,7 @@ module load rust openmpi fftw lapack hdf5
 
 # If libraries are in non-standard locations, set environment variables
 export MPI_LIB_DIR=/path/to/mpi/lib
+export MPI_DIR=/path/to/mpi
 export FFTW_DIR=/path/to/fftw
 export LAPACK_DIR=/path/to/lapack
 
@@ -107,6 +108,11 @@ If dependencies are installed in non-standard locations, you can use environment
 - **`MPI_LIB_DIR`**: Path to MPI library directory
   ```bash
   export MPI_LIB_DIR=/custom/path/to/mpi/lib
+  ```
+
+- **`MPI_DIR`**: Path to MPI installation prefix
+  ```bash
+  export MPI_DIR=/custom/path/to/mpi
   ```
 
 - **`FFTW_DIR`**: Path to FFTW installation directory
@@ -140,6 +146,11 @@ If dependencies are installed in non-standard locations, you can use environment
   export MATRIX_LINK_GFORTRAN=false
   ```
 
+- **`DFTWORKS_ALLOW_PATH_FALLBACK`**: Enable package-manager path fallback probing (`/opt/homebrew`, `/usr/local`, `/opt/local`) in build scripts
+  ```bash
+  export DFTWORKS_ALLOW_PATH_FALLBACK=1
+  ```
+
 ## Troubleshooting
 
 ### Build Fails with Missing MPI Libraries
@@ -156,6 +167,9 @@ export MPI_LIB_DIR=/usr/local/lib
 
 # Custom MPI installation
 export MPI_LIB_DIR=/path/to/mpi/lib
+
+# or use installation prefix
+export MPI_DIR=/path/to/mpi
 ```
 
 ### Build Fails with Missing FFTW
@@ -169,6 +183,11 @@ brew install fftw
 
 # Or set custom path
 export FFTW_DIR=/path/to/fftw
+```
+
+If your install is in Homebrew/MacPorts default locations and you prefer automatic fallback probing:
+```bash
+export DFTWORKS_ALLOW_PATH_FALLBACK=1
 ```
 
 ### Build Fails with Missing LAPACK
@@ -238,9 +257,9 @@ cargo build --release
 
 | Platform | MPI | FFTW | LAPACK | Notes |
 |----------|-----|------|--------|-------|
-| macOS (Homebrew, Apple Silicon) | ✅ | ✅ | ✅ | Auto-detected at `/opt/homebrew` |
-| macOS (Homebrew, Intel) | ✅ | ✅ | ✅ | Auto-detected at `/usr/local` |
-| macOS (MacPorts) | ✅ | ✅ | ✅ | Auto-detected at `/opt/local` |
+| macOS (Homebrew, Apple Silicon) | ✅ | ✅ | ✅ | Use env vars or `DFTWORKS_ALLOW_PATH_FALLBACK=1` |
+| macOS (Homebrew, Intel) | ✅ | ✅ | ✅ | Use env vars or `DFTWORKS_ALLOW_PATH_FALLBACK=1` |
+| macOS (MacPorts) | ✅ | ✅ | ✅ | Use env vars or `DFTWORKS_ALLOW_PATH_FALLBACK=1` |
 | macOS (Conda) | ✅ | ✅ | ✅ | Auto-detected via `$CONDA_PREFIX` |
 | Ubuntu/Debian | ✅ | ✅ | ✅ | System packages work out-of-box |
 | RHEL/CentOS | ✅ | ✅ | ✅ | May need environment modules |

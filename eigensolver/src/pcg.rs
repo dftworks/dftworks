@@ -358,7 +358,7 @@ fn test_sparse_solver_pcg() {
 
     let mut h_diag = vec![0.0; n];
     for i in 0..n {
-        h_diag[i] = m[[i, i]].re;
+        h_diag[i] = m[(i, i)].re;
     }
 
     let mut occ = vec![0.0; n];

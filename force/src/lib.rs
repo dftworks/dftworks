@@ -7,12 +7,12 @@ use gvector::*;
 use kgylm::KGYLM;
 use kscf::*;
 use lattice::*;
+use nalgebra::Matrix3;
 use types::*;
 use num_traits::identities::Zero;
 use pspot::*;
 use pwbasis::*;
 use pwdensity::*;
-use types::*;
 
 use itertools::multizip;
 use std::collections::HashMap;
@@ -407,16 +407,16 @@ pub fn get_max_force(force: &[Vector3f64]) -> f64 {
 //}
 
 pub fn cart_to_frac(latt: &Lattice, vc: &[Vector3f64], vf: &mut [Vector3f64]) {
-    let mut mat = latt.as_matrix().clone();
-
-    mat.inv();
-
-    mat = mat.transpose();
+    let latt_mat = Matrix3::<f64>::from_column_slice(latt.as_matrix().as_slice());
+    let latt_inv = latt_mat
+        .try_inverse()
+        .expect("lattice matrix is singular in force::cart_to_frac");
 
     for (tc, tf) in multizip((vc.iter(), vf.iter_mut())) {
-        tf.x = mat[[0, 0]] * tc.x + mat[[1, 0]] * tc.y + mat[[2, 0]] * tc.z;
-        tf.y = mat[[0, 1]] * tc.x + mat[[1, 1]] * tc.y + mat[[2, 1]] * tc.z;
-        tf.z = mat[[0, 2]] * tc.x + mat[[1, 2]] * tc.y + mat[[2, 2]] * tc.z;
+        let frac = latt_inv * *tc;
+        tf.x = frac.x;
+        tf.y = frac.y;
+        tf.z = frac.z;
     }
 }
 

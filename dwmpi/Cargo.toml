@@ -3,8 +3,11 @@ name = "dwmpi"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = []
+# Backward-compatible no-op feature; rsmpi is now always used.
+rsmpi_backend = []
 
 [dependencies]
 types = { path = "../types" }
-mpi_sys = { path = "../mpi_sys" }
+mpi = { version = "0.8.1", default-features = false, features = ["complex"] }
