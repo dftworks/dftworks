@@ -1252,7 +1252,7 @@ Finish an item only when:
 
 ### E24 - Capability Matrix and Unsupported-Mode Policy
 **Priority**: P1 (Critical - prevents runtime panics and improves user experience)
-**Status**: Open
+**Status**: Completed (2026-03-04)
 **Files**: `control/src/lib.rs`, `pw/src/main.rs`, `scf/src/lib.rs`
 
 - Define explicit capability matrix for `{spin_scheme, xc_scheme, task, restart, eigensolver}` combinations
@@ -1261,6 +1261,13 @@ Finish an item only when:
 - Ensure checkpoint metadata validation also enforces capability compatibility
 - Document supported feature combinations in user guide
 - Add validation tests for all unsupported combinations
+
+**Implementation Update (2026-03-04)**
+- [x] Added explicit central runtime capability matrix in `control` for `{task, spin_scheme, xc_scheme, restart, eigen_solver}` and routed compatibility checks through one table-driven validator.
+- [x] Added task-mode validation (`task` now rejects unsupported values with clear supported-list diagnostics).
+- [x] Added runtime preflight in `pw` bootstrap for HSE06 Gamma-only k-point constraints, returning actionable errors before SCF setup.
+- [x] Replaced panic-based unsupported-mode setup paths in `pw` orchestration (`construct_geometry_phase`, SCF state/eigen allocation) with `Result`-based error returns.
+- [x] Added/updated control validation tests for unsupported task modes and supported cross-product combinations.
 
 **Acceptance Criteria**
 - Unsupported runtime combinations fail at input validation/preflight phase with helpful error messages

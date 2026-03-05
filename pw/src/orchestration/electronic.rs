@@ -147,13 +147,17 @@ pub(crate) fn allocate_eigenvalues(
     spin_scheme: SpinScheme,
     nband: usize,
     nk_local: usize,
-) -> VKEigenValue {
+) -> Result<VKEigenValue, String> {
     match spin_scheme {
-        SpinScheme::NonSpin => VKEigenValue::NonSpin(vec![vec![0.0; nband]; nk_local]),
-        SpinScheme::Spin => {
-            VKEigenValue::Spin(vec![vec![0.0; nband]; nk_local], vec![vec![0.0; nband]; nk_local])
-        }
-        SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
+        SpinScheme::NonSpin => Ok(VKEigenValue::NonSpin(vec![vec![0.0; nband]; nk_local])),
+        SpinScheme::Spin => Ok(VKEigenValue::Spin(
+            vec![vec![0.0; nband]; nk_local],
+            vec![vec![0.0; nband]; nk_local],
+        )),
+        SpinScheme::Ncl => Err(
+            "unsupported capability: spin_scheme='ncl' is not implemented in eigen setup"
+                .to_string(),
+        ),
     }
 }
 
@@ -169,13 +173,18 @@ pub(crate) fn allocate_eigenvectors(
     spin_scheme: SpinScheme,
     nband: usize,
     vpwwfc: &[PWBasis],
-) -> VKEigenVector {
+) -> Result<VKEigenVector, String> {
     match spin_scheme {
-        SpinScheme::NonSpin => VKEigenVector::NonSpin(allocate_eigenvector_channel(vpwwfc, nband)),
-        SpinScheme::Spin => VKEigenVector::Spin(
+        SpinScheme::NonSpin => Ok(VKEigenVector::NonSpin(allocate_eigenvector_channel(
+            vpwwfc, nband,
+        ))),
+        SpinScheme::Spin => Ok(VKEigenVector::Spin(
             allocate_eigenvector_channel(vpwwfc, nband),
             allocate_eigenvector_channel(vpwwfc, nband),
+        )),
+        SpinScheme::Ncl => Err(
+            "unsupported capability: spin_scheme='ncl' is not implemented in eigen setup"
+                .to_string(),
         ),
-        SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in eigen setup"),
     }
 }

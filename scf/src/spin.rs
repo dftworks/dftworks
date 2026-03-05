@@ -501,7 +501,6 @@ impl SCF for SCFSpin {
         force_total: &mut Vec<Vector3f64>,
     ) {
         let density_driver = density::new(control.get_spin_scheme_enum());
-        utils::validate_hse06_runtime_constraints(control, kpts);
         utils::display_external_field_runtime_note(control);
 
         //

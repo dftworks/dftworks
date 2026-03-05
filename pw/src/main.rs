@@ -268,7 +268,7 @@ impl ElectronicStepContext {
         gvec: &'a GVector,
         pwden: &'a PWDensity,
         fft_shape: [usize; 3],
-    ) -> (VKSCF<'a>, VKEigenValue, VKEigenVector, usize) {
+    ) -> Result<(VKSCF<'a>, VKEigenValue, VKEigenVector, usize), String> {
         let nband = runtime.control.get_nband();
         let my_nkpt = self.local_nkpt();
 
@@ -286,18 +286,26 @@ impl ElectronicStepContext {
                     );
                 (VKSCF::Spin(channel_up, channel_dn), saved_bytes)
             }
-            SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in KSCF setup"),
+            SpinScheme::Ncl => {
+                return Err(
+                    "unsupported capability: spin_scheme='ncl' is not implemented in KSCF setup"
+                        .to_string(),
+                )
+            }
         };
 
-        let vkevals =
-            orchestration::electronic::allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt);
+        let vkevals = orchestration::electronic::allocate_eigenvalues(
+            runtime.spin_scheme,
+            nband,
+            my_nkpt,
+        )?;
         let vkevecs = orchestration::electronic::allocate_eigenvectors(
             runtime.spin_scheme,
             nband,
             &self.vpwwfc,
-        );
+        )?;
 
-        (vkscf, vkevals, vkevecs, spin_cache_saved_bytes_local)
+        Ok((vkscf, vkevals, vkevecs, spin_cache_saved_bytes_local))
     }
 }
 
@@ -364,7 +372,7 @@ fn main() {
     // crystal.display();
 
     loop {
-        let mut phase = orchestration::construction::construct_geometry_phase(
+        let mut phase = match orchestration::construction::construct_geometry_phase(
             orchestration::construction::GeometryPhaseInput {
                 control: &control,
                 crystal: &crystal,
@@ -376,15 +384,36 @@ fn main() {
                 density_driver: density_driver.as_ref(),
                 orchestration_workspace: &mut orchestration_workspace,
             },
-        );
+        ) {
+            Ok(phase) => phase,
+            Err(err) => {
+                if dwmpi::is_root() {
+                    eprintln!("failed to construct geometry phase: {}", err);
+                }
+                dwmpi::barrier(dwmpi::comm_world());
+                dwmpi::finalize();
+                std::process::exit(1);
+            }
+        };
 
-        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) =
-            phase.electronic_ctx.build_scf_state(
+        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) = match phase
+            .electronic_ctx
+            .build_scf_state(
                 &phase.runtime_ctx,
                 phase.geom_ctx.gvec(),
                 phase.geom_ctx.pwden(),
                 phase.geom_ctx.fft_shape(),
-            );
+            ) {
+            Ok(state) => state,
+            Err(err) => {
+                if dwmpi::is_root() {
+                    eprintln!("failed to initialize SCF state: {}", err);
+                }
+                dwmpi::barrier(dwmpi::comm_world());
+                dwmpi::finalize();
+                std::process::exit(1);
+            }
+        };
 
         if matches!(spin_scheme, SpinScheme::Spin) {
             let local_saved = spin_cache_saved_bytes_local as f64;

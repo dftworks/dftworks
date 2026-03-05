@@ -466,6 +466,75 @@ pub struct Control {
     vdw_damping: String,  // "zero" or "bj"
 }
 
+struct CapabilityMatrix {
+    tasks: &'static [&'static str],
+    spin_schemes: &'static [SpinScheme],
+    xc_schemes: &'static [XcScheme],
+    eigen_solvers: &'static [EigenSolverScheme],
+    restart_spin_schemes: &'static [SpinScheme],
+}
+
+const RUNTIME_CAPABILITY_MATRIX: CapabilityMatrix = CapabilityMatrix {
+    tasks: &["scf", "band"],
+    spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
+    xc_schemes: &[
+        XcScheme::LdaPz,
+        XcScheme::LsdaPz,
+        XcScheme::Pbe,
+        XcScheme::Hse06,
+    ],
+    eigen_solvers: &[EigenSolverScheme::Pcg],
+    restart_spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
+};
+
+#[inline]
+fn contains_task(values: &[&str], value: &str) -> bool {
+    values.iter().any(|allowed| *allowed == value)
+}
+
+#[inline]
+fn contains_spin_scheme(values: &[SpinScheme], value: SpinScheme) -> bool {
+    values.iter().any(|allowed| *allowed == value)
+}
+
+#[inline]
+fn contains_xc_scheme(values: &[XcScheme], value: XcScheme) -> bool {
+    values.iter().any(|allowed| *allowed == value)
+}
+
+#[inline]
+fn contains_eigen_solver(values: &[EigenSolverScheme], value: EigenSolverScheme) -> bool {
+    values.iter().any(|allowed| *allowed == value)
+}
+
+fn join_supported_tasks(values: &[&str]) -> String {
+    values.join(", ")
+}
+
+fn join_supported_spin_schemes(values: &[SpinScheme]) -> String {
+    values
+        .iter()
+        .map(|v| v.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn join_supported_xc_schemes(values: &[XcScheme]) -> String {
+    values
+        .iter()
+        .map(|v| v.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn join_supported_eigen_schemes(values: &[EigenSolverScheme]) -> String {
+    values
+        .iter()
+        .map(|v| v.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControlError {
     pub line: Option<usize>,
@@ -1718,12 +1787,63 @@ impl Control {
             ));
         }
 
-        if !matches!(self.eigen_solver, EigenSolverScheme::Pcg) {
+        Ok(())
+    }
+
+    pub fn validate_capability_matrix(&self) -> Result<(), ControlError> {
+        let matrix = &RUNTIME_CAPABILITY_MATRIX;
+
+        if !contains_task(matrix.tasks, self.task.as_str()) {
+            return Err(ControlError::validation(
+                "task",
+                format!(
+                    "unsupported task='{}'; supported: {}",
+                    self.task,
+                    join_supported_tasks(matrix.tasks)
+                ),
+            ));
+        }
+
+        if !contains_spin_scheme(matrix.spin_schemes, self.spin_scheme) {
+            return Err(ControlError::validation(
+                "spin_scheme",
+                format!(
+                    "spin_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
+                    self.spin_scheme.as_str(),
+                    join_supported_spin_schemes(matrix.spin_schemes)
+                ),
+            ));
+        }
+
+        if !contains_xc_scheme(matrix.xc_schemes, self.xc_scheme) {
+            return Err(ControlError::validation(
+                "xc_scheme",
+                format!(
+                    "xc_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
+                    self.xc_scheme.as_str(),
+                    join_supported_xc_schemes(matrix.xc_schemes)
+                ),
+            ));
+        }
+
+        if !contains_eigen_solver(matrix.eigen_solvers, self.eigen_solver) {
             return Err(ControlError::validation(
                 "eigen_solver",
                 format!(
-                    "eigen_solver='{}' is parsed but not implemented yet; use 'pcg'",
-                    self.eigen_solver.as_str()
+                    "eigen_solver='{}' is parsed but not implemented yet; supported: {}",
+                    self.eigen_solver.as_str(),
+                    join_supported_eigen_schemes(matrix.eigen_solvers)
+                ),
+            ));
+        }
+
+        if self.restart && !contains_spin_scheme(matrix.restart_spin_schemes, self.spin_scheme) {
+            return Err(ControlError::validation(
+                "restart/spin_scheme",
+                format!(
+                    "restart=true is unsupported with spin_scheme='{}'; restart supports only {}",
+                    self.spin_scheme.as_str(),
+                    join_supported_spin_schemes(matrix.restart_spin_schemes)
                 ),
             ));
         }
@@ -1732,12 +1852,7 @@ impl Control {
     }
 
     fn validate_feature_compatibility(&self) -> Result<(), ControlError> {
-        if self.restart && self.is_noncollinear() {
-            return Err(ControlError::validation(
-                "restart/spin_scheme",
-                "restart currently supports only nonspin/spin",
-            ));
-        }
+        self.validate_capability_matrix()?;
 
         if self.hubbard_u_enabled {
             if self.hubbard_species.trim().is_empty() {
@@ -1794,7 +1909,7 @@ impl Control {
             if self.is_noncollinear() {
                 return Err(ControlError::validation(
                     "spin_scheme",
-                    "xc_scheme='hse06' currently supports only nonspin/spin",
+                    "xc_scheme='hse06' currently supports only nonspin/spin (capability matrix)",
                 ));
             }
         }
@@ -2282,7 +2397,7 @@ mod tests {
     fn test_validation_rejects_hse06_with_ncl() {
         let err = parse_control(&["xc_scheme = hse06", "spin_scheme = ncl"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("spin_scheme"));
-        assert!(err.message.contains("hse06"));
+        assert!(err.message.contains("runtime support is not enabled yet"));
     }
 
     #[test]
@@ -2302,8 +2417,38 @@ mod tests {
     #[test]
     fn test_validation_rejects_restart_with_ncl() {
         let err = parse_control(&["restart = true", "spin_scheme = ncl"]).unwrap_err();
-        assert_eq!(err.key.as_deref(), Some("restart/spin_scheme"));
-        assert!(err.message.contains("supports only nonspin/spin"));
+        assert_eq!(err.key.as_deref(), Some("spin_scheme"));
+        assert!(err.message.contains("runtime support is not enabled yet"));
+    }
+
+    #[test]
+    fn test_validation_rejects_unsupported_task_mode() {
+        let err = parse_control(&["task = relax"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("task"));
+        assert!(err.message.contains("supported: scf, band"));
+    }
+
+    #[test]
+    fn test_capability_matrix_accepts_supported_core_combinations() {
+        let tasks = ["scf", "band"];
+        let spins = ["nonspin", "spin"];
+        let xcs = ["lda-pz", "lsda-pz", "pbe", "hse06"];
+
+        for task in tasks.iter() {
+            for spin in spins.iter() {
+                for xc in xcs.iter() {
+                    let lines = vec![
+                        format!("task = {}", task),
+                        format!("spin_scheme = {}", spin),
+                        format!("xc_scheme = {}", xc),
+                        "eigen_solver = pcg".to_string(),
+                    ];
+                    let line_refs = lines.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                    parse_control(line_refs.as_slice())
+                        .unwrap_or_else(|e| panic!("unexpected capability rejection: {}", e));
+                }
+            }
+        }
     }
 
     #[test]

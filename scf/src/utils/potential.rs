@@ -187,27 +187,27 @@ pub fn display_parallel_runtime_info() {
     );
 }
 
-pub fn validate_hse06_runtime_constraints(control: &Control, kpts: &dyn KPTS) {
+pub fn validate_hse06_runtime_constraints(
+    control: &Control,
+    kpts: &dyn KPTS,
+) -> Result<(), String> {
     if !matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
-        return;
+        return Ok(());
     }
 
     if kpts.get_n_kpts() != 1 {
-        panic!("xc_scheme='hse06' currently supports only a single Gamma k-point");
+        return Err("xc_scheme='hse06' currently supports only a single Gamma k-point".to_string());
     }
 
     let k0 = kpts.get_k_frac(0);
     if k0.norm() > 1.0E-10 {
-        panic!(
+        return Err(
             "xc_scheme='hse06' currently supports only Gamma point (in.kmesh must map to k=(0,0,0))"
+                .to_string(),
         );
     }
 
-    if dwmpi::is_root() {
-        println!(
-            "     NOTE: hse06 currently includes screened exact-exchange in the SCF Hamiltonian; force/stress do not include the hybrid exchange term yet."
-        );
-    }
+    Ok(())
 }
 
 pub fn display_external_field_runtime_note(control: &Control) {

@@ -34,7 +34,7 @@ pub(crate) struct GeometryPhaseArtifacts<'a> {
 
 pub(crate) fn construct_geometry_phase<'a, 'ws>(
     input: GeometryPhaseInput<'a, 'ws>,
-) -> GeometryPhaseArtifacts<'a> {
+) -> Result<GeometryPhaseArtifacts<'a>, String> {
     let verbosity = input.control.get_verbosity_enum();
 
     let geom_ctx = crate::GeometryStepContext::new(input.crystal, input.control.get_ecutrho());
@@ -60,7 +60,10 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         SpinScheme::NonSpin => RHOG::NonSpin(vec![c64::zero(); npw_rho]),
         SpinScheme::Spin => RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
         SpinScheme::Ncl => {
-            panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            return Err(
+                "unsupported capability: spin_scheme='ncl' is not implemented in pw initialization"
+                    .to_string(),
+            )
         }
     };
 
@@ -71,7 +74,10 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
             Array3::<c64>::new([n1, n2, n3]),
         ),
         SpinScheme::Ncl => {
-            panic!("spin_scheme='ncl' is not implemented yet in pw initialization")
+            return Err(
+                "unsupported capability: spin_scheme='ncl' is not implemented in pw initialization"
+                    .to_string(),
+            )
         }
     };
 
@@ -94,7 +100,10 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
                     loaded_from_restart = true;
                 }
                 Err(err) => {
-                    panic!("{}", err);
+                    return Err(format!(
+                        "failed to load restart density checkpoint: {}",
+                        err
+                    ));
                 }
             }
         }
@@ -141,7 +150,12 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
 
             dwmpi::bcast_slice(rho_3d.as_non_spin_mut().unwrap().as_mut_slice(), dwmpi::comm_world());
         }
-        SpinScheme::Ncl => panic!("spin_scheme='ncl' is not implemented yet in pw broadcast"),
+        SpinScheme::Ncl => {
+            return Err(
+                "unsupported capability: spin_scheme='ncl' is not implemented in pw broadcast"
+                    .to_string(),
+            )
+        }
     }
 
     let mut total_rho = 0.0;
@@ -220,7 +234,7 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
 
     let electronic_ctx = crate::ElectronicStepContext::build(&runtime_ctx, geom_ctx.blatt(), geom_ctx.gvec());
 
-    GeometryPhaseArtifacts {
+    Ok(GeometryPhaseArtifacts {
         geom_ctx,
         runtime_ctx,
         expected_checkpoint_meta,
@@ -229,5 +243,5 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         rho_3d,
         symdrv,
         electronic_ctx,
-    }
+    })
 }

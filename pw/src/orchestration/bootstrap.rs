@@ -1,4 +1,4 @@
-use control::{Control, FftPlannerScheme, SpinScheme, VerbosityLevel};
+use control::{Control, FftPlannerScheme, SpinScheme, VerbosityLevel, XcScheme};
 use crystal::Crystal;
 use kpts::KPTS;
 use pspot::PSPot;
@@ -11,6 +11,33 @@ pub(crate) struct BootstrapData {
     pub zions: Vec<f64>,
     pub verbosity: VerbosityLevel,
     pub spin_scheme: SpinScheme,
+}
+
+fn validate_runtime_capabilities(control: &Control, kpts: &dyn KPTS) -> Result<(), String> {
+    control
+        .validate_capability_matrix()
+        .map_err(|err| err.to_string())?;
+
+    if !matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
+        return Ok(());
+    }
+
+    if kpts.get_n_kpts() != 1 {
+        return Err(
+            "unsupported capability: xc_scheme='hse06' currently requires exactly one k-point"
+                .to_string(),
+        );
+    }
+
+    let k0 = kpts.get_k_frac(0);
+    if k0.norm() > 1.0E-10 {
+        return Err(
+            "unsupported capability: xc_scheme='hse06' currently requires Gamma-only k=(0,0,0)"
+                .to_string(),
+        );
+    }
+
+    Ok(())
 }
 
 pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
@@ -59,6 +86,17 @@ pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
 
     if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
         kpts.display();
+    }
+
+    validate_runtime_capabilities(&control, kpts.as_ref())
+        .map_err(|err| format!("runtime capability preflight failed: {}", err))?;
+    if matches!(control.get_xc_scheme_enum(), XcScheme::Hse06)
+        && dwmpi::is_root()
+        && verbosity >= VerbosityLevel::Normal
+    {
+        println!(
+            "   NOTE: hse06 currently includes screened exact-exchange in the SCF Hamiltonian; force/stress do not include the hybrid exchange term yet."
+        );
     }
 
     let mut provenance_status: i32 = 0;
