@@ -115,6 +115,7 @@ pub enum SmearingScheme {
     Gs,
     Mp1,
     Mp2,
+    Mv,
 }
 
 impl Default for SmearingScheme {
@@ -130,6 +131,7 @@ impl SmearingScheme {
             SmearingScheme::Gs => "gs",
             SmearingScheme::Mp1 => "mp1",
             SmearingScheme::Mp2 => "mp2",
+            SmearingScheme::Mv => "mv",
         }
     }
 
@@ -139,6 +141,9 @@ impl SmearingScheme {
             "gs" => Some(SmearingScheme::Gs),
             "mp1" => Some(SmearingScheme::Mp1),
             "mp2" => Some(SmearingScheme::Mp2),
+            "mv" | "cold" | "marzari-vanderbilt" | "marzari_vanderbilt" => {
+                Some(SmearingScheme::Mv)
+            }
             _ => None,
         }
     }
@@ -809,7 +814,7 @@ fn set_xc_scheme(control: &mut Control, value: &str) -> Result<(), String> {
 
 fn set_smearing_scheme(control: &mut Control, value: &str) -> Result<(), String> {
     control.smearing_scheme = SmearingScheme::parse(value)
-        .ok_or_else(|| "expected one of: fd, gs, mp1, mp2".to_string())?;
+        .ok_or_else(|| "expected one of: fd, gs, mp1, mp2, mv (aliases: cold, marzari-vanderbilt)".to_string())?;
     Ok(())
 }
 
@@ -1932,8 +1937,8 @@ impl Control {
     }
 
     pub fn display(&self) {
-        const OUT_WIDTH1: usize = 28;
-        const OUT_WIDTH2: usize = 18;
+        const OUT_WIDTH1: usize = 32;
+        const OUT_WIDTH2: usize = 0;
 
         println!("   {:-^88}", " control parameters ");
         println!();
@@ -2018,10 +2023,11 @@ impl Control {
             self.get_fft_wisdom_file()
         };
         println!(
-            "   {:<width1$} = {}",
+            "   {:<width1$} = {:>width2$}",
             "fft_wisdom_file",
             wisdom_file,
-            width1 = OUT_WIDTH1
+            width1 = OUT_WIDTH1,
+            width2 = OUT_WIDTH2
         );
         println!(
             "   {:<width1$} = {:>width2$.6}",
@@ -2488,6 +2494,15 @@ mod tests {
         assert_eq!(control.get_smearing_scheme_enum(), SmearingScheme::Fd);
         assert_eq!(control.get_xc_scheme_enum(), XcScheme::Pbe);
         assert_eq!(control.get_fft_planner_enum(), FftPlannerScheme::Measure);
+    }
+
+    #[test]
+    fn test_parser_accepts_mv_smearing_aliases() {
+        let control = parse_control(&["smearing_scheme = cold"]).unwrap();
+        assert_eq!(control.get_smearing_scheme_enum(), SmearingScheme::Mv);
+
+        let control = parse_control(&["smearing_scheme = marzari-vanderbilt"]).unwrap();
+        assert_eq!(control.get_smearing_scheme_enum(), SmearingScheme::Mv);
     }
 
     #[test]

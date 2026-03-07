@@ -5,6 +5,8 @@ This document is the deduplicated execution backlog for optimization, architectu
 ## Validation Policy (Effective 2026-02-26)
 
 - For every major code change, correctness must be validated in Docker before commit/push.
+- For every code change, run at least one targeted smoke test that directly exercises the touched code path (including new non-default modes/options).
+- Record the smoke-test command and pass/fail result in the implementation update/PR notes.
 - Baseline gate: run `scripts/run_phase12_regression.sh` inside `rust-dev` Docker (`FORCE_BUILD=1`).
 - If spin/MPI behavior is touched, also run `scripts/run_spin_mpi_parity.sh` in Docker.
 
@@ -621,13 +623,17 @@ Run these after core engineering tasks (E1, E10, E24, E29) establish a stable fo
 
 ### F18 - Advanced Smearing and Occupation Methods
 **Priority**: FP3
-**Status**: Open (basic smearing exists)
+**Status**: In Progress (cold smearing added; tetrahedron/auto-width/fixed-occ pending)
 
-- [ ] Implement cold smearing (Marzari-Vanderbilt) for faster convergence
-- [ ] Add Methfessel-Paxton smearing (1st, 2nd order)
+- [x] Implement cold smearing (Marzari-Vanderbilt) for faster convergence
+- [x] Add Methfessel-Paxton smearing (1st, 2nd order)
 - [ ] Implement tetrahedron method for Brillouin zone integration
 - [ ] Add optimized smearing width selection (entropy-based)
 - [ ] Support fixed occupations for core-hole calculations
+
+**Implementation Update (2026-03-04)**
+- [x] Added `smearing_scheme = mv` (aliases: `cold`, `marzari-vanderbilt`) with Marzari-Vanderbilt occupation kernel in `smearing`.
+- [x] Added parser/runtime tests for new MV scheme handling.
 
 **Deliverables**
 - Multiple smearing methods with automatic width selection
@@ -835,6 +841,7 @@ Apply to every sprint and feature milestone:
 Finish an item only when:
 
 - Unit and integration tests pass
+- A targeted smoke test for the changed behavior passes
 - One reference example is documented (if user-facing feature)
 - Runtime and memory metrics are recorded (if performance-related)
 - Output schema compatibility is preserved
@@ -1576,3 +1583,27 @@ Finish an item only when:
 - `dwmpi` is backed by `rsmpi` with equivalent behavior on current workloads.
 - `mpi_sys` is removed from workspace and dependency graph.
 - Phase12 and spin/MPI parity regressions stay green after final cutover.
+
+
+### E33 - Input-Driven Memory Estimator Binary
+**Priority**: P2 (Usability + capacity planning)
+**Status**: Complete (2026-03-05)
+**Files**: `pw/src/bin/memory_estimate.rs`, `scripts/run_memory_estimator_smoke.sh`, `WORKSPACE_GUIDE.md`, `README.md`
+
+- Add a standalone binary executable that reads standard input files (`in.ctrl`, `in.crystal`, `in.kmesh`, `in.pot`) and estimates runtime memory usage before launching SCF.
+- Report a clear memory breakdown by major components:
+  - FFT grids / real-space arrays
+  - G-vectors and plane-wave bases
+  - wavefunction/eigenvector storage
+  - density/potential workspaces
+  - optional spin-channel duplication and per-rank vs global totals
+- Support rank-aware estimates using current MPI world size assumptions (or explicit `--ranks` override).
+- Expose both human-readable summary and machine-readable JSON output for workflow/CI tooling.
+- Validate estimate quality against measured memory from representative runs and document expected error bounds.
+
+**Acceptance Criteria**
+- `cargo run -p pw --bin memory_estimate -- --case <dir>` succeeds for existing example cases.
+- Output includes `estimated_bytes_total`, per-component breakdown, and per-rank/global views.
+- Estimator handles `nonspin` and `spin` modes and clearly labels unsupported modes.
+- Documentation includes usage examples and interpretation guidance.
+- At least one targeted smoke test demonstrates estimator output on a real case, in addition to standard regression gates.

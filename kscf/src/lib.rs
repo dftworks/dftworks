@@ -712,7 +712,7 @@ fn time_to_exit_cg(control: &Control, n_cg_loop: usize, n_band_converged: usize)
 
     if n_cg_loop >= MAX_CG_SCF {
         if n_states_bad > 0 {
-            println!("{} states not converged", n_states_bad);
+            println!("      {} states not converged", n_states_bad);
         }
 
         b_exit = true;

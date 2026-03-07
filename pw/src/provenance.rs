@@ -266,7 +266,10 @@ fn render_provenance_json(manifest: &RunProvenanceManifest) -> String {
     )
 }
 
-pub(crate) fn emit_run_provenance_manifest(control: &Control, kpts: &dyn KPTS) -> Result<(), String> {
+pub(crate) fn emit_run_provenance_manifest(
+    control: &Control,
+    kpts: &dyn KPTS,
+) -> Result<(), String> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

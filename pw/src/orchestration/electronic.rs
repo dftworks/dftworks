@@ -4,11 +4,11 @@ use control::SpinScheme;
 use dfttypes::*;
 use gvector::GVector;
 use kscf::KSCF;
-use types::Matrix;
-use types::MatrixExt;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 
 pub(crate) fn estimate_kpoint_costs(
     runtime: &crate::RuntimeContext,
@@ -96,7 +96,10 @@ pub(crate) fn build_spin_kscf_channels<'a>(
         shared.push(cache);
     }
 
-    let saved_bytes = shared.iter().map(|cache| cache.estimated_bytes()).sum::<usize>();
+    let saved_bytes = shared
+        .iter()
+        .map(|cache| cache.estimated_bytes())
+        .sum::<usize>();
 
     let mut channel_up = Vec::<KSCF>::with_capacity(electronic_ctx.k_domain.len());
     let mut channel_dn = Vec::<KSCF>::with_capacity(electronic_ctx.k_domain.len());

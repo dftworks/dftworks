@@ -59,9 +59,20 @@ impl PSPot {
 
     pub fn display(&self) {
         // Human-readable mapping for runtime logs.
-        for (sp, file) in self.atpsp_file.iter() {
-            println!("   {} : {}", sp, file);
+        println!("   {:-^88}", " atom pseudopotentials ");
+        println!();
+
+        let mut entries: Vec<(&str, &str)> = self
+            .atpsp_file
+            .iter()
+            .map(|(species, file)| (species.as_str(), file.as_str()))
+            .collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        for (species, file) in entries {
+            println!("   {:<8} : {}", species, file);
         }
+        println!();
     }
 }
 

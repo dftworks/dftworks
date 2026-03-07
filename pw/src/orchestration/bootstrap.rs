@@ -41,8 +41,8 @@ fn validate_runtime_capabilities(control: &Control, kpts: &dyn KPTS) -> Result<(
 }
 
 pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
-    let control =
-        Control::from_file("in.ctrl").map_err(|err| format!("failed to load control file: {}", err))?;
+    let control = Control::from_file("in.ctrl")
+        .map_err(|err| format!("failed to load control file: {}", err))?;
     let verbosity = control.get_verbosity_enum();
 
     dwfft3d::init_backend();
@@ -105,7 +105,10 @@ pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
             eprintln!("failed to write/verify provenance manifest: {}", err);
             provenance_status = 1;
         } else if verbosity >= VerbosityLevel::Normal {
-            println!("   provenance_manifest = {}", control.get_provenance_manifest());
+            println!(
+                "   provenance_manifest = {}",
+                control.get_provenance_manifest()
+            );
         }
     }
     dwmpi::bcast_scalar(&mut provenance_status, dwmpi::comm_world());

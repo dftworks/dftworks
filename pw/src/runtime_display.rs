@@ -50,8 +50,8 @@ pub(crate) fn format_unix_seconds_as_utc_iso(timestamp_unix_s: u64) -> String {
 }
 
 pub(crate) fn display_system_information() {
-    const OUT_WIDTH1: usize = 28;
-    const OUT_WIDTH2: usize = 18;
+    const OUT_WIDTH1: usize = 32;
+    const OUT_WIDTH2: usize = 0;
 
     let backend = dwfft3d::backend_name();
     let fft_runtime = dwfft3d::backend_options();
@@ -98,10 +98,11 @@ pub(crate) fn display_system_information() {
         width2 = OUT_WIDTH2
     );
     println!(
-        "   {:<width1$} = {}",
+        "   {:<width1$} = {:>width2$}",
         "fft_wisdom_file",
         fft_runtime.wisdom_file.as_deref().unwrap_or("(none)"),
-        width1 = OUT_WIDTH1
+        width1 = OUT_WIDTH1,
+        width2 = OUT_WIDTH2
     );
     println!(
         "   {:<width1$} = {:>width2$}",
@@ -145,7 +146,7 @@ pub(crate) fn display_system_information() {
         width1 = OUT_WIDTH1
     );
     println!(
-        "   {:<width1$} = {:>4} (RAYON_NUM_THREADS={}, host_threads={})",
+        "   {:<width1$} = {} (RAYON_NUM_THREADS={}, host_threads={})",
         "rayon_threads",
         rayon_threads,
         rayon_env,
@@ -162,12 +163,17 @@ pub(crate) fn display_system_information() {
 }
 
 pub(crate) fn display_grid_information(fftgrid: &FFTGrid, pwden: &PWDensity) {
-    const OUT_WIDTH1: usize = 28;
+    const OUT_WIDTH1: usize = 32;
 
     println!("   {:-^88}", " grid information ");
     println!();
-    println!("   FFTGrid : {}", fftgrid);
-    println!("   npw_rho = {}", pwden.get_n_plane_waves());
+    println!("   {:<width1$} = {}", "FFTGrid", fftgrid, width1 = OUT_WIDTH1);
+    println!(
+        "   {:<width1$} = {}",
+        "npw_rho",
+        pwden.get_n_plane_waves(),
+        width1 = OUT_WIDTH1
+    );
     println!(
         "   {:<width1$} = {}",
         "nfft",
@@ -181,7 +187,7 @@ pub(crate) fn display_grid_information(fftgrid: &FFTGrid, pwden: &PWDensity) {
         width1 = OUT_WIDTH1
     );
     println!(
-        "   {:<width1$} = {:16.8} 1/bohr ({:16.8} 1/A)",
+        "   {:<width1$} = {:.8} 1/bohr ({:.8} 1/A)",
         "gmax_rho",
         pwden.get_gmax(),
         pwden.get_gmax() * ANG_TO_BOHR,
