@@ -8,21 +8,212 @@ use gvector::GVector;
 use kpts::KPTS;
 use kpts_distribution::{KPointDomain, KPointScheduleMode, KPointSchedulePlan};
 use kscf::KSCF;
-use types::*;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use pwdensity::*;
 use symmetry::SymmetryDriver;
-use types::*;
 use types::Vector3f64;
+use types::*;
+use types::*;
 use vnl::VNL;
+
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 mod orchestration;
 mod provenance;
 mod restart;
 mod runtime_display;
+
+struct CountingAlloc;
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: CountingAlloc = CountingAlloc;
+
+static ALLOC_STATS_ENABLED: AtomicBool = AtomicBool::new(false);
+static ALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
+static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
+static DEALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
+static DEALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
+static REALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
+static REALLOC_OLD_BYTES: AtomicU64 = AtomicU64::new(0);
+static REALLOC_NEW_BYTES: AtomicU64 = AtomicU64::new(0);
+static LIVE_BYTES: AtomicU64 = AtomicU64::new(0);
+static PEAK_LIVE_BYTES: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn alloc_stats_enabled() -> bool {
+    ALLOC_STATS_ENABLED.load(Ordering::Relaxed)
+}
+
+#[inline]
+fn update_peak_live_bytes(candidate: u64) {
+    let mut observed = PEAK_LIVE_BYTES.load(Ordering::Relaxed);
+    while candidate > observed {
+        match PEAK_LIVE_BYTES.compare_exchange_weak(
+            observed,
+            candidate,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(actual) => observed = actual,
+        }
+    }
+}
+
+#[inline]
+fn add_live_bytes(bytes: u64) {
+    let now = LIVE_BYTES
+        .fetch_add(bytes, Ordering::Relaxed)
+        .saturating_add(bytes);
+    update_peak_live_bytes(now);
+}
+
+#[inline]
+fn sub_live_bytes(bytes: u64) {
+    let _ = LIVE_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_sub(bytes))
+    });
+}
+
+unsafe impl GlobalAlloc for CountingAlloc {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = System.alloc(layout);
+        if ptr.is_null() || !alloc_stats_enabled() {
+            return ptr;
+        }
+        let size = layout.size() as u64;
+        ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+        ALLOC_BYTES.fetch_add(size, Ordering::Relaxed);
+        add_live_bytes(size);
+        ptr
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if alloc_stats_enabled() {
+            let size = layout.size() as u64;
+            DEALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+            DEALLOC_BYTES.fetch_add(size, Ordering::Relaxed);
+            sub_live_bytes(size);
+        }
+        System.dealloc(ptr, layout);
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let new_ptr = System.realloc(ptr, layout, new_size);
+        if new_ptr.is_null() || !alloc_stats_enabled() {
+            return new_ptr;
+        }
+
+        let old_size = layout.size() as u64;
+        let new_size = new_size as u64;
+        REALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
+        REALLOC_OLD_BYTES.fetch_add(old_size, Ordering::Relaxed);
+        REALLOC_NEW_BYTES.fetch_add(new_size, Ordering::Relaxed);
+        if new_size >= old_size {
+            add_live_bytes(new_size - old_size);
+        } else {
+            sub_live_bytes(old_size - new_size);
+        }
+        new_ptr
+    }
+}
+
+fn read_env_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(value) => {
+            let norm = value.trim().to_ascii_lowercase();
+            matches!(norm.as_str(), "1" | "true" | "yes" | "on")
+        }
+        Err(_) => false,
+    }
+}
+
+fn format_bytes_human(bytes: u64) -> String {
+    let mib = bytes as f64 / (1024.0 * 1024.0);
+    format!("{} ({:.3} MiB)", bytes, mib)
+}
+
+fn print_runtime_allocation_statistics() {
+    if !alloc_stats_enabled() || !dwmpi::is_root() {
+        return;
+    }
+
+    let alloc_calls = ALLOC_CALLS.load(Ordering::Relaxed);
+    let alloc_bytes = ALLOC_BYTES.load(Ordering::Relaxed);
+    let dealloc_calls = DEALLOC_CALLS.load(Ordering::Relaxed);
+    let dealloc_bytes = DEALLOC_BYTES.load(Ordering::Relaxed);
+    let realloc_calls = REALLOC_CALLS.load(Ordering::Relaxed);
+    let realloc_old_bytes = REALLOC_OLD_BYTES.load(Ordering::Relaxed);
+    let realloc_new_bytes = REALLOC_NEW_BYTES.load(Ordering::Relaxed);
+    let live_bytes = LIVE_BYTES.load(Ordering::Relaxed);
+    let peak_live_bytes = PEAK_LIVE_BYTES.load(Ordering::Relaxed);
+    let gross_requested_bytes = alloc_bytes.saturating_add(realloc_new_bytes);
+    let gross_freed_bytes = dealloc_bytes.saturating_add(realloc_old_bytes);
+    let net_requested_bytes = gross_requested_bytes.saturating_sub(gross_freed_bytes);
+
+    println!();
+    println!("   {:-^88}", " runtime memory allocation statistics ");
+    println!();
+    println!("   {:28}: {:<18}", "alloc_calls", alloc_calls);
+    println!("   {:28}: {:<18}", "dealloc_calls", dealloc_calls);
+    println!("   {:28}: {:<18}", "realloc_calls", realloc_calls);
+    println!(
+        "   {:28}: {:<18}",
+        "alloc_bytes",
+        format_bytes_human(alloc_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "dealloc_bytes",
+        format_bytes_human(dealloc_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "realloc_old_bytes",
+        format_bytes_human(realloc_old_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "realloc_new_bytes",
+        format_bytes_human(realloc_new_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "gross_requested_bytes",
+        format_bytes_human(gross_requested_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "gross_freed_bytes",
+        format_bytes_human(gross_freed_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "net_requested_bytes",
+        format_bytes_human(net_requested_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "live_bytes",
+        format_bytes_human(live_bytes)
+    );
+    println!(
+        "   {:28}: {:<18}",
+        "peak_live_bytes",
+        format_bytes_human(peak_live_bytes)
+    );
+}
+
+fn shutdown_and_exit(code: i32) -> ! {
+    print_runtime_allocation_statistics();
+    dwmpi::barrier(dwmpi::comm_world());
+    dwmpi::finalize();
+    std::process::exit(code);
+}
 
 struct GeometryStepContext {
     fftgrid: FFTGrid,
@@ -203,6 +394,7 @@ impl ElectronicStepContext {
         let k_domain = k_schedule_plan.domain_for_current_rank();
 
         if dwmpi::is_root() {
+            const OUT_WIDTH1: usize = 32;
             let min_load = k_schedule_plan.min_rank_load();
             let max_load = k_schedule_plan.max_rank_load();
             let avg_load = k_schedule_plan.mean_rank_load();
@@ -212,12 +404,14 @@ impl ElectronicStepContext {
                 0.0
             };
             println!(
-                "   kpoint_schedule = {} (rank_cost min/avg/max = {}/{:.2}/{}, imbalance={:.2}%)",
+                "   {:<width1$} = {} (rank_cost min/avg/max = {}/{:.2}/{}, imbalance={:.2}%)",
+                "kpoint_schedule",
                 k_schedule_plan.mode().as_str(),
                 min_load,
                 avg_load,
                 max_load,
-                imbalance_pct
+                imbalance_pct,
+                width1 = OUT_WIDTH1
             );
         }
 
@@ -272,33 +466,29 @@ impl ElectronicStepContext {
         let nband = runtime.control.get_nband();
         let my_nkpt = self.local_nkpt();
 
-        let (vkscf, spin_cache_saved_bytes_local) = match runtime.spin_scheme {
-            SpinScheme::NonSpin => {
-                let channel = orchestration::electronic::build_kscf_channel(
-                    runtime, self, gvec, pwden, fft_shape, 0,
-                );
-                (VKSCF::NonSpin(channel), 0usize)
-            }
-            SpinScheme::Spin => {
-                let (channel_up, channel_dn, saved_bytes) =
-                    orchestration::electronic::build_spin_kscf_channels(
-                        runtime, self, gvec, pwden, fft_shape,
+        let (vkscf, spin_cache_saved_bytes_local) =
+            match runtime.spin_scheme {
+                SpinScheme::NonSpin => {
+                    let channel = orchestration::electronic::build_kscf_channel(
+                        runtime, self, gvec, pwden, fft_shape, 0,
                     );
-                (VKSCF::Spin(channel_up, channel_dn), saved_bytes)
-            }
-            SpinScheme::Ncl => {
-                return Err(
+                    (VKSCF::NonSpin(channel), 0usize)
+                }
+                SpinScheme::Spin => {
+                    let (channel_up, channel_dn, saved_bytes) =
+                        orchestration::electronic::build_spin_kscf_channels(
+                            runtime, self, gvec, pwden, fft_shape,
+                        );
+                    (VKSCF::Spin(channel_up, channel_dn), saved_bytes)
+                }
+                SpinScheme::Ncl => return Err(
                     "unsupported capability: spin_scheme='ncl' is not implemented in KSCF setup"
                         .to_string(),
-                )
-            }
-        };
+                ),
+            };
 
-        let vkevals = orchestration::electronic::allocate_eigenvalues(
-            runtime.spin_scheme,
-            nband,
-            my_nkpt,
-        )?;
+        let vkevals =
+            orchestration::electronic::allocate_eigenvalues(runtime.spin_scheme, nband, my_nkpt)?;
         let vkevecs = orchestration::electronic::allocate_eigenvectors(
             runtime.spin_scheme,
             nband,
@@ -318,6 +508,7 @@ fn main() {
     // 5) export requested artifacts (charge/wfc/eig files)
     // first statement
     dwmpi::init();
+    ALLOC_STATS_ENABLED.store(read_env_flag("PW_ALLOC_STATS"), Ordering::Relaxed);
 
     // start the timer-main
 
@@ -329,9 +520,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("{}", err);
             }
-            dwmpi::barrier(dwmpi::comm_world());
-            dwmpi::finalize();
-            std::process::exit(1);
+            shutdown_and_exit(1);
         }
     };
     let orchestration::bootstrap::BootstrapData {
@@ -390,30 +579,25 @@ fn main() {
                 if dwmpi::is_root() {
                     eprintln!("failed to construct geometry phase: {}", err);
                 }
-                dwmpi::barrier(dwmpi::comm_world());
-                dwmpi::finalize();
-                std::process::exit(1);
+                shutdown_and_exit(1);
             }
         };
 
-        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) = match phase
-            .electronic_ctx
-            .build_scf_state(
+        let (mut vkscf, mut vkevals, mut vkevecs, spin_cache_saved_bytes_local) =
+            match phase.electronic_ctx.build_scf_state(
                 &phase.runtime_ctx,
                 phase.geom_ctx.gvec(),
                 phase.geom_ctx.pwden(),
                 phase.geom_ctx.fft_shape(),
             ) {
-            Ok(state) => state,
-            Err(err) => {
-                if dwmpi::is_root() {
-                    eprintln!("failed to initialize SCF state: {}", err);
+                Ok(state) => state,
+                Err(err) => {
+                    if dwmpi::is_root() {
+                        eprintln!("failed to initialize SCF state: {}", err);
+                    }
+                    shutdown_and_exit(1);
                 }
-                dwmpi::barrier(dwmpi::comm_world());
-                dwmpi::finalize();
-                std::process::exit(1);
-            }
-        };
+            };
 
         if matches!(spin_scheme, SpinScheme::Spin) {
             let local_saved = spin_cache_saved_bytes_local as f64;
@@ -493,9 +677,7 @@ fn main() {
             if dwmpi::is_root() {
                 eprintln!("failed to persist checkpoint/output artifacts: {}", err);
             }
-            dwmpi::barrier(dwmpi::comm_world());
-            dwmpi::finalize();
-            std::process::exit(1);
+            shutdown_and_exit(1);
         }
 
         let should_exit = orchestration::outputs::evaluate_exit_and_finalize(
@@ -514,10 +696,7 @@ fn main() {
         }
 
         // if not converged, get the atom positions and (lattice vectors if cell is also relaxed) for the next optim iteration
-        let geom_optim_mask_ions = vec![
-            Vector3f64::new(1.0, 1.0, 1.0);
-            crystal.get_n_atoms()
-        ];
+        let geom_optim_mask_ions = vec![Vector3f64::new(1.0, 1.0, 1.0); crystal.get_n_atoms()];
 
         let mut bcell_move = control.get_geom_optim_cell();
 
@@ -555,9 +734,7 @@ fn main() {
 
     // last statement
 
-    dwmpi::barrier(dwmpi::comm_world());
-
-    dwmpi::finalize();
+    shutdown_and_exit(0);
 }
 
 fn post_processing(

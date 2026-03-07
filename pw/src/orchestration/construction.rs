@@ -35,11 +35,17 @@ pub(crate) struct GeometryPhaseArtifacts<'a> {
 pub(crate) fn construct_geometry_phase<'a, 'ws>(
     input: GeometryPhaseInput<'a, 'ws>,
 ) -> Result<GeometryPhaseArtifacts<'a>, String> {
+    const OUT_WIDTH1: usize = 32;
     let verbosity = input.control.get_verbosity_enum();
 
     let geom_ctx = crate::GeometryStepContext::new(input.crystal, input.control.get_ecutrho());
-    let runtime_ctx =
-        crate::RuntimeContext::new(input.control, input.crystal, input.pots, input.kpts, input.spin_scheme);
+    let runtime_ctx = crate::RuntimeContext::new(
+        input.control,
+        input.crystal,
+        input.pots,
+        input.kpts,
+        input.spin_scheme,
+    );
     let expected_checkpoint_meta = runtime_ctx.checkpoint_meta();
 
     if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
@@ -51,35 +57,38 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         input.crystal.display();
     }
 
-    let ewald = ewald::Ewald::new(input.crystal, input.zions, geom_ctx.gvec(), geom_ctx.pwden());
+    let ewald = ewald::Ewald::new(
+        input.crystal,
+        input.zions,
+        geom_ctx.gvec(),
+        geom_ctx.pwden(),
+    );
 
     let [n1, n2, n3] = geom_ctx.fft_shape();
     let npw_rho = geom_ctx.pwden().get_n_plane_waves();
 
-    let mut rhog = match input.spin_scheme {
-        SpinScheme::NonSpin => RHOG::NonSpin(vec![c64::zero(); npw_rho]),
-        SpinScheme::Spin => RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
-        SpinScheme::Ncl => {
-            return Err(
+    let mut rhog =
+        match input.spin_scheme {
+            SpinScheme::NonSpin => RHOG::NonSpin(vec![c64::zero(); npw_rho]),
+            SpinScheme::Spin => RHOG::Spin(vec![c64::zero(); npw_rho], vec![c64::zero(); npw_rho]),
+            SpinScheme::Ncl => return Err(
                 "unsupported capability: spin_scheme='ncl' is not implemented in pw initialization"
                     .to_string(),
-            )
-        }
-    };
+            ),
+        };
 
-    let mut rho_3d = match input.spin_scheme {
-        SpinScheme::NonSpin => RHOR::NonSpin(Array3::<c64>::new([n1, n2, n3])),
-        SpinScheme::Spin => RHOR::Spin(
-            Array3::<c64>::new([n1, n2, n3]),
-            Array3::<c64>::new([n1, n2, n3]),
-        ),
-        SpinScheme::Ncl => {
-            return Err(
+    let mut rho_3d =
+        match input.spin_scheme {
+            SpinScheme::NonSpin => RHOR::NonSpin(Array3::<c64>::new([n1, n2, n3])),
+            SpinScheme::Spin => RHOR::Spin(
+                Array3::<c64>::new([n1, n2, n3]),
+                Array3::<c64>::new([n1, n2, n3]),
+            ),
+            SpinScheme::Ncl => return Err(
                 "unsupported capability: spin_scheme='ncl' is not implemented in pw initialization"
                     .to_string(),
-            )
-        }
-    };
+            ),
+        };
 
     // Initialize density either from previous converged file (restart) or from atomic superposition.
     if dwmpi::is_root() {
@@ -124,7 +133,9 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
                 && crate::restart::restart_density_files_exist(input.spin_scheme)
             {
                 println!(
-                    "   restart=false: ignore existing checkpoint files and build atomic initial density"
+                    "   {:<width1$} = false: ignore existing checkpoint files and build atomic initial density",
+                    "restart",
+                    width1 = OUT_WIDTH1
                 );
             } else {
                 println!();
@@ -146,9 +157,15 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
             dwmpi::bcast_slice(rho_3d_dn.as_mut_slice(), dwmpi::comm_world());
         }
         SpinScheme::NonSpin => {
-            dwmpi::bcast_slice(rhog.as_non_spin_mut().unwrap().as_mut_slice(), dwmpi::comm_world());
+            dwmpi::bcast_slice(
+                rhog.as_non_spin_mut().unwrap().as_mut_slice(),
+                dwmpi::comm_world(),
+            );
 
-            dwmpi::bcast_slice(rho_3d.as_non_spin_mut().unwrap().as_mut_slice(), dwmpi::comm_world());
+            dwmpi::bcast_slice(
+                rho_3d.as_non_spin_mut().unwrap().as_mut_slice(),
+                dwmpi::comm_world(),
+            );
         }
         SpinScheme::Ncl => {
             return Err(
@@ -161,22 +178,30 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
     let mut total_rho = 0.0;
 
     if let RHOR::NonSpin(ref rho_3d) = &rho_3d {
-        total_rho = rho_3d.sum().re * input.crystal.get_latt().volume() / geom_ctx.fftgrid().get_ntotf64();
+        total_rho =
+            rho_3d.sum().re * input.crystal.get_latt().volume() / geom_ctx.fftgrid().get_ntotf64();
     } else if let RHOR::Spin(ref rho_3d_up, ref rho_3d_dn) = rho_3d {
-        let total_rho_up =
-            rho_3d_up.sum().re * input.crystal.get_latt().volume() / geom_ctx.fftgrid().get_ntotf64();
-        let total_rho_dn =
-            rho_3d_dn.sum().re * input.crystal.get_latt().volume() / geom_ctx.fftgrid().get_ntotf64();
+        let total_rho_up = rho_3d_up.sum().re * input.crystal.get_latt().volume()
+            / geom_ctx.fftgrid().get_ntotf64();
+        let total_rho_dn = rho_3d_dn.sum().re * input.crystal.get_latt().volume()
+            / geom_ctx.fftgrid().get_ntotf64();
 
         total_rho = total_rho_up + total_rho_dn;
     }
 
     if dwmpi::is_root() {
-        println!("   initial_charge = {}", total_rho);
+        println!(
+            "   {:<width1$} = {}",
+            "initial_charge",
+            total_rho,
+            width1 = OUT_WIDTH1
+        );
     }
 
     // Core charge used by NLCC terms.
-    input.orchestration_workspace.ensure_shape(npw_rho, [n1, n2, n3]);
+    input
+        .orchestration_workspace
+        .ensure_shape(npw_rho, [n1, n2, n3]);
     let (rhocoreg, rhocore_3d_workspace) = input.orchestration_workspace.core_charge_buffers_mut();
 
     nlcc::from_atomic_super_position(
@@ -190,7 +215,9 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
     );
 
     // Symmetry helper used by force/stress post-processing.
-    input.orchestration_workspace.update_atom_positions(input.crystal);
+    input
+        .orchestration_workspace
+        .update_atom_positions(input.crystal);
 
     let symdrv = symmetry::new(
         &input.crystal.get_latt().as_2d_array_row_major(),
@@ -205,8 +232,11 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         symdrv.display();
 
         let n_sym = symdrv.get_n_sym_ops();
-        let fft_comm_ops =
-            symdrv.get_fft_commensurate_ops(geom_ctx.fftgrid().get_size(), input.kpts.get_k_mesh(), EPS6);
+        let fft_comm_ops = symdrv.get_fft_commensurate_ops(
+            geom_ctx.fftgrid().get_size(),
+            input.kpts.get_k_mesh(),
+            EPS6,
+        );
         println!(
             "   commensurate_ops (fft+kmesh) = {} / {}",
             fft_comm_ops.len(),
@@ -232,7 +262,8 @@ pub(crate) fn construct_geometry_phase<'a, 'ws>(
         crate::runtime_display::display_symmetry_equivalent_atoms(input.crystal, symdrv.as_ref());
     }
 
-    let electronic_ctx = crate::ElectronicStepContext::build(&runtime_ctx, geom_ctx.blatt(), geom_ctx.gvec());
+    let electronic_ctx =
+        crate::ElectronicStepContext::build(&runtime_ctx, geom_ctx.blatt(), geom_ctx.gvec());
 
     Ok(GeometryPhaseArtifacts {
         geom_ctx,

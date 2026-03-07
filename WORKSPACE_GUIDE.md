@@ -462,12 +462,33 @@ divergence_r3d: 0 alloc calls, 0 realloc calls
 scf_iteration: 0 alloc calls, 0 realloc calls (after warmup)
 ```
 
+### Memory Footprint Estimation
+
+Use the input-driven estimator to project memory before running long jobs:
+
+```bash
+cargo run -p pw --bin memory_estimate -- --case test_example/si-oncv/scf
+cargo run -p pw --bin memory_estimate -- --case test_example/si-oncv/wannier90-spin --json
+```
+
+Interpretation:
+- `estimated_bytes_total` is peak per-rank projected memory.
+- `estimated_bytes_total_global` is the summed cluster memory across all assumed ranks.
+- Component-level fields identify where memory is concentrated (`wavefunction_eigen_storage`, FFT/workspaces, nonlocal caches).
+
+Targeted smoke command:
+
+```bash
+bash scripts/run_memory_estimator_smoke.sh
+```
+
 ### Validation Checklist
 
 After adding a workspace:
 
 - [ ] Run `cargo check` - compiles without errors
 - [ ] Run unit tests - behavior unchanged
+- [ ] Run a targeted smoke test for the touched runtime path (especially new non-default options)
 - [ ] Run `workspace_alloc_trace` - zero allocations in hot path
 - [ ] Run phase12 regression - physics unchanged
 - [ ] Profile with `perf` or `valgrind` - memory usage constant
@@ -577,6 +598,7 @@ Don't use workspaces when:
 - `density/src/nonspin.rs` - Density kernel workspace
 - `eigensolver/src/pcg.rs` - PCG eigensolver workspace
 - `pw/src/bin/workspace_alloc_trace.rs` - Allocation tracer
+- `pw/src/bin/memory_estimate.rs` - Input-driven memory estimator
 
 ### Questions?
 
