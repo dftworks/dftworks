@@ -1,0 +1,4 @@
+interface:
+  display_name: "DFTWorks Runtime Hardening"
+  short_description: "Harden DFTWorks runtime paths."
+  default_prompt: "Use $dftworks-runtime-hardening to implement and validate DFTWorks runtime-path fixes."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DFTWorks Runtime Review"
+  short_description: "Review DFTWorks runtime-path changes."
+  default_prompt: "Use $dftworks-runtime-review to review DFTWorks runtime-path changes for bugs and regressions."
