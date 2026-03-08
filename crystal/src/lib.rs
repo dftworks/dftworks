@@ -11,6 +11,42 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+fn strip_comment(line: &str) -> &str {
+    line.split('#').next().unwrap_or(line)
+}
+
+fn parse_bool_mask(token: &str, path: &str, line_no: usize, axis: &str) -> Result<f64, String> {
+    match token.trim().to_ascii_lowercase().as_str() {
+        "t" => Ok(1.0),
+        "f" => Ok(0.0),
+        other => Err(format!(
+            "{}:{}: invalid cell mask '{}' for {}; expected T or F",
+            path, line_no, other, axis
+        )),
+    }
+}
+
+fn parse_f64_token(
+    tokens: &[&str],
+    index: usize,
+    path: &str,
+    line_no: usize,
+    field: &str,
+) -> Result<f64, String> {
+    let raw = tokens.get(index).ok_or_else(|| {
+        format!(
+            "{}:{}: missing {} (expected enough columns on this line)",
+            path, line_no, field
+        )
+    })?;
+    raw.parse::<f64>().map_err(|err| {
+        format!(
+            "{}:{}: failed to parse {} from '{}': {}",
+            path, line_no, field, raw, err
+        )
+    })
+}
+
 // Crystal structure container.
 //
 // Coordinates:
@@ -188,156 +224,175 @@ impl Crystal {
     }
 
     pub fn read_file(&mut self, inpfile: &str) {
+        if let Err(err) = self.try_read_file(inpfile) {
+            panic!("{}", err);
+        }
+    }
+
+    pub fn try_read_file(&mut self, inpfile: &str) -> Result<(), String> {
         // Parse in.crystal with format:
         // line 1: scale_a scale_b scale_c
         // line 2-4: lattice vectors + T/F mask flags per Cartesian component
         // remaining lines: species x y z (fractional atomic positions)
-        let file = File::open(inpfile).unwrap();
+        let file = File::open(inpfile)
+            .map_err(|err| format!("failed to read '{}': {}", inpfile, err))?;
         let lines = BufReader::new(file).lines();
 
-        self.atom_positions = Vec::new();
-        self.atom_species = Vec::new();
+        let mut atom_positions = Vec::new();
+        let mut atom_species = Vec::new();
 
         let mut vec_a = [0.0; 3];
         let mut vec_b = [0.0; 3];
         let mut vec_c = [0.0; 3];
 
-        self.cell_mask = Matrix::new(3, 3);
+        let mut cell_mask = Matrix::new(3, 3);
+        let mut scale_a = 0.0;
+        let mut scale_b = 0.0;
+        let mut scale_c = 0.0;
+        let mut content_line_index = 0usize;
 
-        for (i, line) in lines.enumerate() {
-            let s: Vec<&str> = line.as_ref().unwrap().split_whitespace().collect();
+        for (line_idx, line_res) in lines.enumerate() {
+            let line_no = line_idx + 1;
+            let line = line_res
+                .map_err(|err| format!("{}:{}: failed to read line: {}", inpfile, line_no, err))?;
+            let stripped = strip_comment(&line);
+            let s: Vec<&str> = stripped.split_whitespace().collect();
+            if s.is_empty() {
+                continue;
+            }
 
-            match i {
+            match content_line_index {
                 0 => {
+                    if s.len() < 3 {
+                        return Err(format!(
+                            "{}:{}: expected three scale factors on the first content line",
+                            inpfile, line_no
+                        ));
+                    }
                     // Independent scale factors for three lattice vectors.
-                    self.scale_a = s[0].parse().unwrap();
-                    self.scale_b = s[1].parse().unwrap();
-                    self.scale_c = s[2].parse().unwrap();
+                    scale_a = parse_f64_token(&s, 0, inpfile, line_no, "scale_a")?;
+                    scale_b = parse_f64_token(&s, 1, inpfile, line_no, "scale_b")?;
+                    scale_c = parse_f64_token(&s, 2, inpfile, line_no, "scale_c")?;
                 }
 
                 1 => {
+                    if s.len() < 6 {
+                        return Err(format!(
+                            "{}:{}: expected lattice vector a followed by three T/F mask flags",
+                            inpfile, line_no
+                        ));
+                    }
                     // Lattice vector a and optimization mask flags.
-                    vec_a[0] = s[0].parse().unwrap();
-                    vec_a[1] = s[1].parse().unwrap();
-                    vec_a[2] = s[2].parse().unwrap();
+                    vec_a[0] = parse_f64_token(&s, 0, inpfile, line_no, "a_x")?;
+                    vec_a[1] = parse_f64_token(&s, 1, inpfile, line_no, "a_y")?;
+                    vec_a[2] = parse_f64_token(&s, 2, inpfile, line_no, "a_z")?;
 
                     for iv in 0..3 {
-                        vec_a[iv] *= self.scale_a * ANG_TO_BOHR;
+                        vec_a[iv] *= scale_a * ANG_TO_BOHR;
                     }
 
-                    if s[3].to_lowercase() == "t" {
-                        self.cell_mask[(0, 0)] = 1.0;
-                    } else {
-                        self.cell_mask[(0, 0)] = 0.0;
-                    }
-
-                    if s[4].to_lowercase() == "t" {
-                        self.cell_mask[(1, 0)] = 1.0;
-                    } else {
-                        self.cell_mask[(1, 0)] = 0.0;
-                    }
-
-                    if s[5].to_lowercase() == "t" {
-                        self.cell_mask[(2, 0)] = 1.0;
-                    } else {
-                        self.cell_mask[(2, 0)] = 0.0;
-                    }
+                    cell_mask[(0, 0)] = parse_bool_mask(s[3], inpfile, line_no, "a_x")?;
+                    cell_mask[(1, 0)] = parse_bool_mask(s[4], inpfile, line_no, "a_y")?;
+                    cell_mask[(2, 0)] = parse_bool_mask(s[5], inpfile, line_no, "a_z")?;
                 }
 
                 2 => {
+                    if s.len() < 6 {
+                        return Err(format!(
+                            "{}:{}: expected lattice vector b followed by three T/F mask flags",
+                            inpfile, line_no
+                        ));
+                    }
                     // Lattice vector b and optimization mask flags.
-                    vec_b[0] = s[0].parse().unwrap();
-                    vec_b[1] = s[1].parse().unwrap();
-                    vec_b[2] = s[2].parse().unwrap();
+                    vec_b[0] = parse_f64_token(&s, 0, inpfile, line_no, "b_x")?;
+                    vec_b[1] = parse_f64_token(&s, 1, inpfile, line_no, "b_y")?;
+                    vec_b[2] = parse_f64_token(&s, 2, inpfile, line_no, "b_z")?;
 
                     for iv in 0..3 {
-                        vec_b[iv] *= self.scale_b * ANG_TO_BOHR;
+                        vec_b[iv] *= scale_b * ANG_TO_BOHR;
                     }
 
-                    if s[3].to_lowercase() == "t" {
-                        self.cell_mask[(0, 1)] = 1.0;
-                    } else {
-                        self.cell_mask[(0, 1)] = 0.0;
-                    }
-
-                    if s[4].to_lowercase() == "t" {
-                        self.cell_mask[(1, 1)] = 1.0;
-                    } else {
-                        self.cell_mask[(1, 1)] = 0.0;
-                    }
-
-                    if s[5].to_lowercase() == "t" {
-                        self.cell_mask[(2, 1)] = 1.0;
-                    } else {
-                        self.cell_mask[(2, 1)] = 0.0;
-                    }
+                    cell_mask[(0, 1)] = parse_bool_mask(s[3], inpfile, line_no, "b_x")?;
+                    cell_mask[(1, 1)] = parse_bool_mask(s[4], inpfile, line_no, "b_y")?;
+                    cell_mask[(2, 1)] = parse_bool_mask(s[5], inpfile, line_no, "b_z")?;
                 }
 
                 3 => {
+                    if s.len() < 6 {
+                        return Err(format!(
+                            "{}:{}: expected lattice vector c followed by three T/F mask flags",
+                            inpfile, line_no
+                        ));
+                    }
                     // Lattice vector c and optimization mask flags.
-                    vec_c[0] = s[0].parse().unwrap();
-                    vec_c[1] = s[1].parse().unwrap();
-                    vec_c[2] = s[2].parse().unwrap();
+                    vec_c[0] = parse_f64_token(&s, 0, inpfile, line_no, "c_x")?;
+                    vec_c[1] = parse_f64_token(&s, 1, inpfile, line_no, "c_y")?;
+                    vec_c[2] = parse_f64_token(&s, 2, inpfile, line_no, "c_z")?;
 
                     for iv in 0..3 {
-                        vec_c[iv] *= self.scale_c * ANG_TO_BOHR;
+                        vec_c[iv] *= scale_c * ANG_TO_BOHR;
                     }
 
-                    if s[3].to_lowercase() == "t" {
-                        self.cell_mask[(0, 2)] = 1.0;
-                    } else {
-                        self.cell_mask[(0, 2)] = 0.0;
-                    }
-
-                    if s[4].to_lowercase() == "t" {
-                        self.cell_mask[(1, 2)] = 1.0;
-                    } else {
-                        self.cell_mask[(1, 2)] = 0.0;
-                    }
-
-                    if s[5].to_lowercase() == "t" {
-                        self.cell_mask[(2, 2)] = 1.0;
-                    } else {
-                        self.cell_mask[(2, 2)] = 0.0;
-                    }
+                    cell_mask[(0, 2)] = parse_bool_mask(s[3], inpfile, line_no, "c_x")?;
+                    cell_mask[(1, 2)] = parse_bool_mask(s[4], inpfile, line_no, "c_y")?;
+                    cell_mask[(2, 2)] = parse_bool_mask(s[5], inpfile, line_no, "c_z")?;
                 }
 
                 // atoms
                 _ => {
-                    if s.len() == 0 {
-                        continue;
-                    };
+                    if s.len() < 4 {
+                        return Err(format!(
+                            "{}:{}: expected atomic line '<species> x y z'",
+                            inpfile, line_no
+                        ));
+                    }
 
                     let symbol = s[0].to_string();
-                    let x: f64 = s[1].parse().unwrap();
-                    let y: f64 = s[2].parse().unwrap();
-                    let z: f64 = s[3].parse().unwrap();
+                    let x = parse_f64_token(&s, 1, inpfile, line_no, "atom_x")?;
+                    let y = parse_f64_token(&s, 2, inpfile, line_no, "atom_y")?;
+                    let z = parse_f64_token(&s, 3, inpfile, line_no, "atom_z")?;
 
                     // Atomic position remains fractional.
-                    self.atom_species.push(symbol);
-                    self.atom_positions.push(Vector3f64::new(x, y, z));
+                    atom_species.push(symbol);
+                    atom_positions.push(Vector3f64::new(x, y, z));
                 }
             }
-
-            // Keep lattice object synchronized while parsing.
-            self.latt = Lattice::new(&vec_a, &vec_b, &vec_c);
+            content_line_index += 1;
         }
 
-        // Build specie -> atom-index lookup for fast grouped operations.
+        if content_line_index < 4 {
+            return Err(format!(
+                "{}: expected 4 non-empty header lines before atomic positions",
+                inpfile
+            ));
+        }
 
-        let unique_species: Vec<String> = self.get_unique_species();
+        let latt = Lattice::new(&vec_a, &vec_b, &vec_c);
+        // Build specie -> atom-index lookup for fast grouped operations.
+        let unique_species: Vec<String> = atom_species.clone().into_iter().unique().collect();
 
         let nsp = unique_species.len();
 
-        self.atom_indices_by_specie = vec![Vec::new(); nsp];
+        let mut atom_indices_by_specie = vec![Vec::new(); nsp];
 
-        for (at_index, at_symbol) in self.atom_species.iter().enumerate() {
+        for (at_index, at_symbol) in atom_species.iter().enumerate() {
             for (isp, sp) in unique_species.iter().enumerate() {
                 if *sp == *at_symbol {
-                    self.atom_indices_by_specie[isp].push(at_index);
+                    atom_indices_by_specie[isp].push(at_index);
                 }
             }
         }
+
+        self.scale_a = scale_a;
+        self.scale_b = scale_b;
+        self.scale_c = scale_c;
+        self.latt = latt;
+        self.cell_mask = cell_mask;
+        self.atom_positions = atom_positions;
+        self.atom_species = atom_species;
+        self.atom_indices_by_specie = atom_indices_by_specie;
+
+        Ok(())
     }
 
     pub fn output(&self) {
@@ -480,4 +535,32 @@ fn test_crystal() {
     crystal.read_file(d.to_str().unwrap());
     crystal.display();
     crystal.output();
+}
+
+#[test]
+fn test_try_read_file_reports_invalid_mask() {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock drift")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("dftworks-crystal-invalid-mask-{}", nanos));
+    let content = "\
+1.0 1.0 1.0
+1.0 0.0 0.0 X T T
+0.0 1.0 0.0 T T T
+0.0 0.0 1.0 T T T
+Si 0.0 0.0 0.0
+";
+    fs::write(&path, content).expect("write temp in.crystal");
+
+    let mut crystal = Crystal::new();
+    let err = crystal
+        .try_read_file(path.to_str().expect("temp path should be utf8"))
+        .expect_err("invalid in.crystal should fail");
+    assert!(err.contains("expected T or F"));
+
+    fs::remove_file(path).expect("remove temp in.crystal");
 }

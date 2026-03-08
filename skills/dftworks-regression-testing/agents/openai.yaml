@@ -1,0 +1,4 @@
+interface:
+  display_name: "DFTWorks Regression Testing"
+  short_description: "Choose and run DFTWorks regressions."
+  default_prompt: "Use $dftworks-regression-testing to choose and run the right DFTWorks validation and regression checks for this change."

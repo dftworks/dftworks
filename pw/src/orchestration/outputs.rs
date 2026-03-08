@@ -45,7 +45,7 @@ pub(crate) fn evaluate_exit_and_finalize(
     vkevecs: &VKEigenVector,
     vkscf: &VKSCF<'_>,
     electronic_ctx: &crate::ElectronicStepContext,
-) -> bool {
+) -> Result<bool, String> {
     let force_max = force::get_max_force(force_total);
     let stress_max = stress::get_max_stress(stress_total);
 
@@ -76,29 +76,23 @@ pub(crate) fn evaluate_exit_and_finalize(
 
     if should_exit {
         if control.get_wannier90_export() {
-            match wannier90::write_eig_inputs(control, vkevals, electronic_ctx.global_k_indices()) {
-                Ok(summary) => {
-                    if dwmpi::is_root() {
-                        println!();
-                        println!("   {:-^88}", " wannier90 eig export ");
-                        for file in summary.written_files.iter() {
-                            println!("   wrote {}", file);
-                        }
-                        println!(
-                            "   run `w90-win` and `w90-amn` to generate remaining Wannier90 inputs"
-                        );
-                    }
+            let summary =
+                wannier90::write_eig_inputs(control, vkevals, electronic_ctx.global_k_indices())
+                    .map_err(|err| format!("wannier90 eig export failed: {}", err))?;
+            if dwmpi::is_root() {
+                println!();
+                println!("   {:-^88}", " wannier90 eig export ");
+                for file in summary.written_files.iter() {
+                    println!("   wrote {}", file);
                 }
-                Err(err) => {
-                    if dwmpi::is_root() {
-                        eprintln!("   wannier90 eig export failed: {}", err);
-                    }
-                }
+                println!(
+                    "   run `w90-win` and `w90-amn` to generate remaining Wannier90 inputs"
+                );
             }
         }
 
         crate::post_processing(control, vkevals, vkevecs, vkscf);
     }
 
-    should_exit
+    Ok(should_exit)
 }
