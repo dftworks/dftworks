@@ -507,8 +507,9 @@ fn main() {
     // 4) optionally perform geometry optimization step
     // 5) export requested artifacts (charge/wfc/eig files)
     // first statement
+    let enable_alloc_stats = read_env_flag("PW_ALLOC_STATS");
+    ALLOC_STATS_ENABLED.store(enable_alloc_stats, Ordering::Relaxed);
     dwmpi::init();
-    ALLOC_STATS_ENABLED.store(read_env_flag("PW_ALLOC_STATS"), Ordering::Relaxed);
 
     // start the timer-main
 
@@ -680,7 +681,7 @@ fn main() {
             shutdown_and_exit(1);
         }
 
-        let should_exit = orchestration::outputs::evaluate_exit_and_finalize(
+        let should_exit = match orchestration::outputs::evaluate_exit_and_finalize(
             &control,
             geom_iter,
             &stress_total,
@@ -689,7 +690,15 @@ fn main() {
             &vkevecs,
             &vkscf,
             &phase.electronic_ctx,
-        );
+        ) {
+            Ok(should_exit) => should_exit,
+            Err(err) => {
+                if dwmpi::is_root() {
+                    eprintln!("{}", err);
+                }
+                shutdown_and_exit(1);
+            }
+        };
 
         if should_exit {
             break;

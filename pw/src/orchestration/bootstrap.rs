@@ -68,11 +68,23 @@ pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
     }
 
     let mut crystal = Crystal::new();
-    crystal.read_file("in.crystal");
+    crystal
+        .try_read_file("in.crystal")
+        .map_err(|err| format!("failed to load crystal file: {}", err))?;
 
-    let pots = PSPot::new(control.get_pot_scheme_enum());
+    let pots = PSPot::try_new(control.get_pot_scheme_enum())
+        .map_err(|err| format!("failed to load pseudopotentials: {}", err))?;
     if dwmpi::is_root() && verbosity >= VerbosityLevel::Normal {
         pots.display();
+    }
+
+    for species in crystal.get_unique_species().iter() {
+        if !pots.contains_species(species) {
+            return Err(format!(
+                "failed to load pseudopotentials: species '{}' appears in in.crystal but has no mapping in in.pot",
+                species
+            ));
+        }
     }
 
     let zions = crystal.get_zions(&pots);
