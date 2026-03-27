@@ -9,6 +9,20 @@ use pspot::PSPot;
 use pwdensity::PWDensity;
 use types::*;
 
+fn effective_mesh_for_local_transform(rad: &[f64]) -> usize {
+    const LOCAL_TAIL_RCUT_BOHR: f64 = 10.0;
+
+    let raw_msh = rad
+        .iter()
+        .position(|&r| r > LOCAL_TAIL_RCUT_BOHR)
+        .map(|idx| idx + 1)
+        .unwrap_or(rad.len());
+
+    // Match QE's local-potential setup: clip the large-r tail and keep an
+    // odd mesh for Simpson integration.
+    2 * ((raw_msh + 1) / 2) - 1
+}
+
 pub fn from_atomic_super_position(
     pspot: &PSPot,
     crystal: &Crystal,
@@ -104,7 +118,10 @@ fn compute_vloc_of_g(
 
     let mut vg = vec![0.0; nshell];
 
-    let mmax = vloc.len();
+    let mmax = effective_mesh_for_local_transform(rad);
+    let vloc = &vloc[..mmax];
+    let rad = &rad[..mmax];
+    let rab = &rab[..mmax];
 
     let mut work = vec![0.0; mmax];
 
@@ -168,7 +185,10 @@ pub fn compute_dvloc_of_g(
 
     let mut vg = vec![0.0; nshell];
 
-    let mmax = vloc.len();
+    let mmax = effective_mesh_for_local_transform(rad);
+    let vloc = &vloc[..mmax];
+    let rad = &rad[..mmax];
+    let rab = &rab[..mmax];
 
     let mut work = vec![0.0; mmax];
 
@@ -201,4 +221,21 @@ pub fn compute_dvloc_of_g(
     vg.iter_mut().for_each(|v| *v *= FOURPI / volume);
 
     vg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_mesh_for_local_transform;
+
+    #[test]
+    fn local_transform_mesh_stops_at_first_radius_above_ten_bohr_and_is_odd() {
+        let rad = vec![0.0, 5.0, 10.0, 10.1, 12.0, 14.0];
+        assert_eq!(effective_mesh_for_local_transform(&rad), 3);
+    }
+
+    #[test]
+    fn local_transform_mesh_uses_full_grid_when_already_within_cutoff() {
+        let rad = vec![0.0, 2.0, 4.0, 6.0, 8.0];
+        assert_eq!(effective_mesh_for_local_transform(&rad), 5);
+    }
 }
