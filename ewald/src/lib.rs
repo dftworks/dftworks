@@ -7,8 +7,8 @@ use nalgebra::Matrix3;
 use num_traits::identities::Zero;
 use pwdensity::*;
 use special;
-use types::{Vector3c64, Vector3f64, Vector3i32};
 use types::*;
+use types::{Vector3c64, Vector3f64, Vector3i32};
 use utility;
 
 // Ewald ion-ion interaction decomposition for periodic crystals.
@@ -103,9 +103,18 @@ fn make_near_cells(crystal: &Crystal, rmax: f64) -> Vec<Vector3i32> {
     let b = latt.get_vector_b();
     let c = latt.get_vector_c();
 
-    let na = (rmax / a.norm()).ceil() as i32 + 2;
-    let nb = (rmax / b.norm()).ceil() as i32 + 2;
-    let nc = (rmax / c.norm()).ceil() as i32 + 2;
+    let blatt = latt.reciprocal();
+    let ba = blatt.get_vector_a();
+    let bb = blatt.get_vector_b();
+    let bc = blatt.get_vector_c();
+
+    // Bound lattice coefficients through the reciprocal basis:
+    // |n_i| = |R · b_i| / (2*pi) <= |R| |b_i| / (2*pi).
+    // This remains safe for skewed cells where short translations can have
+    // large integer coefficients because of cancellation between lattice vectors.
+    let na = (rmax * ba.norm() / TWOPI).ceil() as i32 + 2;
+    let nb = (rmax * bb.norm() / TWOPI).ceil() as i32 + 2;
+    let nc = (rmax * bc.norm() / TWOPI).ceil() as i32 + 2;
 
     // Candidate translation vectors and their squared lengths.
     let mut t_rs: Vec<Vector3i32> = Vec::new();
@@ -188,7 +197,7 @@ fn compute_energy_real_space_part(
             let ati = &atoms[i];
 
             for j in 0..natoms {
-                if j == i {
+                if j == i && cell.x == 0 && cell.y == 0 && cell.z == 0 {
                     continue;
                 }
 
@@ -446,7 +455,7 @@ pub fn compute_stress_real_space_part(
             let ati = &atoms[i];
 
             for j in 0..natoms {
-                if j == i {
+                if j == i && cell.x == 0 && cell.y == 0 && cell.z == 0 {
                     continue;
                 }
 
@@ -471,10 +480,9 @@ pub fn compute_stress_real_space_part(
                 for ii in 0..3 {
                     for jj in 0..3 {
                         stress[(jj, ii)] += 0.5
-                            * eta_sqrt
                             * zions[i]
                             * zions[j]
-                            * (-2.0 / PI.sqrt() * (-eta * r * r).exp()
+                            * (-2.0 / PI.sqrt() * (-eta * r * r).exp() * eta_sqrt
                                 - special::erfc(eta_sqrt * r) / r)
                             * vecv[ii]
                             * vecv[jj]
@@ -487,6 +495,145 @@ pub fn compute_stress_real_space_part(
     }
 
     stress
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn load_crystal_from_text(contents: &str) -> Crystal {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock drift")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("dftworks-ewald-test-{}.crystal", nanos));
+        fs::write(&path, contents).expect("write temp crystal");
+
+        let mut crystal = Crystal::new();
+        crystal
+            .try_read_file(path.to_str().expect("temp path should be utf8"))
+            .expect("parse temp crystal");
+
+        fs::remove_file(&path).expect("remove temp crystal");
+        crystal
+    }
+
+    fn simple_cubic_crystal(a_ang: f64) -> Crystal {
+        load_crystal_from_text(&format!(
+            "\
+1.0 1.0 1.0
+{a:.16} 0.0 0.0 T T T
+0.0 {a:.16} 0.0 T T T
+0.0 0.0 {a:.16} T T T
+Si 0.0 0.0 0.0
+",
+            a = a_ang
+        ))
+    }
+
+    fn skewed_cancellation_crystal() -> Crystal {
+        load_crystal_from_text(
+            "\
+1.0 1.0 1.0
+1.0 0.0 0.0 T T T
+1.0 0.01 0.0 T T T
+0.0 0.0 1.0 T T T
+Si 0.0 0.0 0.0
+",
+        )
+    }
+
+    fn centered_cells(max_index: i32) -> Vec<Vector3i32> {
+        let mut cells = Vec::new();
+        for ia in -max_index..=max_index {
+            for ib in -max_index..=max_index {
+                for ic in -max_index..=max_index {
+                    cells.push(Vector3i32::new(ia, ib, ic));
+                }
+            }
+        }
+        cells
+    }
+
+    #[test]
+    fn test_real_space_energy_includes_self_images() {
+        let crystal = simple_cubic_crystal(3.0);
+        let zions = vec![4.0];
+        let eta = 0.35;
+        let nn_cells = make_near_cells(&crystal, 12.0);
+
+        let energy = compute_energy_real_space_part(&crystal, &zions, eta, &nn_cells);
+        assert!(
+            energy > 0.0,
+            "self-image real-space energy should be positive"
+        );
+
+        let latt = crystal.get_latt();
+        let a = latt.get_vector_a();
+        let b = latt.get_vector_b();
+        let c = latt.get_vector_c();
+        let eta_sqrt = eta.sqrt();
+        let mut expected = 0.0;
+
+        for cell in nn_cells.iter() {
+            if cell.x == 0 && cell.y == 0 && cell.z == 0 {
+                continue;
+            }
+
+            let dx = a.x * cell.x as f64 + b.x * cell.y as f64 + c.x * cell.z as f64;
+            let dy = a.y * cell.x as f64 + b.y * cell.y as f64 + c.y * cell.z as f64;
+            let dz = a.z * cell.x as f64 + b.z * cell.y as f64 + c.z * cell.z as f64;
+            let r = (dx * dx + dy * dy + dz * dz).sqrt();
+
+            expected += 0.5 * zions[0] * zions[0] / r * special::erfc(eta_sqrt * r);
+        }
+
+        assert!((energy - expected).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn test_make_near_cells_covers_skewed_short_translations() {
+        let crystal = skewed_cancellation_crystal();
+        let rmax = 0.15 * ANG_TO_BOHR;
+        let nn_cells = make_near_cells(&crystal, rmax);
+
+        assert!(
+            nn_cells.contains(&Vector3i32::new(10, -10, 0)),
+            "short skewed translation should be enumerated"
+        );
+        assert!(
+            nn_cells.contains(&Vector3i32::new(-10, 10, 0)),
+            "opposite skewed translation should be enumerated"
+        );
+    }
+
+    #[test]
+    fn test_real_space_stress_matches_energy_finite_difference() {
+        let zions = vec![4.0];
+        let eta = 0.37;
+        let delta = 1.0e-5;
+        let nn_cells = centered_cells(3);
+
+        let crystal = simple_cubic_crystal(3.0);
+        let stress = compute_stress_real_space_part(&crystal, &zions, eta, &nn_cells);
+
+        let crystal_plus = simple_cubic_crystal(3.0 * (1.0 + delta));
+        let crystal_minus = simple_cubic_crystal(3.0 * (1.0 - delta));
+        let energy_plus = compute_energy_real_space_part(&crystal_plus, &zions, eta, &nn_cells);
+        let energy_minus = compute_energy_real_space_part(&crystal_minus, &zions, eta, &nn_cells);
+        let d_energy_d_scale = (energy_plus - energy_minus) / (2.0 * delta);
+        let stress_trace = stress[(0, 0)] + stress[(1, 1)] + stress[(2, 2)];
+
+        let scale = d_energy_d_scale.abs().max(1.0);
+        assert!(
+            (d_energy_d_scale - stress_trace).abs() < 5.0e-7 * scale,
+            "real-space stress trace should match dE/dlambda: fd={}, trace={}",
+            d_energy_d_scale,
+            stress_trace
+        );
+    }
 }
 
 pub fn compute_stress_g_space_part(
