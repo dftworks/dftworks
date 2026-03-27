@@ -19,6 +19,7 @@ ndarray = { path = "../ndarray" }
 pspot = { path = "../pspot" }
 pwbasis = { path = "../pwbasis" }
 pwdensity = { path = "../pwdensity" }
+rgtransform = { path = "../rgtransform" }
 types = { path = "../types" }
 symmetry = { path = "../symmetry" }
 vloc = { path = "../vloc" }
@@ -26,6 +27,7 @@ vdw = { path = "../vdw" }
 nlcc = { path = "../nlcc" }
 fhkl = { path = "../fhkl" }
 kgylm = { path = "../kgylm" }
+xc = { path = "../xc" }
 itertools = "*"
 dfttypes = { path = "../dfttypes" }
 num-traits = "*"

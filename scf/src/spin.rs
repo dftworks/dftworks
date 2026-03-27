@@ -16,8 +16,6 @@ use itertools::multizip;
 use kpts::KPTS;
 use kscf::KSCF;
 use lattice::Lattice;
-use types::Matrix;
-use types::MatrixExt;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -26,6 +24,8 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 use types::Vector3f64;
 
 //use rayon::prelude::*;
@@ -766,7 +766,11 @@ impl SCF for SCFSpin {
 
         let mut stress_hartree = stress::hartree(gvec, pwden, &ws.rhog_tot);
         let mut stress_xc = stress::xc_spin(
+            control.get_xc_scheme_enum(),
             crystal.get_latt(),
+            gvec,
+            pwden,
+            rgtrans,
             rho_3d,
             rhocore_3d,
             &ws.vxc_3d,
@@ -908,13 +912,18 @@ pub fn compute_total_energy(
             get_hybrid_exchange_energy(vkscf_up) + get_hybrid_exchange_energy(vkscf_dn);
     }
     let mut hybrid_exchange = 0.0;
-    dwmpi::reduce_scalar_sum(&hybrid_exchange_local, &mut hybrid_exchange, dwmpi::comm_world());
+    dwmpi::reduce_scalar_sum(
+        &hybrid_exchange_local,
+        &mut hybrid_exchange,
+        dwmpi::comm_world(),
+    );
     dwmpi::bcast_scalar(&mut hybrid_exchange, dwmpi::comm_world());
 
     let etot_one = etot_bands - etot_vxc - 2.0 * etot_hartree;
 
-    let etot =
-        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange + vdw_energy;
+    let etot = etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy
+        - hybrid_exchange
+        + vdw_energy;
 
     etot
 }

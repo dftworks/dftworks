@@ -5,13 +5,14 @@ use crystal::Crystal;
 use dfttypes::*;
 use ewald::Ewald;
 use gvector::GVector;
-use types::Matrix;
-use types::MatrixExt;
 use ndarray::Array3;
 use pspot::PSPot;
 use pwdensity::PWDensity;
+use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 use types::Vector3f64;
 
 // Re-export symmetry projection functions from force and stress crates
@@ -119,6 +120,7 @@ pub fn compute_stress(
     crystal: &Crystal,
     gvec: &GVector,
     pwden: &PWDensity,
+    rgtrans: &RGTransform,
     pots: &PSPot,
     ewald: &Ewald,
     vkscf: &VKSCF,
@@ -178,7 +180,11 @@ pub fn compute_stress(
     );
 
     let mut stress_xc = stress::xc(
+        control.get_xc_scheme_enum(),
         crystal.get_latt(),
+        gvec,
+        pwden,
+        rgtrans,
         rho_3d.as_non_spin_mut().unwrap(),
         rhocore_3d,
         vxc_3d.as_non_spin().unwrap(),

@@ -87,7 +87,11 @@ impl XC for XCLDAPZ {
 fn make_xc_test_context(
     shape: [usize; 3],
     ecut: f64,
-) -> (gvector::GVector, pwdensity::PWDensity, rgtransform::RGTransform) {
+) -> (
+    gvector::GVector,
+    pwdensity::PWDensity,
+    rgtransform::RGTransform,
+) {
     let latt = lattice::Lattice::new(&[8.0, 0.0, 0.0], &[0.0, 8.0, 0.0], &[0.0, 0.0, 8.0]);
     let gvec = gvector::GVector::new(&latt, shape[0], shape[1], shape[2]);
     let pwden = pwdensity::PWDensity::new(ecut, &gvec);

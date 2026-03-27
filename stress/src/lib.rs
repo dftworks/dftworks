@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 use atompsp::*;
+use control::XcScheme;
 use crystal::*;
 use dfttypes::*;
 use dwconsts::*;
@@ -9,15 +10,15 @@ use itertools::multizip;
 use kgylm::KGYLM;
 use kscf::*;
 use lattice::*;
-use types::*;
-use ndarray::*;
 use nalgebra::Matrix3;
+use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::*;
 use pwbasis::*;
 use pwdensity::*;
-use types::*;
+use rgtransform::RGTransform;
 use std::collections::HashMap;
+use types::*;
 
 pub mod symmetry;
 
@@ -152,11 +153,18 @@ pub fn nlcc_xc_with_workspace(
         let rhocoreg = workspace
             .rhocore_by_species
             .get(&species[iat])
-            .unwrap_or_else(|| panic!("missing NLCC spectral cache for species '{}'", species[iat]));
+            .unwrap_or_else(|| {
+                panic!("missing NLCC spectral cache for species '{}'", species[iat])
+            });
         let drhocoreg = workspace
             .drhocore_by_species
             .get(&species[iat])
-            .unwrap_or_else(|| panic!("missing NLCC derivative spectral cache for species '{}'", species[iat]));
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing NLCC derivative spectral cache for species '{}'",
+                    species[iat]
+                )
+            });
 
         for ipw in 0..npw_rho {
             let mill = miller[gidx[ipw]];
@@ -210,15 +218,7 @@ pub fn vpsloc(
 ) -> Matrix<f64> {
     let mut workspace = SpectralWorkspace::new();
     let mut out = Matrix::<f64>::new(3, 3);
-    vpsloc_with_workspace(
-        atpsps,
-        crystal,
-        gvec,
-        pwden,
-        &mut workspace,
-        rhog,
-        &mut out,
-    );
+    vpsloc_with_workspace(atpsps, crystal, gvec, pwden, &mut workspace, rhog, &mut out);
     out
 }
 
@@ -254,11 +254,21 @@ pub fn vpsloc_with_workspace(
         let vatlocg = workspace
             .vpsloc_by_species
             .get(&species[iat])
-            .unwrap_or_else(|| panic!("missing local-potential spectral cache for species '{}'", species[iat]));
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing local-potential spectral cache for species '{}'",
+                    species[iat]
+                )
+            });
         let dvatlocg = workspace
             .dvpsloc_by_species
             .get(&species[iat])
-            .unwrap_or_else(|| panic!("missing local-potential derivative spectral cache for species '{}'", species[iat]));
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing local-potential derivative spectral cache for species '{}'",
+                    species[iat]
+                )
+            });
 
         for ipw in 0..npw_rho {
             let mill = miller[gidx[ipw]];
@@ -304,7 +314,11 @@ pub fn vpsloc_with_workspace(
 }
 
 pub fn xc(
+    xc_scheme: XcScheme,
     latt: &Lattice,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    rgtrans: &RGTransform,
     rho_3d: &mut Array3<c64>,
     rhocore_3d: &Array3<c64>,
     vxc_3d: &Array3<c64>,
@@ -327,11 +341,22 @@ pub fn xc(
         stress[(i, i)] = -(stress_exc - stress_vxc_rho);
     }
 
+    let stress_gga = xc::stress_gga_correction_nonspin(xc_scheme, gvec, pwden, rgtrans, rho_3d);
+    for i in 0..3 {
+        for j in 0..3 {
+            stress[(i, j)] += stress_gga[(i, j)];
+        }
+    }
+
     stress
 }
 
 pub fn xc_spin(
+    xc_scheme: XcScheme,
     latt: &Lattice,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    rgtrans: &RGTransform,
     rho_3d: &mut RHOR,
     rhocore_3d: &Array3<c64>,
     vxc_3d: &VXCR,
@@ -347,6 +372,16 @@ pub fn xc_spin(
 
     for i in 0..3 {
         stress[(i, i)] = -(stress_exc - stress_vxc_rho);
+    }
+
+    if let RHOR::Spin(rho_up, rho_dn) = rho_3d {
+        let stress_gga =
+            xc::stress_gga_correction_spin(xc_scheme, gvec, pwden, rgtrans, rho_up, rho_dn);
+        for i in 0..3 {
+            for j in 0..3 {
+                stress[(i, j)] += stress_gga[(i, j)];
+            }
+        }
     }
 
     stress
@@ -760,12 +795,8 @@ pub fn display_stress_by_parts(
     disp_stress(s_vdw);
 }
 
-pub fn vdw(
-    control: &control::Control,
-    crystal: &Crystal,
-    stress_vdw: &mut Matrix<f64>,
-) {
-    use vdw::{VdwCorrection, VdwMethod, VdwDamping};
+pub fn vdw(control: &control::Control, crystal: &Crystal, stress_vdw: &mut Matrix<f64>) {
+    use vdw::{VdwCorrection, VdwDamping, VdwMethod};
 
     stress_vdw.set_zeros();
 

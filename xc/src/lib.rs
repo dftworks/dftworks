@@ -12,6 +12,7 @@ use gvector::GVector;
 use ndarray::*;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
+use types::Matrix;
 use types::*;
 
 // Exchange-correlation model interface used by SCF.
@@ -58,4 +59,35 @@ pub fn new(xc_scheme: XcScheme) -> Box<dyn XC> {
     }
 
     xc
+}
+
+pub fn stress_gga_correction_nonspin(
+    xc_scheme: XcScheme,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    rgtrans: &RGTransform,
+    rho: &Array3<c64>,
+) -> Matrix<f64> {
+    match xc_scheme {
+        XcScheme::Pbe | XcScheme::Hse06 => {
+            pbe::stress_correction_nonspin(gvec, pwden, rgtrans, rho)
+        }
+        XcScheme::LdaPz | XcScheme::LsdaPz => Matrix::<f64>::new(3, 3),
+    }
+}
+
+pub fn stress_gga_correction_spin(
+    xc_scheme: XcScheme,
+    gvec: &GVector,
+    pwden: &PWDensity,
+    rgtrans: &RGTransform,
+    rho_up: &Array3<c64>,
+    rho_dn: &Array3<c64>,
+) -> Matrix<f64> {
+    match xc_scheme {
+        XcScheme::Pbe | XcScheme::Hse06 => {
+            pbe::stress_correction_spin(gvec, pwden, rgtrans, rho_up, rho_dn)
+        }
+        XcScheme::LdaPz | XcScheme::LsdaPz => Matrix::<f64>::new(3, 3),
+    }
 }

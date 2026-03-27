@@ -11,7 +11,6 @@ use ewald::Ewald;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
-use types::Matrix;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -19,8 +18,9 @@ use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
-use types::*;
+use types::Matrix;
 use types::Vector3f64;
+use types::*;
 
 //use rayon::prelude::*;
 
@@ -448,6 +448,7 @@ impl SCF for SCFNonspin {
             crystal,
             gvec,
             pwden,
+            rgtrans,
             pots,
             ewald,
             vkscf,

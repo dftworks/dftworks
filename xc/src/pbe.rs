@@ -3,6 +3,7 @@
 use dfttypes::*;
 use ndarray::Array3;
 use types::c64;
+use types::{Matrix, MatrixExt, MatrixF64Ext};
 
 use crate::XC;
 
@@ -222,6 +223,161 @@ fn compute_spin_potential(
     }
 }
 
+pub(crate) fn stress_correction_nonspin(
+    gvec: &gvector::GVector,
+    pwden: &pwdensity::PWDensity,
+    rgtrans: &rgtransform::RGTransform,
+    rho: &Array3<c64>,
+) -> Matrix<f64> {
+    let nfft = rho.as_slice().len();
+    let mut grad_x = Array3::<c64>::new(rho.shape());
+    let mut grad_y = Array3::<c64>::new(rho.shape());
+    let mut grad_z = Array3::<c64>::new(rho.shape());
+    rgtrans.gradient_r3d(
+        gvec,
+        pwden,
+        rho.as_slice(),
+        grad_x.as_mut_slice(),
+        grad_y.as_mut_slice(),
+        grad_z.as_mut_slice(),
+    );
+
+    let mut local_part = vec![0.0; nfft];
+    let mut eps = vec![c64::new(0.0, 0.0); nfft];
+    let mut bx = vec![c64::new(0.0, 0.0); nfft];
+    let mut by = vec![c64::new(0.0, 0.0); nfft];
+    let mut bz = vec![c64::new(0.0, 0.0); nfft];
+
+    build_channel_terms(
+        rho.as_slice(),
+        grad_x.as_slice(),
+        grad_y.as_slice(),
+        grad_z.as_slice(),
+        &mut local_part,
+        &mut eps,
+        &mut bx,
+        &mut by,
+        &mut bz,
+    );
+
+    let mut stress = Matrix::<f64>::new(3, 3);
+    let weight = 1.0 / nfft as f64;
+
+    for i in 0..nfft {
+        let b = [bx[i].re, by[i].re, bz[i].re];
+        let grad = [
+            grad_x.as_slice()[i].re,
+            grad_y.as_slice()[i].re,
+            grad_z.as_slice()[i].re,
+        ];
+
+        for alpha in 0..3 {
+            for beta in 0..3 {
+                stress[(alpha, beta)] += weight * b[alpha] * grad[beta];
+            }
+        }
+    }
+
+    stress.symmetrize();
+    stress
+}
+
+pub(crate) fn stress_correction_spin(
+    gvec: &gvector::GVector,
+    pwden: &pwdensity::PWDensity,
+    rgtrans: &rgtransform::RGTransform,
+    rho_up: &Array3<c64>,
+    rho_dn: &Array3<c64>,
+) -> Matrix<f64> {
+    let nfft = rho_up.as_slice().len();
+
+    let mut grad_up_x = Array3::<c64>::new(rho_up.shape());
+    let mut grad_up_y = Array3::<c64>::new(rho_up.shape());
+    let mut grad_up_z = Array3::<c64>::new(rho_up.shape());
+    rgtrans.gradient_r3d(
+        gvec,
+        pwden,
+        rho_up.as_slice(),
+        grad_up_x.as_mut_slice(),
+        grad_up_y.as_mut_slice(),
+        grad_up_z.as_mut_slice(),
+    );
+
+    let mut grad_dn_x = Array3::<c64>::new(rho_dn.shape());
+    let mut grad_dn_y = Array3::<c64>::new(rho_dn.shape());
+    let mut grad_dn_z = Array3::<c64>::new(rho_dn.shape());
+    rgtrans.gradient_r3d(
+        gvec,
+        pwden,
+        rho_dn.as_slice(),
+        grad_dn_x.as_mut_slice(),
+        grad_dn_y.as_mut_slice(),
+        grad_dn_z.as_mut_slice(),
+    );
+
+    let mut local_up = vec![0.0; nfft];
+    let mut eps_up = vec![c64::new(0.0, 0.0); nfft];
+    let mut bup_x = vec![c64::new(0.0, 0.0); nfft];
+    let mut bup_y = vec![c64::new(0.0, 0.0); nfft];
+    let mut bup_z = vec![c64::new(0.0, 0.0); nfft];
+    build_channel_terms(
+        rho_up.as_slice(),
+        grad_up_x.as_slice(),
+        grad_up_y.as_slice(),
+        grad_up_z.as_slice(),
+        &mut local_up,
+        &mut eps_up,
+        &mut bup_x,
+        &mut bup_y,
+        &mut bup_z,
+    );
+
+    let mut local_dn = vec![0.0; nfft];
+    let mut eps_dn = vec![c64::new(0.0, 0.0); nfft];
+    let mut bdn_x = vec![c64::new(0.0, 0.0); nfft];
+    let mut bdn_y = vec![c64::new(0.0, 0.0); nfft];
+    let mut bdn_z = vec![c64::new(0.0, 0.0); nfft];
+    build_channel_terms(
+        rho_dn.as_slice(),
+        grad_dn_x.as_slice(),
+        grad_dn_y.as_slice(),
+        grad_dn_z.as_slice(),
+        &mut local_dn,
+        &mut eps_dn,
+        &mut bdn_x,
+        &mut bdn_y,
+        &mut bdn_z,
+    );
+
+    let mut stress = Matrix::<f64>::new(3, 3);
+    let weight = 1.0 / nfft as f64;
+
+    for i in 0..nfft {
+        let bup = [bup_x[i].re, bup_y[i].re, bup_z[i].re];
+        let grad_up = [
+            grad_up_x.as_slice()[i].re,
+            grad_up_y.as_slice()[i].re,
+            grad_up_z.as_slice()[i].re,
+        ];
+        let bdn = [bdn_x[i].re, bdn_y[i].re, bdn_z[i].re];
+        let grad_dn = [
+            grad_dn_x.as_slice()[i].re,
+            grad_dn_y.as_slice()[i].re,
+            grad_dn_z.as_slice()[i].re,
+        ];
+
+        for alpha in 0..3 {
+            for beta in 0..3 {
+                stress[(alpha, beta)] +=
+                    weight * (bup[alpha] * grad_up[beta] + bdn[alpha] * grad_dn[beta]);
+            }
+        }
+    }
+
+    stress.symmetrize();
+    stress
+}
+
 fn build_channel_terms(
     rho: &[c64],
     grad_x: &[c64],
@@ -403,7 +559,11 @@ fn evc_pz_unpolarized(rho: f64) -> (f64, f64) {
 fn make_xc_test_context(
     shape: [usize; 3],
     ecut: f64,
-) -> (gvector::GVector, pwdensity::PWDensity, rgtransform::RGTransform) {
+) -> (
+    gvector::GVector,
+    pwdensity::PWDensity,
+    rgtransform::RGTransform,
+) {
     // Lightweight cubic context for unit tests that need FFT gradients.
     let latt = lattice::Lattice::new(&[8.0, 0.0, 0.0], &[0.0, 8.0, 0.0], &[0.0, 0.0, 8.0]);
     let gvec = gvector::GVector::new(&latt, shape[0], shape[1], shape[2]);
@@ -489,8 +649,14 @@ fn test_pbe_nonspin_variational_consistency() {
     let mut rho_p = Vec::with_capacity(n);
     let mut rho_m = Vec::with_capacity(n);
     for i in 0..n {
-        rho_p.push(c64::new((rho0[i].re + alpha * drho[i].re).max(RHO_FLOOR), 0.0));
-        rho_m.push(c64::new((rho0[i].re - alpha * drho[i].re).max(RHO_FLOOR), 0.0));
+        rho_p.push(c64::new(
+            (rho0[i].re + alpha * drho[i].re).max(RHO_FLOOR),
+            0.0,
+        ));
+        rho_m.push(c64::new(
+            (rho0[i].re - alpha * drho[i].re).max(RHO_FLOOR),
+            0.0,
+        ));
     }
 
     let (_vxc_p, exc_p) = eval_nonspin_vxc_exc(rho_p.clone(), shape, &gvec, &pwden, &rgtrans);
@@ -537,6 +703,22 @@ fn test_pbe_gradient_changes_energy_density() {
     let e0 = eps_xc_pbe_nonspin(rho, 0.0);
     let e1 = eps_xc_pbe_nonspin(rho, 1.0E-3);
     assert!((e0 - e1).abs() > 1.0E-12);
+}
+
+#[test]
+fn test_pbe_stress_correction_zero_for_uniform_density() {
+    let shape = [4, 4, 4];
+    let rho = Array3::from_vec(
+        shape,
+        vec![c64::new(0.03, 0.0); shape[0] * shape[1] * shape[2]],
+    );
+    let (gvec, pwden, rgtrans) = make_xc_test_context(shape, 30.0);
+
+    let stress = stress_correction_nonspin(&gvec, &pwden, &rgtrans, &rho);
+
+    for value in stress.as_slice() {
+        assert!(value.abs() < 1.0E-12);
+    }
 }
 
 #[test]
