@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
-use crate::{KPTS, KptsError};
+use crate::{KptsError, KPTS};
 
 pub struct KptsLine {
     k_frac: Vec<Vector3f64>,
@@ -108,7 +108,12 @@ impl KPTS for KptsLine {
     }
 }
 
-fn parse_f64_token(tokens: &[&str], idx: usize, line_no: usize, label: &str) -> Result<f64, KptsError> {
+fn parse_f64_token(
+    tokens: &[&str],
+    idx: usize,
+    line_no: usize,
+    label: &str,
+) -> Result<f64, KptsError> {
     let value = tokens.get(idx).ok_or_else(|| {
         KptsError::new(format!(
             "in.kline:{}: missing '{}' token at column {}",
@@ -139,12 +144,9 @@ fn read_k_line() -> Result<Vec<Vector3f64>, KptsError> {
             "in.kline:1: expected header format 'npts <N>'",
         ));
     }
-    let npts: usize = header[1].parse().map_err(|e| {
-        KptsError::new(format!(
-            "in.kline:1: invalid npts '{}': {}",
-            header[1], e
-        ))
-    })?;
+    let npts: usize = header[1]
+        .parse()
+        .map_err(|e| KptsError::new(format!("in.kline:1: invalid npts '{}': {}", header[1], e)))?;
     if npts < 2 {
         return Err(KptsError::new(format!(
             "in.kline:1: npts must be >= 2, got {}",

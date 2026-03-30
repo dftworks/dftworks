@@ -1,8 +1,8 @@
 use control::Control;
 use dfttypes::{VKEigenVector, VKSCF};
 use kscf::KSCF;
-use types::Matrix;
 use types::c64;
+use types::Matrix;
 
 fn occ_index(iat: usize, m: usize, mp: usize, n_m: usize) -> usize {
     iat * n_m * n_m + m + mp * n_m

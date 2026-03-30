@@ -55,21 +55,7 @@ impl EigenSolverPCG {
         gram_schmidt_vec.resize(npw, c64::zero());
         proj_coeff.resize(nband, c64::zero());
 
-        EigenSolverPCG {
-            npw,
-            nband,
-            x0,
-            h_x0,
-            d0,
-            h_d0,
-            g0,
-            g1,
-            pg0,
-            pg1,
-            precond,
-            gram_schmidt_vec,
-            proj_coeff,
-        }
+        EigenSolverPCG { npw, nband, x0, h_x0, d0, h_d0, g0, g1, pg0, pg1, precond, gram_schmidt_vec, proj_coeff }
     }
 
     fn gram_schmidt(&mut self, evecs: &mut Matrix<c64>, iband: usize) {
@@ -83,18 +69,14 @@ impl EigenSolverPCG {
         for j in 0..iband {
             let proj = self.proj_coeff[j];
             let psi = evecs.get_col(j);
-            self.gram_schmidt_vec
-                .iter_mut()
-                .zip(psi.iter())
-                .for_each(|(vi, &psi_i)| {
-                    *vi -= proj * psi_i;
-                });
+            self.gram_schmidt_vec.iter_mut().zip(psi.iter()).for_each(|(vi, &psi_i)| {
+                *vi -= proj * psi_i;
+            });
         }
 
         utility::normalize_vector_c64(&mut self.gram_schmidt_vec);
         evecs.set_col(iband, &self.gram_schmidt_vec);
     }
-
 }
 
 impl EigenSolver for EigenSolverPCG {
@@ -156,12 +138,7 @@ impl EigenSolver for EigenSolverPCG {
 
                 // orthogonalize g1 to all lower bands
 
-                orthogonalize_to_lower_bands_with_proj(
-                    &mut self.proj_coeff,
-                    evecs,
-                    iband,
-                    &mut self.g1,
-                );
+                orthogonalize_to_lower_bands_with_proj(&mut self.proj_coeff, evecs, iband, &mut self.g1);
 
                 for i in 0..self.npw {
                     self.pg1[i] = self.g1[i] * self.precond[i];
@@ -169,12 +146,7 @@ impl EigenSolver for EigenSolverPCG {
 
                 // orthogonalize pg1 to all lower bands
 
-                orthogonalize_to_lower_bands_with_proj(
-                    &mut self.proj_coeff,
-                    evecs,
-                    iband,
-                    &mut self.pg1,
-                );
+                orthogonalize_to_lower_bands_with_proj(&mut self.proj_coeff, evecs, iband, &mut self.pg1);
 
                 utility::normalize_vector_c64(&mut self.pg1);
 
@@ -248,25 +220,9 @@ impl EigenSolver for EigenSolverPCG {
 }
 
 pub fn get_alpha(x0: &[c64], d0: &[c64], h_x0: &[c64], h_d0: &[c64]) -> c64 {
-    let mh = Matrix2::new(
-        utility::zdot_product(x0, h_x0),
-        utility::zdot_product(x0, h_d0),
-        utility::zdot_product(d0, h_x0),
-        utility::zdot_product(d0, h_d0),
-    );
-    let mo = Matrix2::new(
-        utility::zdot_product(x0, x0),
-        utility::zdot_product(x0, d0),
-        utility::zdot_product(d0, x0),
-        utility::zdot_product(d0, d0),
-    );
-    let mo_inv = mo
-        .try_inverse()
-        .unwrap_or_else(|| {
-            mo.svd(true, true)
-                .pseudo_inverse(EPS30)
-                .expect("failed to pseudo-invert overlap matrix in get_alpha")
-        });
+    let mh = Matrix2::new(utility::zdot_product(x0, h_x0), utility::zdot_product(x0, h_d0), utility::zdot_product(d0, h_x0), utility::zdot_product(d0, h_d0));
+    let mo = Matrix2::new(utility::zdot_product(x0, x0), utility::zdot_product(x0, d0), utility::zdot_product(d0, x0), utility::zdot_product(d0, d0));
+    let mo_inv = mo.try_inverse().unwrap_or_else(|| mo.svd(true, true).pseudo_inverse(EPS30).expect("failed to pseudo-invert overlap matrix in get_alpha"));
     let oinvh = mo_inv * mh;
 
     // Solve eigenvalues analytically for 2x2 and pick the lower branch.
@@ -280,11 +236,7 @@ pub fn get_alpha(x0: &[c64], d0: &[c64], h_x0: &[c64], h_d0: &[c64]) -> c64 {
     let disc_sqrt = disc.sqrt();
     let lambda_minus = (tr - disc_sqrt) * 0.5;
     let lambda_plus = (tr + disc_sqrt) * 0.5;
-    let lambda = if lambda_minus.re <= lambda_plus.re {
-        lambda_minus
-    } else {
-        lambda_plus
-    };
+    let lambda = if lambda_minus.re <= lambda_plus.re { lambda_minus } else { lambda_plus };
 
     // Compute alpha = v1 / v0 from (M - lambda I) v = 0, choosing the numerically
     // more stable formula based on denominator magnitude.
@@ -299,7 +251,7 @@ pub fn get_alpha(x0: &[c64], d0: &[c64], h_x0: &[c64], h_d0: &[c64]) -> c64 {
     }
 }
 
-fn compute_preconditioner(psi: &[c64], kin: &[f64], kgg: &mut [c64]) {
+pub(crate) fn compute_preconditioner(psi: &[c64], kin: &[f64], kgg: &mut [c64]) {
     let mut ek = c64::zero();
 
     for (&psig, &ekg) in psi.iter().zip(kin.iter()) {
@@ -321,12 +273,7 @@ fn compute_preconditioner(psi: &[c64], kin: &[f64], kgg: &mut [c64]) {
     }
 }
 
-fn orthogonalize_to_lower_bands_with_proj(
-    proj_coeff: &mut [c64],
-    evecs: &Matrix<c64>,
-    ibnd: usize,
-    y: &mut [c64],
-) {
+fn orthogonalize_to_lower_bands_with_proj(proj_coeff: &mut [c64], evecs: &Matrix<c64>, ibnd: usize, y: &mut [c64]) {
     for i in 0..ibnd {
         let psi = evecs.get_col(i);
         proj_coeff[i] = utility::zdot_product(psi, y);

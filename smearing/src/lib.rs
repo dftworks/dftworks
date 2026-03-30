@@ -7,8 +7,8 @@ use mp1::*;
 mod mp2;
 use mp2::*;
 mod mv;
-use mv::*;
 use control::SmearingScheme;
+use mv::*;
 
 pub trait Smearing {
     fn get_occupation_number(

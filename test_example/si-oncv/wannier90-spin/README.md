@@ -13,7 +13,9 @@ From this directory:
 
 After the run, DFTWorks provides spin-resolved wavefunctions
 (`out.wfc.up.k.*.hdf5`, `out.wfc.dn.k.*.hdf5`) and, with
-`wannier90_export = true`, writes `si.up.eig` / `si.dn.eig`.
+`wannier90_export = true`, writes `si.up.eig` / `si.dn.eig` plus the
+channel-separated PP_CHI bundle under `properties/ppchi/si.ppchi.up.*` and
+`properties/ppchi/si.ppchi.dn.*`.
 
 ## Generate `si.up.win` and `si.dn.win`
 

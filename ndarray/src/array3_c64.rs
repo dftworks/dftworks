@@ -154,10 +154,12 @@ impl Array3<c64> {
             .read()
             .map_err(|e| format!("failed to read dataset 'shape': {}", e))?
             .to_vec();
-        let shape: [usize; 3] = shape_vec
-            .as_slice()
-            .try_into()
-            .map_err(|_| format!("invalid array shape length: expected 3, got {}", shape_vec.len()))?;
+        let shape: [usize; 3] = shape_vec.as_slice().try_into().map_err(|_| {
+            format!(
+                "invalid array shape length: expected 3, got {}",
+                shape_vec.len()
+            )
+        })?;
 
         let real_data: Vec<f64> = group
             .dataset("real")
@@ -256,7 +258,12 @@ mod tests {
         lhs.scale(2.0);
         assert_close_array(&lhs, &rhs, 1.0e-12);
 
-        let expected_norm = rhs.as_slice().iter().map(|z| z.norm_sqr()).sum::<f64>().sqrt();
+        let expected_norm = rhs
+            .as_slice()
+            .iter()
+            .map(|z| z.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
         assert_close_f64(lhs.norm2(), expected_norm, 1.0e-12);
     }
 

@@ -58,7 +58,11 @@ where
     Ok(())
 }
 
-fn write_eig_part_file(filename: &str, eigvals: &[Vec<f64>], k_indices: &[usize]) -> io::Result<()> {
+fn write_eig_part_file(
+    filename: &str,
+    eigvals: &[Vec<f64>],
+    k_indices: &[usize],
+) -> io::Result<()> {
     if eigvals.len() != k_indices.len() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

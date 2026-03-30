@@ -1,7 +1,7 @@
 #![allow(warnings)]
 
-use num::complex::Complex;
 use nalgebra::DMatrix;
+use num::complex::Complex;
 
 pub type c64 = Complex<f64>;
 pub type Vector3<T> = nalgebra::Vector3<T>;

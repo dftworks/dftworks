@@ -1,5 +1,5 @@
-use types::*;
 use nalgebra::Matrix3;
+use types::*;
 
 use std::{f64::consts, fmt};
 

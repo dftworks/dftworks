@@ -1,6 +1,8 @@
 use control::Control;
 use dfttypes::*;
 use dwconsts::*;
+use gvector::GVector;
+use pspot::PSPot;
 use types::Matrix;
 use types::Vector3f64;
 
@@ -38,6 +40,10 @@ pub(crate) fn persist_outputs(
 
 pub(crate) fn evaluate_exit_and_finalize(
     control: &Control,
+    crystal: &crystal::Crystal,
+    pots: &PSPot,
+    kpts: &dyn kpts::KPTS,
+    gvec: &GVector,
     geom_iter: usize,
     stress_total: &Matrix<f64>,
     force_total: &[Vector3f64],
@@ -85,8 +91,33 @@ pub(crate) fn evaluate_exit_and_finalize(
                 for file in summary.written_files.iter() {
                     println!("   wrote {}", file);
                 }
+                println!("   run `w90-win` and `w90-amn` to generate remaining Wannier90 inputs");
+            }
+
+            let ppchi_dir = std::path::Path::new("properties").join("ppchi");
+            let ppchi_summary = wannier90::write_ppchi_projected_outputs(
+                control,
+                crystal,
+                pots,
+                kpts,
+                gvec,
+                vkevals,
+                electronic_ctx.global_k_indices(),
+                vkevecs,
+                electronic_ctx.vpwwfc(),
+                &ppchi_dir,
+            )
+            .map_err(|err| format!("PP_CHI projected export failed: {}", err))?;
+            if dwmpi::is_root() {
+                println!();
+                println!("   {:-^88}", " pp_chi projected export ");
+                for file in ppchi_summary.written_files.iter() {
+                    println!("   wrote {}", file);
+                }
                 println!(
-                    "   run `w90-win` and `w90-amn` to generate remaining Wannier90 inputs"
+                    "   rerun `w90-proj --seed {}.ppchi[.up|.dn] --input-dir {}` for alternate broadening",
+                    control.get_wannier90_seedname().trim(),
+                    ppchi_dir.display()
                 );
             }
         }

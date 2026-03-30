@@ -3,6 +3,9 @@
 mod pcg;
 use pcg::*;
 
+mod lobpcg;
+use lobpcg::*;
+
 use control::*;
 use types::Matrix;
 
@@ -23,14 +26,13 @@ pub fn new(solver_scheme: EigenSolverScheme, n: usize, nev: usize) -> Box<dyn Ei
             sparse = Box::new(EigenSolverPCG::new(n, nev));
         }
 
-        EigenSolverScheme::Sd
-        | EigenSolverScheme::Psd
-        | EigenSolverScheme::Cg
-        | EigenSolverScheme::Arpack
-        | EigenSolverScheme::Davidson => panic!(
-            "eigen_solver='{}' is parsed but not implemented yet",
-            solver_scheme.as_str()
-        ),
+        EigenSolverScheme::Lobpcg => {
+            sparse = Box::new(EigenSolverLOBPCG::new(n, nev));
+        }
+
+        EigenSolverScheme::Sd | EigenSolverScheme::Psd | EigenSolverScheme::Cg | EigenSolverScheme::Arpack | EigenSolverScheme::Davidson => {
+            panic!("eigen_solver='{}' is parsed but not implemented yet", solver_scheme.as_str())
+        }
     }
 
     sparse

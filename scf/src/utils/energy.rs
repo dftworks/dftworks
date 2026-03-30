@@ -7,7 +7,7 @@ use kscf::KSCF;
 use ndarray::Array3;
 use pwdensity::PWDensity;
 use types::c64;
-use vdw::{VdwCorrection, VdwMethod, VdwDamping};
+use vdw::{VdwCorrection, VdwDamping, VdwMethod};
 pub fn compute_total_energy(
     pwden: &PWDensity,
     crystal: &Crystal,
@@ -62,8 +62,9 @@ pub fn compute_total_energy(
 
     // `etot_bands` already contains <Vx_hybrid>; subtract E_x^hybrid once to
     // remove the double counting and keep one copy in total energy.
-    let etot =
-        etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy - hybrid_exchange + vdw_energy;
+    let etot = etot_one + etot_xc + etot_hartree + etot_ext + ew_total + hubbard_energy
+        - hybrid_exchange
+        + vdw_energy;
 
     etot
 }

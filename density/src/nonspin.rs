@@ -11,8 +11,8 @@ use num_traits::identities::Zero;
 use pspot::PSPot;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
-use types::*;
 use std::cell::RefCell;
+use types::*;
 
 struct DensityNonspinWorkspace {
     shape: [usize; 3],
@@ -49,10 +49,7 @@ impl DensityNonspin {
         f: impl FnOnce(&mut DensityNonspinWorkspace) -> R,
     ) -> R {
         let mut workspace = self.workspace.borrow_mut();
-        let needs_init = workspace
-            .as_ref()
-            .map(|w| w.shape != shape)
-            .unwrap_or(true);
+        let needs_init = workspace.as_ref().map(|w| w.shape != shape).unwrap_or(true);
         if needs_init {
             *workspace = Some(DensityNonspinWorkspace::new(shape));
         }

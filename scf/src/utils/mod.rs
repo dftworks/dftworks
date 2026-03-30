@@ -11,8 +11,8 @@ pub use diagnostics::{
 pub use energy::{compute_total_energy, compute_vdw_energy};
 pub use mixing::{compute_next_density, compute_rho_of_g};
 pub use potential::{
-    add_external_potential_to_vlocg, add_up_v, build_external_slab_potential,
-    compute_v_e_xc_of_r, compute_v_hartree, compute_v_xc_of_g, display_external_field_runtime_note,
+    add_external_potential_to_vlocg, add_up_v, build_external_slab_potential, compute_v_e_xc_of_r,
+    compute_v_hartree, compute_v_xc_of_g, display_external_field_runtime_note,
 };
 pub use symmetry_projection::{compute_force, compute_stress};
 pub(crate) use symmetry_projection::{finalize_force_by_parts, finalize_stress_by_parts};

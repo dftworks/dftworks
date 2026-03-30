@@ -3,10 +3,10 @@
 use control::Control;
 use crystal::Crystal;
 use lattice::Lattice;
-use types::Matrix;
-use types::MatrixF64Ext;
 use nalgebra::Matrix3;
 use symmetry::SymmetryDriver;
+use types::Matrix;
+use types::MatrixF64Ext;
 
 fn array_to_matrix3(m: &[[f64; 3]; 3]) -> Matrix3<f64> {
     let mut out = Matrix3::<f64>::zeros();

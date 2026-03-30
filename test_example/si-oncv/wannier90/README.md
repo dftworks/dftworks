@@ -15,7 +15,8 @@ From this directory:
 ```
 
 After the run, DFTWorks provides converged wavefunctions (`out.wfc.k.*.hdf5`)
-and, with `wannier90_export = true`, writes `si.eig`.
+and, with `wannier90_export = true`, writes `si.eig` plus the PP_CHI bundle
+under `properties/ppchi/si.ppchi.*`.
 
 ## Generate `si.win`
 

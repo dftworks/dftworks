@@ -3,11 +3,11 @@ use crystal::Crystal;
 use dwconsts::*;
 use gvector::GVector;
 use kgylm::KGYLM;
-use types::Matrix;
-use types::MatrixExt;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 use types::Vector3f64;
 
 fn occ_index(iat: usize, m: usize, mp: usize, n_m: usize) -> usize {

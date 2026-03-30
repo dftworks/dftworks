@@ -51,8 +51,7 @@ pub fn finalize() -> i32 {
 fn world_for(comm: MpiCommHandle) -> SimpleCommunicator {
     let _ = init();
     debug_assert_eq!(
-        comm,
-        MPI_COMM_WORLD,
+        comm, MPI_COMM_WORLD,
         "dwmpi currently supports only MPI_COMM_WORLD"
     );
     SimpleCommunicator::world()
@@ -67,16 +66,13 @@ pub fn get_comm_world_size() -> i32 {
 }
 
 pub fn send_scalar<T: MPIDataType>(buf: &T, dest: i32, tag: i32, comm: MpiCommHandle) -> i32 {
-    world_for(comm).process_at_rank(dest).send_with_tag(buf, tag);
+    world_for(comm)
+        .process_at_rank(dest)
+        .send_with_tag(buf, tag);
     0
 }
 
-pub fn recv_scalar<T: MPIDataType>(
-    buf: &mut T,
-    source: i32,
-    tag: i32,
-    comm: MpiCommHandle,
-) -> i32 {
+pub fn recv_scalar<T: MPIDataType>(buf: &mut T, source: i32, tag: i32, comm: MpiCommHandle) -> i32 {
     let _status = world_for(comm)
         .process_at_rank(source)
         .receive_into_with_tag(buf, tag);
@@ -89,7 +85,9 @@ pub fn send_slice<T: MPIDataType + Default>(
     tag: i32,
     comm: MpiCommHandle,
 ) -> i32 {
-    world_for(comm).process_at_rank(dest).send_with_tag(buf, tag);
+    world_for(comm)
+        .process_at_rank(dest)
+        .send_with_tag(buf, tag);
     0
 }
 
@@ -115,12 +113,16 @@ pub fn barrier(comm: MpiCommHandle) -> i32 {
 }
 
 pub fn bcast_scalar<T: MPIDataType>(buf: &mut T, comm: MpiCommHandle) -> i32 {
-    world_for(comm).process_at_rank(MPI_ROOT).broadcast_into(buf);
+    world_for(comm)
+        .process_at_rank(MPI_ROOT)
+        .broadcast_into(buf);
     0
 }
 
 pub fn bcast_slice<T: MPIDataType + Default>(buf: &mut [T], comm: MpiCommHandle) -> i32 {
-    world_for(comm).process_at_rank(MPI_ROOT).broadcast_into(buf);
+    world_for(comm)
+        .process_at_rank(MPI_ROOT)
+        .broadcast_into(buf);
     0
 }
 

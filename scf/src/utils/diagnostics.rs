@@ -40,11 +40,9 @@ pub fn display_eigen_values(
                 debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
                 debug_assert_eq!(t_vkscf.len(), vpwwfc.len());
 
-                for (kscf_k, evals, pwwfc_k) in itertools::multizip((
-                    t_vkscf.iter(),
-                    t_vkevals.iter(),
-                    vpwwfc.iter(),
-                )) {
+                for (kscf_k, evals, pwwfc_k) in
+                    itertools::multizip((t_vkscf.iter(), t_vkevals.iter(), vpwwfc.iter()))
+                {
                     let g_ik = kscf_k.get_ik();
                     let k_frac = kpts.get_k_frac(g_ik);
                     let k_cart = kpts.frac_to_cart(&k_frac, &blatt);
@@ -67,11 +65,9 @@ pub fn display_eigen_values(
         debug_assert_eq!(t_vkscf.len(), t_vkevals.len());
         debug_assert_eq!(t_vkscf.len(), vpwwfc.len());
 
-        for (kscf_k, evals, pwwfc_k) in itertools::multizip((
-            t_vkscf.iter(),
-            t_vkevals.iter(),
-            vpwwfc.iter(),
-        )) {
+        for (kscf_k, evals, pwwfc_k) in
+            itertools::multizip((t_vkscf.iter(), t_vkevals.iter(), vpwwfc.iter()))
+        {
             let g_ik = kscf_k.get_ik();
             let k_frac = kpts.get_k_frac(g_ik);
             let k_cart = kpts.frac_to_cart(&k_frac, &blatt);

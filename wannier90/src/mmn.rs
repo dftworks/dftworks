@@ -1,12 +1,12 @@
 use crate::types::MeshTopology;
 use gvector::GVector;
-use types::Matrix;
-use types::MatrixExt;
 use pwbasis::PWBasis;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 
 pub(crate) fn write_mmn_file(
     filename: &str,

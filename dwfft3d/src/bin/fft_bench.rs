@@ -1,4 +1,4 @@
-use dwfft3d::{BackendOptions, DWFFT3D, FftPlanningMode};
+use dwfft3d::{BackendOptions, FftPlanningMode, DWFFT3D};
 use num_complex::Complex64 as c64;
 use std::env;
 use std::time::Instant;
@@ -71,9 +71,13 @@ fn main() {
     let n3 = parse_env_usize("DWWORKS_FFT_N3", 128);
     let niter = parse_env_usize("DWWORKS_FFT_ITERS", 10);
     let threads = parse_env_usize("DWWORKS_FFT_THREADS", 1);
-    let wisdom_file = env::var("DWWORKS_FFT_WISDOM")
-        .ok()
-        .and_then(|s| if s.trim().is_empty() { None } else { Some(s) });
+    let wisdom_file = env::var("DWWORKS_FFT_WISDOM").ok().and_then(|s| {
+        if s.trim().is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    });
 
     println!(
         "Running {} FFT benchmark: size = {} x {} x {}, iters = {}",

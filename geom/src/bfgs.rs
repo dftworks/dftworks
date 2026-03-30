@@ -104,10 +104,7 @@ fn move_cell_and_ions(
 
     let natoms = crystal.get_n_atoms();
 
-    let mut gmask = vec![
-        Vector3f64::new(1.0, 1.0, 1.0);
-        3 + natoms
-    ];
+    let mut gmask = vec![Vector3f64::new(1.0, 1.0, 1.0); 3 + natoms];
 
     for i in 0..3 {
         gmask[i].x = stress_mask[(0, i)];
@@ -127,7 +124,9 @@ fn move_cell_and_ions(
 
     let vmask = flatten_vec3(&gmask);
 
-    driver.optim.compute_next_input(vin.as_mut_slice(), vout.as_slice(), vmask.as_slice());
+    driver
+        .optim
+        .compute_next_input(vin.as_mut_slice(), vout.as_slice(), vmask.as_slice());
     scatter_vec3(&vin, &mut gcoord);
 
     // set new lattice
@@ -179,7 +178,9 @@ fn move_ions(
     let vout = flatten_vec3(&gforce);
     let mask = flatten_vec3(force_mask);
 
-    driver.optim.compute_next_input(vin.as_mut_slice(), vout.as_slice(), mask.as_slice());
+    driver
+        .optim
+        .compute_next_input(vin.as_mut_slice(), vout.as_slice(), mask.as_slice());
     scatter_vec3(&vin, &mut atoms_frac);
 
     crystal.set_atom_positions_from_frac(&atoms_frac);

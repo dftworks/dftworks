@@ -1,10 +1,10 @@
 use dwconsts::*;
 use nalgebra::linalg::SymmetricEigen;
 use nalgebra::DMatrix;
-use types::Matrix;
-use types::MatrixExt;
 use num_traits::identities::Zero;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 
 pub fn rotate_wfc(
     op_on_v: &mut dyn FnMut(&[c64], &mut [c64]),

@@ -1,0 +1,30 @@
+{
+  "schema_version": "provenance-v1",
+  "generated_utc": "2026-03-06T13:23:23Z",
+  "binary": {
+    "name": "pw",
+    "version": "0.1.0",
+    "git_commit": "730405b6ee6692275492a3d347883147ad73ab18",
+    "build_features": [],
+    "fft_backend": "CPU"
+  },
+  "runtime": {
+    "mpi_ranks": 1,
+    "rayon_threads": 10,
+    "rayon_env": "unset"
+  },
+  "initialization": {
+    "spin_scheme": "nonspin",
+    "kpts_scheme": "kmesh",
+    "k_mesh": [2, 2, 2],
+    "random_seed": null
+  },
+  "input_hashes": [
+    { "path": "in.crystal", "fnv1a64": "e8bf0469ce76c44c" },
+    { "path": "in.ctrl", "fnv1a64": "394f89aa310fe00e" },
+    { "path": "in.kmesh", "fnv1a64": "e6a21aa27b5b77e7" },
+    { "path": "in.pot", "fnv1a64": "4bf5bc9e5bf96dfd" },
+    { "path": "pot/Si-sr.upf", "fnv1a64": "b197e0410fd77979" }
+  ],
+  "replay_fingerprint": "48648d00f5224460"
+}

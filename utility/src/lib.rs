@@ -1,10 +1,10 @@
 #![allow(warnings)]
 
 use itertools::multizip;
-use types::*;
 use ndarray::*;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use std::f64::consts;
+use types::*;
 use types::*;
 
 const ZERO_C64: c64 = c64 { re: 0.0, im: 0.0 };
@@ -484,11 +484,7 @@ mod tests {
             c64::new(0.5, 0.25),
             c64::new(-1.5, 0.75),
         ];
-        let mut out = vec![
-            c64::new(0.0, 1.0),
-            c64::new(1.0, 0.0),
-            c64::new(-2.0, 2.0),
-        ];
+        let mut out = vec![c64::new(0.0, 1.0), c64::new(1.0, 0.0), c64::new(-2.0, 2.0)];
 
         add_and_scale(&inp, &mut out, 2.0);
         assert_close_c64(out[0], c64::new(2.0, -3.0), 1.0e-12);
@@ -627,7 +623,10 @@ mod tests {
 
         let mut mapped_linear = vec![ZERO_C64; linear_index.len()];
         map_3d_to_1d_with_linear_index(&linear_index, &v3d, &mut mapped_linear);
-        assert_eq!(&mapped_direct[..linear_index.len()], mapped_linear.as_slice());
+        assert_eq!(
+            &mapped_direct[..linear_index.len()],
+            mapped_linear.as_slice()
+        );
 
         let mut restored_direct = Array3::<c64>::new([n1, n2, n3]);
         let mut restored_linear = Array3::<c64>::new([n1, n2, n3]);

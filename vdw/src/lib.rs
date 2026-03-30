@@ -51,10 +51,10 @@ pub struct VdwCorrection {
     method: VdwMethod,
     damping: VdwDamping,
     xc_scheme: String,
-    s6: f64,  // Global scaling factor for C6
-    s8: f64,  // Global scaling factor for C8
-    a1: f64,  // Damping parameter 1
-    a2: f64,  // Damping parameter 2
+    s6: f64, // Global scaling factor for C6
+    s8: f64, // Global scaling factor for C8
+    a1: f64, // Damping parameter 1
+    a2: f64, // Damping parameter 2
 }
 
 impl VdwCorrection {
@@ -109,7 +109,10 @@ impl VdwCorrection {
                     "lda" | "lda-pz" => (1.0, 1.0, 0.3946, 4.5718),
                     "blyp" => (1.0, 2.0674, 0.4298, 4.2359),
                     _ => {
-                        eprintln!("Warning: No D3(BJ) parameters for '{}', using PBE defaults", xc);
+                        eprintln!(
+                            "Warning: No D3(BJ) parameters for '{}', using PBE defaults",
+                            xc
+                        );
                         (1.0, 0.7875, 0.4289, 4.4407)
                     }
                 }
@@ -300,7 +303,8 @@ impl VdwCorrection {
                 let r_components = [rij_vec.x, rij_vec.y, rij_vec.z];
                 for alpha in 0..3 {
                     for beta in 0..3 {
-                        stress[alpha][beta] += (de_dr / rij) * r_components[alpha] * r_components[beta];
+                        stress[alpha][beta] +=
+                            (de_dr / rij) * r_components[alpha] * r_components[beta];
                     }
                 }
             }

@@ -101,7 +101,11 @@ impl MatrixF64Ext for Matrix<f64> {
     }
 
     fn inv(&mut self) {
-        assert_eq!(self.nrows(), self.ncols(), "Matrix::inv requires a square matrix");
+        assert_eq!(
+            self.nrows(),
+            self.ncols(),
+            "Matrix::inv requires a square matrix"
+        );
         if let Some(inv) = self.clone().try_inverse() {
             self.copy_from(&inv);
         } else {
@@ -138,7 +142,11 @@ impl MatrixC64Ext for Matrix<c64> {
     }
 
     fn inv(&mut self) {
-        assert_eq!(self.nrows(), self.ncols(), "Matrix::inv requires a square matrix");
+        assert_eq!(
+            self.nrows(),
+            self.ncols(),
+            "Matrix::inv requires a square matrix"
+        );
         if let Some(inv) = self.clone().try_inverse() {
             self.copy_from(&inv);
         } else {

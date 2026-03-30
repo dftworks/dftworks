@@ -1,8 +1,8 @@
 use dwconsts::*;
 use itertools::Itertools;
 use lattice::Lattice;
-use types::Matrix;
 use pspot::PSPot;
+use types::Matrix;
 use types::*;
 
 use std::io::Write;
@@ -234,8 +234,8 @@ impl Crystal {
         // line 1: scale_a scale_b scale_c
         // line 2-4: lattice vectors + T/F mask flags per Cartesian component
         // remaining lines: species x y z (fractional atomic positions)
-        let file = File::open(inpfile)
-            .map_err(|err| format!("failed to read '{}': {}", inpfile, err))?;
+        let file =
+            File::open(inpfile).map_err(|err| format!("failed to read '{}': {}", inpfile, err))?;
         let lines = BufReader::new(file).lines();
 
         let mut atom_positions = Vec::new();

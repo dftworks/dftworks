@@ -12,7 +12,8 @@ From this directory:
 ```
 
 After the run, DFTWorks provides converged wavefunctions (`out.wfc.k.*.hdf5`)
-and, with `wannier90_export = true`, writes `si.eig`.
+and, with `wannier90_export = true`, writes `si.eig` plus the default-PP_CHI
+bundle under `properties/ppchi/si.ppchi.*`.
 
 ## Generate `si.win`
 
@@ -68,6 +69,8 @@ Si1:d
 
 For this Si test case, `sp3` is the default demonstrated setup.
 `w90-proj` can analyze all four sets when corresponding `.amn/.nnkp` files are available.
+The default PP_CHI export can be reprocessed with
+`../../../target/release/w90-proj --seed si.ppchi --input-dir properties/ppchi`.
 
 Notes:
 

@@ -449,13 +449,8 @@ fn export_level2_properties(
         ));
     }
 
-    let dos_points = compute_total_dos(
-        &eig,
-        sigma_ev,
-        ne,
-        options.dos_emin_ev,
-        options.dos_emax_ev,
-    )?;
+    let dos_points =
+        compute_total_dos(&eig, sigma_ev, ne, options.dos_emin_ev, options.dos_emax_ev)?;
 
     let dos_dat_path = properties_dir.join("dos.dat");
     write_dos_dat(&dos_dat_path, &dos_points)?;
@@ -477,8 +472,12 @@ fn export_level2_properties(
     write_band_gap_json(&properties_dir.join("band_gap.json"), &eig, &gap)?;
 
     let scf_fermi_ev = resolve_source_scf_fermi_ev(run_dir);
-    let fermi_consistency =
-        build_fermi_consistency_summary(scf_fermi_ev, Some(nscf_fermi_ev), &gap, options.fermi_tol_ev);
+    let fermi_consistency = build_fermi_consistency_summary(
+        scf_fermi_ev,
+        Some(nscf_fermi_ev),
+        &gap,
+        options.fermi_tol_ev,
+    );
     write_fermi_consistency_json(
         &properties_dir.join("fermi_consistency.json"),
         &fermi_consistency,
@@ -626,8 +625,8 @@ fn discover_eig_dataset(run_dir: &Path) -> Result<EigDataset, String> {
 }
 
 fn parse_eig_file(path: &Path) -> Result<Vec<Vec<f64>>, String> {
-    let text =
-        fs::read_to_string(path).map_err(|err| format!("failed to read '{}': {}", path.display(), err))?;
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read '{}': {}", path.display(), err))?;
 
     let mut by_k: BTreeMap<usize, Vec<(usize, f64)>> = BTreeMap::new();
     for (line_no, raw) in text.lines().enumerate() {
@@ -906,7 +905,9 @@ fn build_fermi_consistency_summary(
     };
     let scf_vs_nscf_pass = scf_vs_nscf_delta_ev.map(|delta| delta <= tolerance_ev);
     let postprocess_in_gap = match (gap.vbm.as_ref(), gap.cbm.as_ref()) {
-        (Some(vbm), Some(cbm)) => Some(gap.fermi_ev >= vbm.energy_ev && gap.fermi_ev <= cbm.energy_ev),
+        (Some(vbm), Some(cbm)) => {
+            Some(gap.fermi_ev >= vbm.energy_ev && gap.fermi_ev <= cbm.energy_ev)
+        }
         _ => None,
     };
 
@@ -975,7 +976,10 @@ fn write_band_gap_json(path: &Path, eig: &EigDataset, gap: &BandGapSummary) -> R
     fs::write(path, content).map_err(|err| format!("failed to write '{}': {}", path.display(), err))
 }
 
-fn write_fermi_consistency_json(path: &Path, summary: &FermiConsistencySummary) -> Result<(), String> {
+fn write_fermi_consistency_json(
+    path: &Path,
+    summary: &FermiConsistencySummary,
+) -> Result<(), String> {
     let content = format!(
         "{{\n  \"schema_version\": \"{}\",\n  \"scf_fermi_ev\": {},\n  \"nscf_fermi_ev\": {},\n  \"postprocess_fermi_ev\": {:.10},\n  \"tolerance_ev\": {:.10},\n  \"scf_vs_nscf_delta_ev\": {},\n  \"scf_vs_nscf_pass\": {},\n  \"postprocess_in_gap\": {}\n}}\n",
         SCHEMA_VERSION,
@@ -1126,8 +1130,7 @@ fn write_summary_json(
     let energy_scf_ry = parsed.energy.as_ref().map(|e| e.scf_ry);
     let energy_scf_ev = parsed.energy.as_ref().map(|e| ry_to_ev(e.scf_ry));
     let energy_delta_ev = parsed.energy.as_ref().map(|e| e.delta_ev);
-    let (provenance_manifest, provenance_replay_fingerprint) =
-        read_provenance_metadata(run_dir);
+    let (provenance_manifest, provenance_replay_fingerprint) = read_provenance_metadata(run_dir);
 
     let content = format!(
         "{{\n  \"schema_version\": \"{}\",\n  \"stage\": \"{}\",\n  \"source_log\": \"{}\",\n  \"provenance\": {{\n    \"manifest\": {},\n    \"replay_fingerprint\": {}\n  }},\n  \"energy\": {{\n    \"harris_ry\": {},\n    \"scf_ry\": {},\n    \"scf_ev\": {},\n    \"delta_ev\": {}\n  }},\n  \"force\": {{\n    \"n_atoms\": {},\n    \"max_abs_component_ev_per_a\": {}\n  }},\n  \"stress\": {{\n    \"max_abs_component_kbar\": {}\n  }},\n  \"timing\": {{\n    \"workflow_wall_seconds\": {:.6},\n    \"pw_total_seconds\": {},\n    \"user_cpu_seconds\": {},\n    \"system_cpu_seconds\": {},\n    \"max_rss_kb\": {}\n  }}\n}}\n",
@@ -1389,8 +1392,11 @@ mod tests {
 3 2 0.800000\n",
         )
         .expect("write si.eig");
-        fs::write(base.join("from_scf_run.txt"), format!("{}\n", scf_source.display()))
-            .expect("write source metadata");
+        fs::write(
+            base.join("from_scf_run.txt"),
+            format!("{}\n", scf_source.display()),
+        )
+        .expect("write source metadata");
 
         let mut options = PropertyExportOptions::default();
         options.dos_format = DosOutputFormat::Csv;
@@ -1418,8 +1424,8 @@ mod tests {
             assert!(dos >= 0.0);
         }
 
-        let band_gap = fs::read_to_string(properties_dir.join("band_gap.json"))
-            .expect("read band_gap.json");
+        let band_gap =
+            fs::read_to_string(properties_dir.join("band_gap.json")).expect("read band_gap.json");
         assert!(band_gap.contains("\"indirect_gap_ev\": 0.900000000000"));
         assert!(band_gap.contains("\"direct_gap_ev\": 0.900000000000"));
         assert!(band_gap.contains("\"vbm\": {\"energy_ev\": -0.1000000000"));

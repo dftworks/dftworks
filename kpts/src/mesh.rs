@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 
-use crate::{KPTS, KptsError};
+use crate::{KptsError, KPTS};
 
 pub struct KptsMesh {
     k_frac: Vec<Vector3f64>,
@@ -174,7 +174,12 @@ impl KPTS for KptsMesh {
     }
 }
 
-fn parse_i32_token(tokens: &[&str], idx: usize, line_no: usize, label: &str) -> Result<i32, KptsError> {
+fn parse_i32_token(
+    tokens: &[&str],
+    idx: usize,
+    line_no: usize,
+    label: &str,
+) -> Result<i32, KptsError> {
     let value = tokens.get(idx).ok_or_else(|| {
         KptsError::new(format!(
             "in.kmesh:{}: missing '{}' token at column {}",
@@ -228,7 +233,11 @@ fn read_k_mesh() -> Result<([i32; 3], [i32; 3]), KptsError> {
     let k2_shift = parse_i32_token(s.as_slice(), 1, 2, "k2_shift")?;
     let k3_shift = parse_i32_token(s.as_slice(), 2, 2, "k3_shift")?;
 
-    for (axis, shift) in [("k1_shift", k1_shift), ("k2_shift", k2_shift), ("k3_shift", k3_shift)] {
+    for (axis, shift) in [
+        ("k1_shift", k1_shift),
+        ("k2_shift", k2_shift),
+        ("k3_shift", k3_shift),
+    ] {
         if shift != 0 && shift != 1 {
             return Err(KptsError::new(format!(
                 "in.kmesh:2: {} must be 0 or 1, got {}",

@@ -124,7 +124,8 @@ pub fn finalize_force_by_parts(
     }
 
     for iat in 0..force_total.len() {
-        force_total[iat] = force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat] + force_vdw[iat];
+        force_total[iat] =
+            force_ewald[iat] + force_loc[iat] + force_vnl[iat] + force_nlcc[iat] + force_vdw[iat];
     }
 
     if dwmpi::is_root() {

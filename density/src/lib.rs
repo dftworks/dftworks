@@ -1,6 +1,6 @@
+mod ncl;
 mod nonspin;
 mod spin;
-mod ncl;
 
 use ncl::*;
 use nonspin::*;

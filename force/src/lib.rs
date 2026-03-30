@@ -8,11 +8,11 @@ use kgylm::KGYLM;
 use kscf::*;
 use lattice::*;
 use nalgebra::Matrix3;
-use types::*;
 use num_traits::identities::Zero;
 use pspot::*;
 use pwbasis::*;
 use pwdensity::*;
+use types::*;
 
 use itertools::multizip;
 use std::collections::HashMap;
@@ -144,7 +144,9 @@ pub fn nlcc_xc_with_workspace(
         let atrhocoreg = workspace
             .rhocore_by_species
             .get(&species[iat])
-            .unwrap_or_else(|| panic!("missing NLCC spectral cache for species '{}'", species[iat]));
+            .unwrap_or_else(|| {
+                panic!("missing NLCC spectral cache for species '{}'", species[iat])
+            });
 
         for i in 1..npw_rho {
             let mill = miller[gidx[i]];
@@ -222,7 +224,12 @@ pub fn vpsloc_with_workspace(
         let vatlocg = workspace
             .vpsloc_by_species
             .get(&species[iat])
-            .unwrap_or_else(|| panic!("missing local-potential spectral cache for species '{}'", species[iat]));
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing local-potential spectral cache for species '{}'",
+                    species[iat]
+                )
+            });
 
         for i in 1..npw_rho {
             let mill = miller[gidx[i]];
@@ -537,12 +544,8 @@ pub fn display(
     printout_force(crystal, force_vdw);
 }
 
-pub fn vdw(
-    control: &control::Control,
-    crystal: &Crystal,
-    force_vdw: &mut [Vector3f64],
-) {
-    use vdw::{VdwCorrection, VdwMethod, VdwDamping};
+pub fn vdw(control: &control::Control, crystal: &Crystal, force_vdw: &mut [Vector3f64]) {
+    use vdw::{VdwCorrection, VdwDamping, VdwMethod};
 
     if !control.get_vdw_correction() {
         for f in force_vdw.iter_mut() {

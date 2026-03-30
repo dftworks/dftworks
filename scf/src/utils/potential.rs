@@ -13,8 +13,8 @@ use num_traits::Zero;
 use pwdensity::*;
 use rayon::prelude::*;
 use rgtransform::RGTransform;
-use types::*;
 use types::Vector3f64;
+use types::*;
 use xc::*;
 const PARALLEL_MIN_LEN: usize = 8192;
 

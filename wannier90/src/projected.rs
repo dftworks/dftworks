@@ -1,3 +1,4 @@
+use crate::types::{HybridKind, TrialOrbital};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
@@ -7,6 +8,7 @@ use std::time::UNIX_EPOCH;
 const CACHE_MAGIC: &str = "DFTWORKS_PROJ_CACHE_V1";
 const CACHE_SENTINEL: &str = "--binary--";
 const MIN_DOS_DENOM: f64 = 1.0e-12;
+const PROJMETA_MAGIC: &str = "DFTWORKS_PROJMETA_V1";
 
 #[derive(Debug, Clone)]
 pub struct ProjectedConfig {
@@ -116,6 +118,9 @@ pub fn run_projected_analysis(config: &ProjectedConfig) -> io::Result<ProjectedS
     let nnkp_path = config
         .input_dir
         .join(format!("{}.nnkp", config.seedname.trim()));
+    let projmeta_path = config
+        .input_dir
+        .join(format!("{}.projmeta", config.seedname.trim()));
     let cache_path = config.cache_path.clone().unwrap_or_else(|| {
         config
             .out_dir
@@ -127,7 +132,7 @@ pub fn run_projected_analysis(config: &ProjectedConfig) -> io::Result<ProjectedS
     normalize_projection_weights(&mut proj_weights);
     let dims = proj_weights.dims;
     let energies = parse_eig_energies(&eig_path, dims)?;
-    let projectors = parse_nnkp_projectors(&nnkp_path, dims.num_proj)?;
+    let projectors = load_projector_metadata(&nnkp_path, &projmeta_path, dims.num_proj)?;
 
     let partition_groups = build_partition_groups(&projectors);
     let all_groups = build_all_groups(&projectors, &partition_groups);
@@ -618,6 +623,45 @@ fn parse_eig_energies(path: &Path, dims: AmnDims) -> io::Result<Vec<f64>> {
     Ok(energies)
 }
 
+pub(crate) fn write_projmeta_file(path: &Path, trial_orbitals: &[TrialOrbital]) -> io::Result<()> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    writeln!(writer, "{}", PROJMETA_MAGIC)?;
+    writeln!(writer, "num_projectors={}", trial_orbitals.len())?;
+    for (index, orb) in trial_orbitals.iter().enumerate() {
+        writeln!(
+            writer,
+            "{:6} {:6} {}",
+            index + 1,
+            orb.atom_index + 1,
+            projector_family_label_for_trial_orbital(orb)
+        )?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+fn load_projector_metadata(
+    nnkp_path: &Path,
+    projmeta_path: &Path,
+    expected_num_proj: usize,
+) -> io::Result<Vec<ProjectorMeta>> {
+    if nnkp_path.exists() {
+        return parse_nnkp_projectors(nnkp_path, expected_num_proj);
+    }
+    if projmeta_path.exists() {
+        return parse_projmeta_projectors(projmeta_path, expected_num_proj);
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        format!(
+            "missing projector metadata: expected '{}' or '{}'",
+            path_to_string(nnkp_path),
+            path_to_string(projmeta_path)
+        ),
+    ))
+}
+
 fn parse_nnkp_projectors(path: &Path, expected_num_proj: usize) -> io::Result<Vec<ProjectorMeta>> {
     let file = File::open(path)?;
     let lines: Vec<String> = BufReader::new(file).lines().collect::<Result<_, _>>()?;
@@ -711,6 +755,119 @@ fn parse_nnkp_projectors(path: &Path, expected_num_proj: usize) -> io::Result<Ve
     Ok(projectors)
 }
 
+fn parse_projmeta_projectors(
+    path: &Path,
+    expected_num_proj: usize,
+) -> io::Result<Vec<ProjectorMeta>> {
+    let file = File::open(path)?;
+    let mut lines = BufReader::new(file).lines();
+
+    let magic = lines.next().transpose()?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("'{}' is empty", path_to_string(path)),
+        )
+    })?;
+    if magic.trim() != PROJMETA_MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid projmeta magic in '{}'", path_to_string(path)),
+        ));
+    }
+
+    let declared_line = lines.next().transpose()?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("'{}' is missing num_projectors", path_to_string(path)),
+        )
+    })?;
+    let declared_num = declared_line
+        .trim()
+        .strip_prefix("num_projectors=")
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "invalid num_projectors line in '{}': '{}'",
+                    path_to_string(path),
+                    declared_line
+                ),
+            )
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "invalid projector count in '{}': '{}'",
+                    path_to_string(path),
+                    declared_line
+                ),
+            )
+        })?;
+    if declared_num != expected_num_proj {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "projection count mismatch in '{}': projmeta has {}, amn has {}",
+                path_to_string(path),
+                declared_num,
+                expected_num_proj
+            ),
+        ));
+    }
+
+    let mut projectors = Vec::with_capacity(expected_num_proj);
+    for ip in 0..expected_num_proj {
+        let line = lines.next().transpose()?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "projection #{} in '{}' is missing",
+                    ip + 1,
+                    path_to_string(path)
+                ),
+            )
+        })?;
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 3 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "invalid projmeta entry in '{}': '{}'",
+                    path_to_string(path),
+                    line
+                ),
+            ));
+        }
+        let index = parse_usize(fields[0], path, ip + 3, "projector index")?
+            .checked_sub(1)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "projector index must be >= 1")
+            })?;
+        if index != ip {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unexpected projector index {} in '{}'; expected {}",
+                    index + 1,
+                    path_to_string(path),
+                    ip + 1
+                ),
+            ));
+        }
+        let atom_id = parse_usize(fields[1], path, ip + 3, "atom id")?;
+        let family = fields[2].to_string();
+        projectors.push(ProjectorMeta {
+            index,
+            atom_id,
+            family,
+        });
+    }
+
+    Ok(projectors)
+}
+
 fn next_non_empty_line(lines: &[String], cursor: &mut usize) -> Option<String> {
     while *cursor < lines.len() {
         let line = lines[*cursor].trim().to_string();
@@ -748,6 +905,14 @@ fn projector_family_label(l: i32) -> String {
         2 => "d".to_string(),
         3 => "f".to_string(),
         x => format!("l{}", x),
+    }
+}
+
+fn projector_family_label_for_trial_orbital(orb: &TrialOrbital) -> String {
+    if orb.hybrid_kind == Some(HybridKind::Sp3) {
+        "sp3".to_string()
+    } else {
+        projector_family_label(orb.l as i32)
     }
 }
 
@@ -1244,6 +1409,31 @@ mod tests {
         nnkp_file.flush().unwrap();
     }
 
+    fn write_projmeta_fixture(dir: &Path, seed: &str) {
+        let path = dir.join(format!("{}.projmeta", seed));
+        let orbitals = vec![
+            TrialOrbital {
+                atom_index: 0,
+                species: "Si1".to_string(),
+                l: 0,
+                m: 0,
+                hybrid_kind: None,
+                hybrid_group: None,
+                hybrid_component: None,
+            },
+            TrialOrbital {
+                atom_index: 0,
+                species: "Si1".to_string(),
+                l: 1,
+                m: 0,
+                hybrid_kind: None,
+                hybrid_group: None,
+                hybrid_component: None,
+            },
+        ];
+        write_projmeta_file(&path, orbitals.as_slice()).unwrap();
+    }
+
     #[test]
     fn projected_analysis_writes_outputs_and_uses_cache() {
         let temp_dir = make_temp_dir("proj_level3");
@@ -1286,6 +1476,33 @@ mod tests {
 
         let report = fs::read_to_string(temp_dir.join("pdos_validation_report.txt")).unwrap();
         assert!(report.contains("status=PASS"));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn projected_analysis_accepts_projmeta_without_nnkp() {
+        let temp_dir = make_temp_dir("proj_projmeta");
+        let seed = "toy";
+        write_fixture_files(&temp_dir, seed);
+        fs::remove_file(temp_dir.join(format!("{}.nnkp", seed))).unwrap();
+        write_projmeta_fixture(&temp_dir, seed);
+
+        let config = ProjectedConfig {
+            seedname: seed.to_string(),
+            sigma_ev: 0.2,
+            ne: 120,
+            emin_ev: Some(-2.0),
+            emax_ev: Some(2.0),
+            input_dir: temp_dir.clone(),
+            out_dir: temp_dir.join("out"),
+            cache_path: None,
+            validation_tol: 1.0e-6,
+        };
+
+        let summary = run_projected_analysis(&config).unwrap();
+        assert!(summary.validation_passed);
+        assert!(config.out_dir.join("pdos_total.dat").is_file());
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

@@ -200,10 +200,11 @@ impl KPointDomain {
 
     #[inline]
     pub fn slot(&self, local_slot: usize) -> Option<KPointSlot> {
-        self.global_index(local_slot).map(|global_index| KPointSlot {
-            local_slot,
-            global_index,
-        })
+        self.global_index(local_slot)
+            .map(|global_index| KPointSlot {
+                local_slot,
+                global_index,
+            })
     }
 
     #[inline]
@@ -351,7 +352,11 @@ fn build_contiguous_assignments(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
     assignments
 }
 
-fn build_cost_aware_assignments(costs: &[u64], nrank: usize, dynamic_local_order: bool) -> Vec<Vec<usize>> {
+fn build_cost_aware_assignments(
+    costs: &[u64],
+    nrank: usize,
+    dynamic_local_order: bool,
+) -> Vec<Vec<usize>> {
     let mut assignments = vec![Vec::<usize>::new(); nrank];
     if costs.is_empty() {
         return assignments;
@@ -359,20 +364,14 @@ fn build_cost_aware_assignments(costs: &[u64], nrank: usize, dynamic_local_order
 
     // Largest cost first with deterministic tie-breaks by global index.
     let mut order = (0..costs.len()).collect::<Vec<usize>>();
-    order.sort_by(|&lhs, &rhs| {
-        costs[rhs]
-            .cmp(&costs[lhs])
-            .then_with(|| lhs.cmp(&rhs))
-    });
+    order.sort_by(|&lhs, &rhs| costs[rhs].cmp(&costs[lhs]).then_with(|| lhs.cmp(&rhs)));
 
     let mut rank_load = vec![0u64; nrank];
     for ik in order {
         let best_rank = rank_load
             .iter()
             .enumerate()
-            .min_by(|(ra, la), (rb, lb)| {
-                la.cmp(lb).then_with(|| ra.cmp(rb))
-            })
+            .min_by(|(ra, la), (rb, lb)| la.cmp(lb).then_with(|| ra.cmp(rb)))
             .map(|(rank, _)| rank)
             .unwrap_or(0);
 
@@ -382,11 +381,7 @@ fn build_cost_aware_assignments(costs: &[u64], nrank: usize, dynamic_local_order
 
     if dynamic_local_order {
         for indices in assignments.iter_mut() {
-            indices.sort_by(|&lhs, &rhs| {
-                costs[rhs]
-                    .cmp(&costs[lhs])
-                    .then_with(|| lhs.cmp(&rhs))
-            });
+            indices.sort_by(|&lhs, &rhs| costs[rhs].cmp(&costs[lhs]).then_with(|| lhs.cmp(&rhs)));
         }
     } else {
         for indices in assignments.iter_mut() {
@@ -516,7 +511,13 @@ fn test_kpoint_domain_iteration_and_mapping() {
             },
         ]
     );
-    assert_eq!(domain.slot(1), Some(KPointSlot { local_slot: 1, global_index: 5 }));
+    assert_eq!(
+        domain.slot(1),
+        Some(KPointSlot {
+            local_slot: 1,
+            global_index: 5
+        })
+    );
     assert_eq!(
         domain.slot_from_global(6),
         Some(KPointSlot {
@@ -561,7 +562,10 @@ fn test_partition_invariants_uneven_and_oversubscribed() {
             let domain = KPointDomain::new(nkpt, nrank, rank);
 
             for slot in domain.iter() {
-                assert_eq!(domain.global_index(slot.local_slot), Some(slot.global_index));
+                assert_eq!(
+                    domain.global_index(slot.local_slot),
+                    Some(slot.global_index)
+                );
                 assert_eq!(domain.local_index(slot.global_index), Some(slot.local_slot));
                 assert_eq!(domain.slot(slot.local_slot), Some(slot));
                 assert_eq!(domain.slot_from_global(slot.global_index), Some(slot));
@@ -603,7 +607,8 @@ fn test_cost_aware_plan_reduces_imbalance_for_skewed_costs() {
     let costs = vec![100u64, 90, 80, 1, 1, 1, 1, 1];
     let nrank = 3usize;
 
-    let contiguous = KPointSchedulePlan::new_from_costs(&costs, nrank, KPointScheduleMode::Contiguous);
+    let contiguous =
+        KPointSchedulePlan::new_from_costs(&costs, nrank, KPointScheduleMode::Contiguous);
     let balanced = KPointSchedulePlan::new_from_costs(&costs, nrank, KPointScheduleMode::CostAware);
 
     assert!(balanced.max_rank_load() <= contiguous.max_rank_load());

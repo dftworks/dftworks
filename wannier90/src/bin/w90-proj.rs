@@ -7,7 +7,7 @@ use wannier90::{run_projected_analysis, ProjectedConfig};
 #[derive(Debug, Parser)]
 #[command(
     name = "w90-proj",
-    about = "Projected property analysis from Wannier90 files (<seed>.amn/.eig/.nnkp)"
+    about = "Projected property analysis from Wannier90 or DFTWorks PP_CHI files (<seed>.amn/.eig/.nnkp|.projmeta)"
 )]
 struct Cli {
     #[arg(long, value_name = "name")]

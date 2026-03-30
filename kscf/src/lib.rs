@@ -8,7 +8,6 @@ use eigensolver;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kgylm::KGYLM;
-use types::Matrix;
 use ndarray::Array3;
 use num_traits::identities::Zero;
 use pspot::PSPot;
@@ -18,8 +17,9 @@ use rgtransform::RGTransform;
 use smearing;
 use smearing::Smearing;
 use types::c64;
-use utility;
+use types::Matrix;
 use types::*;
+use utility;
 use vnl::VNL;
 
 use itertools::multizip;
@@ -550,12 +550,8 @@ impl<'a> KSCF<'a> {
             );
 
             // Hubbard (+U) contribution hook.
-            self.hubbard.apply_on_psi(
-                vin,
-                vout,
-                hubbard_beta,
-                hubbard_coeff,
-            );
+            self.hubbard
+                .apply_on_psi(vin, vout, hubbard_beta, hubbard_coeff);
 
             // Kinetic contribution (diagonal in PW basis).
 
@@ -593,12 +589,7 @@ impl<'a> KSCF<'a> {
             // Optional Rayleigh-Ritz rotation pass.
             if need_rayleigh_quotient(self.control, scf_iter, n_cg_loop) {
                 rayleigh_evecs.assign(evecs);
-                subspace::rotate_wfc(
-                    &mut hamiltonian_on_psi,
-                    rayleigh_evecs,
-                    evecs,
-                    evals,
-                );
+                subspace::rotate_wfc(&mut hamiltonian_on_psi, rayleigh_evecs, evecs, evals);
 
                 // println!("subspace rotation after eigen-solver");
             }

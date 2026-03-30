@@ -25,7 +25,11 @@ impl fmt::Display for SpecialError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SpecialError::UnsupportedSphericalBesselOrder { n } => {
-                write!(f, "spherical bessel function for n = {} is not implemented", n)
+                write!(
+                    f,
+                    "spherical bessel function for n = {} is not implemented",
+                    n
+                )
             }
         }
     }
@@ -51,11 +55,13 @@ pub fn try_spherical_bessel_jn(n: usize, x: f64) -> Result<f64, SpecialError> {
                 let x16 = x2 * x14;
                 let x18 = x2 * x16;
 
-                Ok(1.0 - x2 / 6.0 + x4 / 120.0 - x6 / 5040.0 + x8 / 362880.0 - x10 / 39916800.0
-                    + x12 / 6227020800.0
-                    - x14 / 1307674368000.0
-                    + x16 / 355687428096000.0
-                    - x18 / 121645100408832000.0)
+                Ok(
+                    1.0 - x2 / 6.0 + x4 / 120.0 - x6 / 5040.0 + x8 / 362880.0 - x10 / 39916800.0
+                        + x12 / 6227020800.0
+                        - x14 / 1307674368000.0
+                        + x16 / 355687428096000.0
+                        - x18 / 121645100408832000.0,
+                )
 
                 // 1 - x**2/6 + x**4/120 - x**6/5040 + x**8/362880 - x**10/39916800 + x**12/6227020800 - x**14/1307674368000 + x**16/355687428096000 - x**18/121645100408832000 + O(x**20)
             }
@@ -119,14 +125,12 @@ pub fn try_spherical_bessel_jn(n: usize, x: f64) -> Result<f64, SpecialError> {
 
             2 => Ok((3.0 / x / x - 1.0) * x.sin() / x - 3.0 * x.cos() / x / x),
 
-            3 => Ok(
-                (15.0 / x.powf(4.0) - 6.0 / x.powf(2.0)) * x.sin()
-                    - (15.0 / x.powf(3.0) - 1.0 / x) * x.cos()
-            ),
+            3 => Ok((15.0 / x.powf(4.0) - 6.0 / x.powf(2.0)) * x.sin()
+                - (15.0 / x.powf(3.0) - 1.0 / x) * x.cos()),
 
             4 => Ok(
                 (105.0 / x.powf(5.0) - 45.0 / x.powf(3.0) + 1.0 / x) * x.sin()
-                    - (105.0 / x.powf(4.0) - 10.0 / x.powf(2.0)) * x.cos()
+                    - (105.0 / x.powf(4.0) - 10.0 / x.powf(2.0)) * x.cos(),
             ),
 
             _ => Err(SpecialError::UnsupportedSphericalBesselOrder { n }),
@@ -433,8 +437,5 @@ fn test_spherical_bessel_jn() {
 #[test]
 fn test_try_spherical_bessel_jn_rejects_unsupported_order() {
     let err = try_spherical_bessel_jn(7, 0.0).unwrap_err();
-    assert_eq!(
-        err,
-        SpecialError::UnsupportedSphericalBesselOrder { n: 7 }
-    );
+    assert_eq!(err, SpecialError::UnsupportedSphericalBesselOrder { n: 7 });
 }

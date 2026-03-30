@@ -141,9 +141,7 @@ impl SmearingScheme {
             "gs" => Some(SmearingScheme::Gs),
             "mp1" => Some(SmearingScheme::Mp1),
             "mp2" => Some(SmearingScheme::Mp2),
-            "mv" | "cold" | "marzari-vanderbilt" | "marzari_vanderbilt" => {
-                Some(SmearingScheme::Mv)
-            }
+            "mv" | "cold" | "marzari-vanderbilt" | "marzari_vanderbilt" => Some(SmearingScheme::Mv),
             _ => None,
         }
     }
@@ -155,6 +153,7 @@ pub enum EigenSolverScheme {
     Psd,
     Cg,
     Pcg,
+    Lobpcg,
     Arpack,
     Davidson,
 }
@@ -172,6 +171,7 @@ impl EigenSolverScheme {
             EigenSolverScheme::Psd => "psd",
             EigenSolverScheme::Cg => "cg",
             EigenSolverScheme::Pcg => "pcg",
+            EigenSolverScheme::Lobpcg => "lobpcg",
             EigenSolverScheme::Arpack => "arpack",
             EigenSolverScheme::Davidson => "davidson",
         }
@@ -183,6 +183,7 @@ impl EigenSolverScheme {
             "psd" => Some(EigenSolverScheme::Psd),
             "cg" => Some(EigenSolverScheme::Cg),
             "pcg" => Some(EigenSolverScheme::Pcg),
+            "lobpcg" => Some(EigenSolverScheme::Lobpcg),
             "arpack" => Some(EigenSolverScheme::Arpack),
             "davidson" => Some(EigenSolverScheme::Davidson),
             _ => None,
@@ -468,7 +469,7 @@ pub struct Control {
     hse06_omega: f64, // bohr^-1
 
     vdw_correction: bool,
-    vdw_damping: String,  // "zero" or "bj"
+    vdw_damping: String, // "zero" or "bj"
 }
 
 struct CapabilityMatrix {
@@ -488,7 +489,7 @@ const RUNTIME_CAPABILITY_MATRIX: CapabilityMatrix = CapabilityMatrix {
         XcScheme::Pbe,
         XcScheme::Hse06,
     ],
-    eigen_solvers: &[EigenSolverScheme::Pcg],
+    eigen_solvers: &[EigenSolverScheme::Pcg, EigenSolverScheme::Lobpcg],
     restart_spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
 };
 
@@ -795,8 +796,8 @@ fn set_spin_scheme(control: &mut Control, value: &str) -> Result<(), String> {
 }
 
 fn set_kpts_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.kpts_scheme = KptsScheme::parse(value)
-        .ok_or_else(|| "expected one of: kmesh, kline".to_string())?;
+    control.kpts_scheme =
+        KptsScheme::parse(value).ok_or_else(|| "expected one of: kmesh, kline".to_string())?;
     Ok(())
 }
 
@@ -813,14 +814,15 @@ fn set_xc_scheme(control: &mut Control, value: &str) -> Result<(), String> {
 }
 
 fn set_smearing_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.smearing_scheme = SmearingScheme::parse(value)
-        .ok_or_else(|| "expected one of: fd, gs, mp1, mp2, mv (aliases: cold, marzari-vanderbilt)".to_string())?;
+    control.smearing_scheme = SmearingScheme::parse(value).ok_or_else(|| {
+        "expected one of: fd, gs, mp1, mp2, mv (aliases: cold, marzari-vanderbilt)".to_string()
+    })?;
     Ok(())
 }
 
 fn set_eigen_solver(control: &mut Control, value: &str) -> Result<(), String> {
     control.eigen_solver = EigenSolverScheme::parse(value)
-        .ok_or_else(|| "expected one of: sd, psd, cg, pcg, arpack, davidson".to_string())?;
+        .ok_or_else(|| "expected one of: sd, psd, cg, pcg, lobpcg, arpack, davidson".to_string())?;
     Ok(())
 }
 
@@ -1657,7 +1659,10 @@ impl Control {
         self.vdw_damping = "bj".to_string();
     }
 
-    fn parse_assignment_line(line: &str, line_no: usize) -> Result<Option<(String, String)>, ControlError> {
+    fn parse_assignment_line(
+        line: &str,
+        line_no: usize,
+    ) -> Result<Option<(String, String)>, ControlError> {
         let line = line.split('#').next().unwrap_or(line);
         let line = line.split('!').next().unwrap_or(line);
         let trimmed = line.trim();
@@ -1675,7 +1680,10 @@ impl Control {
 
         let key = key.trim().to_lowercase();
         if key.is_empty() {
-            return Err(ControlError::syntax(line_no, "parameter name must not be empty"));
+            return Err(ControlError::syntax(
+                line_no,
+                "parameter name must not be empty",
+            ));
         }
 
         Ok(Some((key, value.trim().to_string())))
@@ -1694,10 +1702,12 @@ impl Control {
             };
 
             let key = canonicalize_control_key(raw_key.as_str());
-            let spec = find_key_spec(key).ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?;
+            let spec =
+                find_key_spec(key).ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?;
 
-            (spec.setter)(self, &raw_value)
-                .map_err(|details| ControlError::invalid_value(line_no, key, &raw_value, details))?;
+            (spec.setter)(self, &raw_value).map_err(|details| {
+                ControlError::invalid_value(line_no, key, &raw_value, details)
+            })?;
 
             if key == "ecut_rho" {
                 ecut_rho_set = true;
@@ -1763,10 +1773,7 @@ impl Control {
         }
 
         if self.fft_threads == 0 {
-            return Err(ControlError::validation(
-                "fft_threads",
-                "must be >= 1",
-            ));
+            return Err(ControlError::validation("fft_threads", "must be >= 1"));
         }
 
         if !matches!(self.scf_log_format, ScfLogFormat::None) && self.scf_log_file.trim().is_empty()
@@ -2338,8 +2345,7 @@ impl Control {
 mod tests {
     use super::{
         Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KPointScheduleScheme,
-        KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme, VerbosityLevel,
-        XcScheme,
+        KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme, VerbosityLevel, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -2570,7 +2576,10 @@ mod tests {
     #[test]
     fn test_parser_accepts_kpoint_schedule_modes() {
         let control = parse_control(&["kpoint_schedule = dynamic"]).unwrap();
-        assert_eq!(control.get_kpoint_schedule_enum(), KPointScheduleScheme::Dynamic);
+        assert_eq!(
+            control.get_kpoint_schedule_enum(),
+            KPointScheduleScheme::Dynamic
+        );
     }
 
     #[test]

@@ -223,8 +223,8 @@ impl Hdf5FilePerKCheckpointRepository {
         let eig_group = hdf5_file
             .group("EigenVector")
             .map_err(|e| format!("failed to open EigenVector in '{}': {}", filename, e))?;
-        let eigen_vec = load_matrix_c64_hdf5(&eig_group)
-            .map_err(|e| format!("{} in '{}'", e, filename))?;
+        let eigen_vec =
+            load_matrix_c64_hdf5(&eig_group).map_err(|e| format!("{} in '{}'", e, filename))?;
 
         if !need_basis_and_lattice {
             return Ok((eigen_vec, None, None));

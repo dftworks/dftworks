@@ -167,7 +167,12 @@ pub(crate) fn display_grid_information(fftgrid: &FFTGrid, pwden: &PWDensity) {
 
     println!("   {:-^88}", " grid information ");
     println!();
-    println!("   {:<width1$} = {}", "FFTGrid", fftgrid, width1 = OUT_WIDTH1);
+    println!(
+        "   {:<width1$} = {}",
+        "FFTGrid",
+        fftgrid,
+        width1 = OUT_WIDTH1
+    );
     println!(
         "   {:<width1$} = {}",
         "npw_rho",

@@ -5,7 +5,6 @@ use dfttypes::*;
 use ewald::Ewald;
 use gvector::GVector;
 use kpts::KPTS;
-use types::Matrix;
 use ndarray::Array3;
 use pspot::PSPot;
 use pwbasis::PWBasis;
@@ -13,6 +12,7 @@ use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use symmetry::SymmetryDriver;
 use types::c64;
+use types::Matrix;
 use types::Vector3f64;
 
 pub struct SCFNcl {}

@@ -683,6 +683,10 @@ fn main() {
 
         let should_exit = match orchestration::outputs::evaluate_exit_and_finalize(
             &control,
+            &crystal,
+            &pots,
+            kpts.as_ref(),
+            phase.geom_ctx.gvec(),
             geom_iter,
             &stress_total,
             force_total.as_slice(),

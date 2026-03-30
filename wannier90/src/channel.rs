@@ -8,11 +8,11 @@ use dfttypes::VKEigenVector;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
-use types::Matrix;
 use pspot::PSPot;
 use std::io;
 use std::path::Path;
 use types::c64;
+use types::Matrix;
 
 pub(crate) fn write_win_for_channel(
     channel_seed: &str,
@@ -96,7 +96,7 @@ pub(crate) fn write_overlap_files_for_channel(
     Ok(vec![nnkp_file, amn_file, mmn_file])
 }
 
-fn select_spin_channel<'a>(
+pub(crate) fn select_spin_channel<'a>(
     all_eigvecs: &'a VKEigenVector,
     spin_channel: Option<&str>,
 ) -> io::Result<&'a [Matrix<c64>]> {

@@ -2,13 +2,13 @@ use control::Control;
 use control::XcScheme;
 use dwconsts::{EPS20, FOURPI};
 use gvector::GVector;
-use types::Matrix;
-use types::MatrixExt;
 use ndarray::Array3;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 
 fn effective_occ_scale(is_spin: bool) -> f64 {
     if is_spin {

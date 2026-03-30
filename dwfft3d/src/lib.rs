@@ -80,16 +80,14 @@ impl BackendOptions {
         if self.threads == 0 {
             self.threads = 1;
         }
-        self.wisdom_file = self
-            .wisdom_file
-            .and_then(|s| {
-                let trimmed = s.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            });
+        self.wisdom_file = self.wisdom_file.and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
         self
     }
 }

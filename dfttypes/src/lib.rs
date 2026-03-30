@@ -1,14 +1,16 @@
 use kscf::*;
 use lattice::*;
-use types::*;
 use ndarray::*;
 use pwbasis::PWBasis;
+use types::*;
 use types::*;
 
 use enum_as_inner::EnumAsInner;
 
 mod checkpoint_repo;
-pub use checkpoint_repo::{CheckpointCodec, CheckpointRepository, Hdf5FilePerKCheckpointRepository};
+pub use checkpoint_repo::{
+    CheckpointCodec, CheckpointRepository, Hdf5FilePerKCheckpointRepository,
+};
 
 pub const CHECKPOINT_SCHEMA_VERSION: u32 = 1;
 const CHECKPOINT_META_GROUP: &str = "CheckpointMeta";
@@ -366,9 +368,7 @@ impl RHOR {
         (blatt, rho)
     }
 
-    pub fn try_load_hdf5(
-        is_spin: bool,
-    ) -> Result<(Lattice, RHOR, Option<CheckpointMeta>), String> {
+    pub fn try_load_hdf5(is_spin: bool) -> Result<(Lattice, RHOR, Option<CheckpointMeta>), String> {
         let repo = Hdf5FilePerKCheckpointRepository::default();
         repo.load_density(is_spin)
     }

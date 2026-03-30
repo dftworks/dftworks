@@ -3,13 +3,13 @@ use crystal::Crystal;
 use fftgrid::FFTGrid;
 use force;
 use gvector::GVector;
-use types::Matrix;
-use types::MatrixExt;
 use pspot::PSPot;
 use pwdensity::PWDensity;
 use rgtransform::RGTransform;
 use stress;
 use types::c64;
+use types::Matrix;
+use types::MatrixExt;
 use types::Vector3f64;
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -235,7 +235,10 @@ fn main() {
 
     println!("Workspace allocation trace (steady-state after warmup)");
     println!("case_dir = {}", case_dir.display());
-    println!("nfft = {}, npw_rho = {}, natoms = {}", nfft, npw_rho, natoms);
+    println!(
+        "nfft = {}, npw_rho = {}, natoms = {}",
+        nfft, npw_rho, natoms
+    );
 
     trace_alloc("rgtransform.gradient_r3d", 20, || {
         rgtrans.gradient_r3d(

@@ -2,8 +2,8 @@
 
 use itertools::multizip;
 use lattice::Lattice;
-use utility;
 use types::{Vector3f64, Vector3i32};
+use utility;
 
 #[derive(Debug)]
 pub struct GVector {

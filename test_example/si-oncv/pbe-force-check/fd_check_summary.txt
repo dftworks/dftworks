@@ -1,0 +1,30 @@
+PBE force finite-difference consistency check (Si atom1)
+Method: central finite difference on displaced structures + 5-point check at equilibrium
+
+Midpoint: plus10 using endpoints (base, plus20)
+  E_left (eV): -215.166746569907
+  E_right (eV): -215.115128173925
+  |R_right - R_left| (A): 7.665461772131e-02
+  direction u: [0.000000000000e+00, 7.071067811865e-01, 7.071067811865e-01]
+  F(mid)·u (eV/A): -6.683672290725e-01
+  -(E_right - E_left)/|R_right-R_left| (eV/A): -6.733892558038e-01
+  abs error (eV/A): 5.022026731369e-03
+  rel error: 7.457836144674e-03
+
+Midpoint: minus10 using endpoints (minus20, base)
+  E_left (eV): -215.115126731994
+  E_right (eV): -215.166746569907
+  |R_right - R_left| (A): 7.665603193487e-02
+  direction u: [0.000000000000e+00, 7.071067811865e-01, 7.071067811865e-01]
+  F(mid)·u (eV/A): 6.684457179252e-01
+  -(E_right - E_left)/|R_right-R_left| (eV/A): 6.733956429741e-01
+  abs error (eV/A): 4.949925048918e-03
+  rel error: 7.350693608674e-03
+
+Equilibrium check at base (5-point derivative using minus20/minus10/plus10/plus20)
+  h = |R(plus10)-R(base)| (A): 3.832730886718e-02
+  direction u: [0.000000000000e+00, 7.071198265947e-01, 7.070937355377e-01]
+  F(base)·u (eV/A): 1.909137431318e-05
+  5-point FD force at base (eV/A): 1.622349322114e-05
+  abs error (eV/A): 2.867881092035e-06
+  rel error: 1.767733405465e-01

@@ -118,7 +118,10 @@ impl StructuredScfLogger {
         let file = match OpenOptions::new().create(true).append(true).open(path) {
             Ok(file) => file,
             Err(err) => {
-                eprintln!("warning: failed to open structured SCF log '{}': {}", path, err);
+                eprintln!(
+                    "warning: failed to open structured SCF log '{}': {}",
+                    path, err
+                );
                 return None;
             }
         };
@@ -214,7 +217,10 @@ impl StructuredScfLogger {
         };
 
         if let Err(err) = write_result {
-            eprintln!("warning: failed to write structured SCF log record: {}", err);
+            eprintln!(
+                "warning: failed to write structured SCF log record: {}",
+                err
+            );
             return;
         }
 
