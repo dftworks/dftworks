@@ -267,9 +267,7 @@ impl MixingScheme {
     pub const ALL: &'static [MixingScheme] = &[MixingScheme::Pulay, MixingScheme::Broyden];
 
     // Accepted in.ctrl spellings; both `parse` and the error message use this table.
-    // "simple" is the historical default name and selects Pulay mixing.
     const NAMES: &'static [(&'static str, MixingScheme)] = &[
-        ("simple", MixingScheme::Pulay),
         ("pulay", MixingScheme::Pulay),
         ("broyden", MixingScheme::Broyden),
     ];
@@ -2431,9 +2429,11 @@ mod tests {
     fn test_parser_rejects_unknown_mixing_scheme() {
         let err = parse_control(&["scf_rho_mix_scheme = broydn"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
-        assert!(err
-            .message
-            .contains("expected one of: simple, pulay, broyden"));
+        assert!(err.message.contains("expected one of: pulay, broyden"));
+
+        // "simple" was an undocumented alias for Pulay and is now rejected.
+        let err = parse_control(&["scf_rho_mix_scheme = simple"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
 
         // The deprecated alias goes through the same validation.
         let err = parse_control(&["mixing_scheme = anderson"]).unwrap_err();
@@ -2457,7 +2457,8 @@ mod tests {
             assert_eq!(MixingScheme::parse(scheme.as_str()), Some(*scheme));
             assert!(MixingScheme::accepted_values().contains(scheme.as_str()));
         }
-        assert_eq!(MixingScheme::parse("simple"), Some(MixingScheme::Pulay));
+        // "simple" used to be an undocumented alias for Pulay; it is no longer accepted.
+        assert_eq!(MixingScheme::parse("simple"), None);
         assert_eq!(
             parse_control(&[]).unwrap().get_scf_rho_mix_scheme(),
             MixingScheme::Pulay
