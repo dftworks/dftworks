@@ -252,6 +252,39 @@ impl KptsScheme {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixingScheme {
+    // "simple" is the historical default name; it selects Pulay mixing.
+    Simple,
+    Pulay,
+    Broyden,
+}
+
+impl Default for MixingScheme {
+    fn default() -> Self {
+        MixingScheme::Simple
+    }
+}
+
+impl MixingScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MixingScheme::Simple => "simple",
+            MixingScheme::Pulay => "pulay",
+            MixingScheme::Broyden => "broyden",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "simple" => Some(MixingScheme::Simple),
+            "pulay" => Some(MixingScheme::Pulay),
+            "broyden" => Some(MixingScheme::Broyden),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FftPlannerScheme {
     Estimate,
     Measure,
@@ -805,7 +838,7 @@ impl Control {
     }
 
     pub fn get_scf_rho_mix_scheme(&self) -> &str {
-        &self.mixing.scheme
+        self.mixing.scheme.as_str()
     }
 
     pub fn get_scf_rho_mix_history_steps(&self) -> usize {
@@ -1712,8 +1745,8 @@ impl Control {
 mod tests {
     use super::{
         Control, ControlError, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
-        KPointScheduleScheme, KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme,
-        VerbosityLevel, XcScheme,
+        KPointScheduleScheme, KptsScheme, MixingScheme, PotScheme, ScfLogFormat, SmearingScheme,
+        SpinScheme, VerbosityLevel, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -2172,7 +2205,7 @@ mod tests {
         }),
         ("davidson_ndim", "9", |c| c.get_davidson_ndim() == 9),
         ("scf_rho_mix_scheme", "broyden", |c| {
-            c.get_scf_rho_mix_scheme() == "broyden"
+            c.mixing().scheme == MixingScheme::Broyden
         }),
         ("scf_rho_mix_alpha", "0.3", |c| {
             approx(c.get_scf_rho_mix_alpha(), 0.3)
@@ -2372,10 +2405,30 @@ mod tests {
             "hubbard_j = 1.0",
         ])
         .unwrap();
-        assert_eq!(control.mixing().scheme, "broyden");
+        assert_eq!(control.mixing().scheme, MixingScheme::Broyden);
         assert!((control.mixing().alpha - 0.3).abs() < 1.0e-12);
         assert_eq!(control.mixing().history_steps, 8);
         assert!((control.hubbard().u_eff() * dwconsts::HA_TO_EV - 4.0).abs() < 1.0e-12);
         assert_eq!(control.get_scf_rho_mix_alpha(), control.mixing().alpha);
+    }
+
+    #[test]
+    fn test_parser_rejects_unknown_mixing_scheme() {
+        let err = parse_control(&["scf_rho_mix_scheme = broydn"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
+        assert!(err
+            .message
+            .contains("expected one of: simple, pulay, broyden"));
+
+        // The deprecated alias goes through the same validation.
+        let err = parse_control(&["mixing_scheme = anderson"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
+    }
+
+    #[test]
+    fn test_parser_accepts_mixing_scheme_case_insensitively() {
+        let control = parse_control(&["scf_rho_mix_scheme = Broyden"]).unwrap();
+        assert_eq!(control.mixing().scheme, MixingScheme::Broyden);
+        assert_eq!(control.get_scf_rho_mix_scheme(), "broyden");
     }
 }

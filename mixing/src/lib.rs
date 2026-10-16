@@ -4,7 +4,7 @@ use pulay::*;
 mod broyden;
 use broyden::*;
 
-use control::MixingParams;
+use control::{MixingParams, MixingScheme};
 use types::c64;
 
 pub trait Mixing {
@@ -12,26 +12,10 @@ pub trait Mixing {
 }
 
 pub fn new(params: &MixingParams) -> Box<dyn Mixing> {
-    let mixing: Box<dyn Mixing>;
-
-    let scheme = params.scheme.as_str();
-
-    match scheme.to_lowercase().as_str() {
-        "simple" | "pulay" => {
-            mixing = Box::new(MixingPulay::new(params));
-        }
-
-        "broyden" => {
-            mixing = Box::new(MixingBroyden::new(params));
-        }
-
-        other => {
-            eprintln!("unknown scf_rho_mix_scheme '{}', fallback to pulay", other);
-            mixing = Box::new(MixingPulay::new(params));
-        }
+    match params.scheme {
+        MixingScheme::Simple | MixingScheme::Pulay => Box::new(MixingPulay::new(params)),
+        MixingScheme::Broyden => Box::new(MixingBroyden::new(params)),
     }
-
-    mixing
 }
 
 #[cfg(test)]
@@ -42,7 +26,7 @@ mod tests {
     fn test_factory_builds_from_mixing_params_alone() {
         let pulay = MixingParams::default();
         let broyden = MixingParams {
-            scheme: "broyden".to_string(),
+            scheme: MixingScheme::Broyden,
             ..MixingParams::default()
         };
 
