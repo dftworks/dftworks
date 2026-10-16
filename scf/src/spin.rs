@@ -592,9 +592,9 @@ impl SCF for SCFSpin {
 
         // density mixing
 
-        let mut mixing_rho = mixing::new(control);
+        let mut mixing_rho = mixing::new(control.mixing());
 
-        let mut mixing_spin = mixing::new(control);
+        let mut mixing_spin = mixing::new(control.mixing());
 
         let ntot_elec = crystal.get_n_total_electrons(pots);
         let fft_ntotf64 = fftgrid.get_ntotf64();

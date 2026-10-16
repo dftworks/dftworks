@@ -373,7 +373,7 @@ impl SCF for SCFNonspin {
 
         // density mixing
 
-        let mut mixing = mixing::new(control);
+        let mut mixing = mixing::new(control.mixing());
 
         let ntot_elec = crystal.get_n_total_electrons(pots);
         let fft_ntotf64 = fftgrid.get_ntotf64();

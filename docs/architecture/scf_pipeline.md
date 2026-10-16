@@ -306,9 +306,9 @@ let mixed = mix_density(
 ```
 
 **Actions:**
-- Pulay (DIIS) mixing: linear combination of previous densities
-- Simple mixing: `ρ_new = α ρ_out + (1-α) ρ_in`
-- Kerker preconditioning (for metals)
+- Pulay (DIIS) mixing: linear combination of previous densities (the first iteration is a plain linear step, `ρ_new = α ρ_out + (1-α) ρ_in`)
+- Broyden mixing
+- Kerker preconditioning is not implemented yet (`scf_rho_mix_beta` is parsed but ignored)
 
 **Outputs:**
 ```rust
@@ -430,9 +430,10 @@ After all k-points solved:
 - Minimizes residual norm via linear combination
 - Typically converges in 10-20 iterations
 
-**Simple Mixing** (fallback):
-- `ρ_new = α ρ_out + (1-α) ρ_in`
-- Slower but more robust for difficult systems
+**Broyden Mixing** (`scf_rho_mix_scheme = broyden`):
+- Quasi-Newton update of the density from the stored history
+
+There is no separate linear ("simple") mixing scheme; Pulay's first iteration is a plain linear step `ρ_new = α ρ_out + (1-α) ρ_in`.
 
 ### Convergence Criteria
 
@@ -458,7 +459,7 @@ if !converged {
 **Common causes:**
 - Mixing parameter too large (reduce α)
 - Poor initial guess (use atomic densities)
-- Metallic system (use smearing, Kerker preconditioning)
+- Metallic system (use smearing; Kerker preconditioning is not implemented yet)
 - Magnetic instability (use spin-polarized calculation)
 
 ---

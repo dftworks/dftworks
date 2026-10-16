@@ -1,6 +1,6 @@
 // Phys. Rev. B 38, 12807 (1988)
 
-use control::Control;
+use control::MixingParams;
 use dwconsts::EPS30;
 use fifo::*;
 use nalgebra::DMatrix;
@@ -18,9 +18,9 @@ pub struct MixingBroyden {
 }
 
 impl MixingBroyden {
-    pub fn new(control: &Control) -> MixingBroyden {
-        let alpha = control.get_scf_rho_mix_alpha();
-        let nhistory = control.get_scf_rho_mix_history_steps();
+    pub fn new(params: &MixingParams) -> MixingBroyden {
+        let alpha = params.alpha;
+        let nhistory = params.history_steps;
 
         MixingBroyden {
             alpha,

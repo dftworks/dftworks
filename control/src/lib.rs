@@ -7,6 +7,8 @@ use std::{
     io::{BufRead, BufReader},
 };
 
+mod params;
+pub use params::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpinScheme {
     NonSpin,
@@ -250,6 +252,52 @@ impl KptsScheme {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixingScheme {
+    Pulay,
+    Broyden,
+}
+
+impl Default for MixingScheme {
+    fn default() -> Self {
+        MixingScheme::Pulay
+    }
+}
+
+impl MixingScheme {
+    pub const ALL: &'static [MixingScheme] = &[MixingScheme::Pulay, MixingScheme::Broyden];
+
+    // Accepted in.ctrl spellings; both `parse` and the error message use this table.
+    const NAMES: &'static [(&'static str, MixingScheme)] = &[
+        ("pulay", MixingScheme::Pulay),
+        ("broyden", MixingScheme::Broyden),
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MixingScheme::Pulay => "pulay",
+            MixingScheme::Broyden => "broyden",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim().to_lowercase();
+        Self::NAMES
+            .iter()
+            .find(|(name, _)| *name == s)
+            .map(|(_, scheme)| *scheme)
+    }
+
+    /// Comma-separated accepted spellings, for error messages.
+    pub fn accepted_values() -> String {
+        Self::NAMES
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FftPlannerScheme {
     Estimate,
     Measure,
@@ -382,94 +430,27 @@ impl KPointScheduleScheme {
     }
 }
 
-#[derive(Debug, Default)]
+/// Runtime/solver settings parsed from in.ctrl, with defaults.
+///
+/// Settings are grouped by concern (see `params.rs`). New code should take the
+/// group it needs (e.g. `control.mixing()`) rather than the whole `Control`.
+/// The flat `get_*` accessors below are kept for existing callers.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Control {
-    // Runtime/solver settings parsed from in.ctrl with defaults.
-    verbosity: VerbosityLevel,
-    ecut_wfc: f64,
-    ecut_rho: f64,
-
-    geom_optim_cell: bool,
-    geom_optim_scheme: String,
-    geom_optim_max_steps: usize,
-    geom_optim_history_steps: usize,
-    geom_optim_alpha: f64,
-    geom_optim_force_tolerance: f64,
-    geom_optim_stress_tolerance: f64,
-
-    scf_harris: bool,
-    scf_max_iter: usize,
-    scf_min_iter: usize,
-    scf_max_iter_rand_wfc: usize,
-    scf_max_iter_wfc: usize,
-    random_seed: Option<u64>,
-    scf_rho_mix_scheme: String,
-    scf_rho_mix_alpha: f64, // old*alpha + new*(1-alpha)
-    scf_rho_mix_beta: f64,  // alpha * G2/(G2+beta)
-    scf_rho_mix_history_steps: usize,
-    scf_rho_mix_pulay_metric_weight: f64,
-    rho_epsilon: f64,
-    energy_epsilon: f64,
-
-    eigval_epsilon: f64,
-
-    eigval_same_epsilon: bool,
-
-    nband: usize,
-
-    spin_scheme: SpinScheme, // nonspin, spin, ncl
-    task: String,            // scf, band
-    fft_threads: usize,
-    fft_planner: FftPlannerScheme,
-    fft_wisdom_file: String,
-    surface_dipole_correction: bool,
-    electric_field_2d: f64, // V/Ang in input, stored as Ha/bohr
-    electric_field_axis: ElectricFieldAxis,
-    electric_field_origin_frac: f64,
-    kpoint_schedule: KPointScheduleScheme,
-    scf_log_format: ScfLogFormat,
-    scf_log_file: String,
-    restart: bool,
-    save_rho: bool,
-    save_wfc: bool,
-    eigen_solver: EigenSolverScheme,
-
-    davidson_ndim: usize,
-
-    temperature: f64,
-    smearing_scheme: SmearingScheme,
-    xc_scheme: XcScheme,
-    pot_scheme: PotScheme,
-    output_atomic_density: bool,
-
-    dos_scheme: String,
-    dos_sigma: f64,
-    dos_ne: usize,
-
-    kpts_scheme: KptsScheme,
-    provenance_manifest: String,
-    provenance_check: bool,
-
-    symmetry: bool,
-
-    occ_inversion: f64,
-
-    wannier90_export: bool,
-    wannier90_seedname: String,
-    wannier90_num_wann: usize,
-    wannier90_num_iter: usize,
-
-    hubbard_u_enabled: bool,
-    hubbard_species: String,
-    hubbard_l: i32,
-    hubbard_u: f64, // eV in input, stored in Ha
-    hubbard_j: f64, // eV in input, stored in Ha
-
-    hse06_alpha: f64,
-    hse06_omega: f64, // bohr^-1
-
-    vdw_correction: bool,
-    vdw_damping: String, // "zero" or "bj"
+    run: RunParams,
+    basis: BasisParams,
+    model: ModelParams,
+    scf: ScfParams,
+    mixing: MixingParams,
+    geom_opt: GeomOptParams,
+    fft: FftParams,
+    field: FieldParams,
+    output: OutputParams,
+    dos: DosParams,
+    wannier90: Wannier90Params,
+    hubbard: HubbardParams,
+    hybrid: HybridParams,
+    vdw: VdwParams,
 }
 
 struct CapabilityMatrix {
@@ -603,579 +584,6 @@ impl fmt::Display for ControlError {
 
 impl Error for ControlError {}
 
-type SetterFn = fn(&mut Control, &str) -> Result<(), String>;
-
-struct KeySpec {
-    key: &'static str,
-    setter: SetterFn,
-}
-
-// 1 a.u. electric field = Eh/(e*a0) = 5.14220674763e11 V/m = 51.4220674763 V/Ang.
-const ELECTRIC_FIELD_AU_TO_VANG: f64 = 51.4220674763;
-const ELECTRIC_FIELD_VANG_TO_AU: f64 = 1.0 / ELECTRIC_FIELD_AU_TO_VANG;
-
-#[inline]
-fn parse_bool_value(value: &str) -> Result<bool, String> {
-    value
-        .trim()
-        .parse::<bool>()
-        .map_err(|_| "expected a boolean ('true' or 'false')".to_string())
-}
-
-#[inline]
-fn parse_usize_value(value: &str) -> Result<usize, String> {
-    value
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| "expected an unsigned integer".to_string())
-}
-
-#[inline]
-fn parse_i32_value(value: &str) -> Result<i32, String> {
-    value
-        .trim()
-        .parse::<i32>()
-        .map_err(|_| "expected an integer".to_string())
-}
-
-#[inline]
-fn parse_u64_value(value: &str) -> Result<u64, String> {
-    value
-        .trim()
-        .parse::<u64>()
-        .map_err(|_| "expected a non-negative 64-bit integer".to_string())
-}
-
-#[inline]
-fn parse_f64_value(value: &str) -> Result<f64, String> {
-    value
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| "expected a floating-point number".to_string())
-}
-
-macro_rules! set_string_field {
-    ($fn_name:ident, $field:ident) => {
-        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
-            control.$field = value.trim().to_string();
-            Ok(())
-        }
-    };
-}
-
-macro_rules! set_bool_field {
-    ($fn_name:ident, $field:ident) => {
-        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
-            control.$field = parse_bool_value(value)?;
-            Ok(())
-        }
-    };
-}
-
-macro_rules! set_usize_field {
-    ($fn_name:ident, $field:ident) => {
-        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
-            control.$field = parse_usize_value(value)?;
-            Ok(())
-        }
-    };
-}
-
-macro_rules! set_i32_field {
-    ($fn_name:ident, $field:ident) => {
-        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
-            control.$field = parse_i32_value(value)?;
-            Ok(())
-        }
-    };
-}
-
-macro_rules! set_f64_field {
-    ($fn_name:ident, $field:ident) => {
-        fn $fn_name(control: &mut Control, value: &str) -> Result<(), String> {
-            control.$field = parse_f64_value(value)?;
-            Ok(())
-        }
-    };
-}
-
-set_bool_field!(set_scf_harris, scf_harris);
-set_usize_field!(set_scf_max_iter_wfc, scf_max_iter_wfc);
-set_usize_field!(set_scf_max_iter_rand_wfc, scf_max_iter_rand_wfc);
-set_bool_field!(set_output_atomic_density, output_atomic_density);
-set_bool_field!(set_geom_optim_cell, geom_optim_cell);
-set_string_field!(set_geom_optim_scheme, geom_optim_scheme);
-set_usize_field!(set_geom_optim_max_steps, geom_optim_max_steps);
-set_usize_field!(set_geom_optim_history_steps, geom_optim_history_steps);
-set_f64_field!(set_geom_optim_alpha, geom_optim_alpha);
-set_f64_field!(set_geom_optim_force_tolerance, geom_optim_force_tolerance);
-set_f64_field!(set_geom_optim_stress_tolerance, geom_optim_stress_tolerance);
-set_f64_field!(set_temperature, temperature);
-set_usize_field!(set_scf_min_iter, scf_min_iter);
-set_usize_field!(set_scf_max_iter, scf_max_iter);
-set_usize_field!(set_nband, nband);
-set_f64_field!(set_scf_rho_mix_alpha, scf_rho_mix_alpha);
-set_f64_field!(set_scf_rho_mix_beta, scf_rho_mix_beta);
-set_f64_field!(set_rho_epsilon, rho_epsilon);
-set_string_field!(set_scf_rho_mix_scheme, scf_rho_mix_scheme);
-set_usize_field!(set_scf_rho_mix_history_steps, scf_rho_mix_history_steps);
-set_f64_field!(
-    set_scf_rho_mix_pulay_metric_weight,
-    scf_rho_mix_pulay_metric_weight
-);
-set_bool_field!(set_eigval_same_epsilon, eigval_same_epsilon);
-set_bool_field!(set_restart, restart);
-set_bool_field!(set_save_rho, save_rho);
-set_bool_field!(set_save_wfc, save_wfc);
-set_bool_field!(set_surface_dipole_correction, surface_dipole_correction);
-set_string_field!(set_fft_wisdom_file, fft_wisdom_file);
-set_usize_field!(set_fft_threads, fft_threads);
-set_usize_field!(set_davidson_ndim, davidson_ndim);
-set_string_field!(set_dos_scheme, dos_scheme);
-set_usize_field!(set_dos_ne, dos_ne);
-set_string_field!(set_provenance_manifest, provenance_manifest);
-set_bool_field!(set_provenance_check, provenance_check);
-set_f64_field!(set_occ_inversion, occ_inversion);
-set_bool_field!(set_wannier90_export, wannier90_export);
-set_string_field!(set_wannier90_seedname, wannier90_seedname);
-set_usize_field!(set_wannier90_num_wann, wannier90_num_wann);
-set_usize_field!(set_wannier90_num_iter, wannier90_num_iter);
-set_bool_field!(set_hubbard_u_enabled, hubbard_u_enabled);
-set_string_field!(set_hubbard_species, hubbard_species);
-set_i32_field!(set_hubbard_l, hubbard_l);
-set_f64_field!(set_hse06_alpha, hse06_alpha);
-set_f64_field!(set_hse06_omega, hse06_omega);
-set_bool_field!(set_symmetry, symmetry);
-set_string_field!(set_scf_log_file, scf_log_file);
-
-fn set_verbosity(control: &mut Control, value: &str) -> Result<(), String> {
-    control.verbosity = VerbosityLevel::parse(value)
-        .ok_or_else(|| "expected one of: quiet, normal, verbose, debug".to_string())?;
-    Ok(())
-}
-
-fn set_ecut_wfc(control: &mut Control, value: &str) -> Result<(), String> {
-    control.ecut_wfc = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_ecut_rho(control: &mut Control, value: &str) -> Result<(), String> {
-    control.ecut_rho = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_energy_epsilon(control: &mut Control, value: &str) -> Result<(), String> {
-    control.energy_epsilon = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_eigval_epsilon(control: &mut Control, value: &str) -> Result<(), String> {
-    control.eigval_epsilon = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_dos_sigma(control: &mut Control, value: &str) -> Result<(), String> {
-    control.dos_sigma = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_hubbard_u(control: &mut Control, value: &str) -> Result<(), String> {
-    control.hubbard_u = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_hubbard_j(control: &mut Control, value: &str) -> Result<(), String> {
-    control.hubbard_j = parse_f64_value(value)? * EV_TO_HA;
-    Ok(())
-}
-
-fn set_spin_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.spin_scheme = SpinScheme::parse(value)
-        .ok_or_else(|| "expected one of: nonspin, spin, ncl".to_string())?;
-    Ok(())
-}
-
-fn set_kpts_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.kpts_scheme =
-        KptsScheme::parse(value).ok_or_else(|| "expected one of: kmesh, kline".to_string())?;
-    Ok(())
-}
-
-fn set_pot_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.pot_scheme =
-        PotScheme::parse(value).ok_or_else(|| "expected one of: upf, upf-fr".to_string())?;
-    Ok(())
-}
-
-fn set_xc_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.xc_scheme = XcScheme::parse(value)
-        .ok_or_else(|| "expected one of: lda-pz, lsda-pz, pbe, hse06".to_string())?;
-    Ok(())
-}
-
-fn set_smearing_scheme(control: &mut Control, value: &str) -> Result<(), String> {
-    control.smearing_scheme = SmearingScheme::parse(value).ok_or_else(|| {
-        "expected one of: fd, gs, mp1, mp2, mv (aliases: cold, marzari-vanderbilt)".to_string()
-    })?;
-    Ok(())
-}
-
-fn set_eigen_solver(control: &mut Control, value: &str) -> Result<(), String> {
-    control.eigen_solver = EigenSolverScheme::parse(value)
-        .ok_or_else(|| "expected one of: sd, psd, cg, pcg, lobpcg, arpack, davidson".to_string())?;
-    Ok(())
-}
-
-fn set_fft_planner(control: &mut Control, value: &str) -> Result<(), String> {
-    control.fft_planner = FftPlannerScheme::parse(value)
-        .ok_or_else(|| "expected one of: estimate, measure".to_string())?;
-    Ok(())
-}
-
-fn set_electric_field_axis(control: &mut Control, value: &str) -> Result<(), String> {
-    control.electric_field_axis = ElectricFieldAxis::parse(value)
-        .ok_or_else(|| "expected one of: a, b, c (aliases: x,y,z or 1,2,3)".to_string())?;
-    Ok(())
-}
-
-fn set_electric_field_2d(control: &mut Control, value: &str) -> Result<(), String> {
-    control.electric_field_2d = parse_f64_value(value)? * ELECTRIC_FIELD_VANG_TO_AU;
-    Ok(())
-}
-
-fn set_electric_field_origin_frac(control: &mut Control, value: &str) -> Result<(), String> {
-    control.electric_field_origin_frac = parse_f64_value(value)?;
-    Ok(())
-}
-
-fn set_kpoint_schedule(control: &mut Control, value: &str) -> Result<(), String> {
-    control.kpoint_schedule = KPointScheduleScheme::parse(value).ok_or_else(|| {
-        "expected one of: contiguous, cost_aware (alias: cost-aware), dynamic".to_string()
-    })?;
-    Ok(())
-}
-
-fn set_scf_log_format(control: &mut Control, value: &str) -> Result<(), String> {
-    control.scf_log_format = ScfLogFormat::parse(value)
-        .ok_or_else(|| "expected one of: none, jsonl, csv".to_string())?;
-    Ok(())
-}
-
-fn set_task(control: &mut Control, value: &str) -> Result<(), String> {
-    control.task = value.trim().to_lowercase();
-    Ok(())
-}
-
-fn set_random_seed(control: &mut Control, value: &str) -> Result<(), String> {
-    let raw = value.trim();
-    if raw.eq_ignore_ascii_case("none")
-        || raw.eq_ignore_ascii_case("auto")
-        || raw.eq_ignore_ascii_case("unset")
-    {
-        control.random_seed = None;
-        return Ok(());
-    }
-    control.random_seed = Some(parse_u64_value(raw)?);
-    Ok(())
-}
-
-fn set_vdw_correction(control: &mut Control, value: &str) -> Result<(), String> {
-    control.vdw_correction = parse_bool_value(value)?;
-    Ok(())
-}
-
-fn set_vdw_damping(control: &mut Control, value: &str) -> Result<(), String> {
-    let damping = value.trim().to_lowercase();
-    if damping != "zero" && damping != "bj" {
-        return Err("expected one of: zero, bj".to_string());
-    }
-    control.vdw_damping = damping;
-    Ok(())
-}
-
-const CONTROL_KEY_SPECS: &[KeySpec] = &[
-    KeySpec {
-        key: "verbosity",
-        setter: set_verbosity,
-    },
-    KeySpec {
-        key: "scf_harris",
-        setter: set_scf_harris,
-    },
-    KeySpec {
-        key: "scf_max_iter_wfc",
-        setter: set_scf_max_iter_wfc,
-    },
-    KeySpec {
-        key: "scf_max_iter_rand_wfc",
-        setter: set_scf_max_iter_rand_wfc,
-    },
-    KeySpec {
-        key: "random_seed",
-        setter: set_random_seed,
-    },
-    KeySpec {
-        key: "pot_scheme",
-        setter: set_pot_scheme,
-    },
-    KeySpec {
-        key: "output_atomic_density",
-        setter: set_output_atomic_density,
-    },
-    KeySpec {
-        key: "xc_scheme",
-        setter: set_xc_scheme,
-    },
-    KeySpec {
-        key: "geom_optim_cell",
-        setter: set_geom_optim_cell,
-    },
-    KeySpec {
-        key: "geom_optim_scheme",
-        setter: set_geom_optim_scheme,
-    },
-    KeySpec {
-        key: "geom_optim_max_steps",
-        setter: set_geom_optim_max_steps,
-    },
-    KeySpec {
-        key: "geom_optim_history_steps",
-        setter: set_geom_optim_history_steps,
-    },
-    KeySpec {
-        key: "geom_optim_alpha",
-        setter: set_geom_optim_alpha,
-    },
-    KeySpec {
-        key: "geom_optim_force_tolerance",
-        setter: set_geom_optim_force_tolerance,
-    },
-    KeySpec {
-        key: "geom_optim_stress_tolerance",
-        setter: set_geom_optim_stress_tolerance,
-    },
-    KeySpec {
-        key: "smearing_scheme",
-        setter: set_smearing_scheme,
-    },
-    KeySpec {
-        key: "temperature",
-        setter: set_temperature,
-    },
-    KeySpec {
-        key: "ecut_wfc",
-        setter: set_ecut_wfc,
-    },
-    KeySpec {
-        key: "ecut_rho",
-        setter: set_ecut_rho,
-    },
-    KeySpec {
-        key: "scf_min_iter",
-        setter: set_scf_min_iter,
-    },
-    KeySpec {
-        key: "scf_max_iter",
-        setter: set_scf_max_iter,
-    },
-    KeySpec {
-        key: "nband",
-        setter: set_nband,
-    },
-    KeySpec {
-        key: "scf_rho_mix_alpha",
-        setter: set_scf_rho_mix_alpha,
-    },
-    KeySpec {
-        key: "scf_rho_mix_beta",
-        setter: set_scf_rho_mix_beta,
-    },
-    KeySpec {
-        key: "energy_epsilon",
-        setter: set_energy_epsilon,
-    },
-    KeySpec {
-        key: "rho_epsilon",
-        setter: set_rho_epsilon,
-    },
-    KeySpec {
-        key: "scf_rho_mix_scheme",
-        setter: set_scf_rho_mix_scheme,
-    },
-    KeySpec {
-        key: "scf_rho_mix_history_steps",
-        setter: set_scf_rho_mix_history_steps,
-    },
-    KeySpec {
-        key: "scf_rho_mix_pulay_metric_weight",
-        setter: set_scf_rho_mix_pulay_metric_weight,
-    },
-    KeySpec {
-        key: "eigval_epsilon",
-        setter: set_eigval_epsilon,
-    },
-    KeySpec {
-        key: "eigval_same_epsilon",
-        setter: set_eigval_same_epsilon,
-    },
-    KeySpec {
-        key: "spin_scheme",
-        setter: set_spin_scheme,
-    },
-    KeySpec {
-        key: "task",
-        setter: set_task,
-    },
-    KeySpec {
-        key: "restart",
-        setter: set_restart,
-    },
-    KeySpec {
-        key: "surface_dipole_correction",
-        setter: set_surface_dipole_correction,
-    },
-    KeySpec {
-        key: "electric_field_2d",
-        setter: set_electric_field_2d,
-    },
-    KeySpec {
-        key: "electric_field_axis",
-        setter: set_electric_field_axis,
-    },
-    KeySpec {
-        key: "electric_field_origin_frac",
-        setter: set_electric_field_origin_frac,
-    },
-    KeySpec {
-        key: "kpoint_schedule",
-        setter: set_kpoint_schedule,
-    },
-    KeySpec {
-        key: "scf_log_format",
-        setter: set_scf_log_format,
-    },
-    KeySpec {
-        key: "scf_log_file",
-        setter: set_scf_log_file,
-    },
-    KeySpec {
-        key: "fft_threads",
-        setter: set_fft_threads,
-    },
-    KeySpec {
-        key: "fft_planner",
-        setter: set_fft_planner,
-    },
-    KeySpec {
-        key: "fft_wisdom_file",
-        setter: set_fft_wisdom_file,
-    },
-    KeySpec {
-        key: "save_rho",
-        setter: set_save_rho,
-    },
-    KeySpec {
-        key: "save_wfc",
-        setter: set_save_wfc,
-    },
-    KeySpec {
-        key: "eigen_solver",
-        setter: set_eigen_solver,
-    },
-    KeySpec {
-        key: "davidson_ndim",
-        setter: set_davidson_ndim,
-    },
-    KeySpec {
-        key: "dos_scheme",
-        setter: set_dos_scheme,
-    },
-    KeySpec {
-        key: "dos_sigma",
-        setter: set_dos_sigma,
-    },
-    KeySpec {
-        key: "dos_ne",
-        setter: set_dos_ne,
-    },
-    KeySpec {
-        key: "kpts_scheme",
-        setter: set_kpts_scheme,
-    },
-    KeySpec {
-        key: "provenance_manifest",
-        setter: set_provenance_manifest,
-    },
-    KeySpec {
-        key: "provenance_check",
-        setter: set_provenance_check,
-    },
-    KeySpec {
-        key: "occ_inversion",
-        setter: set_occ_inversion,
-    },
-    KeySpec {
-        key: "wannier90_export",
-        setter: set_wannier90_export,
-    },
-    KeySpec {
-        key: "wannier90_seedname",
-        setter: set_wannier90_seedname,
-    },
-    KeySpec {
-        key: "wannier90_num_wann",
-        setter: set_wannier90_num_wann,
-    },
-    KeySpec {
-        key: "wannier90_num_iter",
-        setter: set_wannier90_num_iter,
-    },
-    KeySpec {
-        key: "hubbard_u_enabled",
-        setter: set_hubbard_u_enabled,
-    },
-    KeySpec {
-        key: "hubbard_species",
-        setter: set_hubbard_species,
-    },
-    KeySpec {
-        key: "hubbard_l",
-        setter: set_hubbard_l,
-    },
-    KeySpec {
-        key: "hubbard_u",
-        setter: set_hubbard_u,
-    },
-    KeySpec {
-        key: "hubbard_j",
-        setter: set_hubbard_j,
-    },
-    KeySpec {
-        key: "hse06_alpha",
-        setter: set_hse06_alpha,
-    },
-    KeySpec {
-        key: "hse06_omega",
-        setter: set_hse06_omega,
-    },
-    KeySpec {
-        key: "symmetry",
-        setter: set_symmetry,
-    },
-    KeySpec {
-        key: "vdw_correction",
-        setter: set_vdw_correction,
-    },
-    KeySpec {
-        key: "vdw_damping",
-        setter: set_vdw_damping,
-    },
-];
-
-fn find_key_spec(key: &str) -> Option<&'static KeySpec> {
-    CONTROL_KEY_SPECS.iter().find(|spec| spec.key == key)
-}
-
 fn canonicalize_control_key(key: &str) -> &str {
     match key {
         // Deprecated aliases retained for backward compatibility.
@@ -1190,296 +598,388 @@ impl Control {
         Control::default()
     }
 
+    /// Routes one in.ctrl assignment to the group that owns `key`.
+    /// Returns `None` for unknown keys.
+    fn set_key(&mut self, key: &str, value: &str) -> Option<Result<(), String>> {
+        self.run
+            .set_key(key, value)
+            .or_else(|| self.basis.set_key(key, value))
+            .or_else(|| self.model.set_key(key, value))
+            .or_else(|| self.scf.set_key(key, value))
+            .or_else(|| self.mixing.set_key(key, value))
+            .or_else(|| self.geom_opt.set_key(key, value))
+            .or_else(|| self.fft.set_key(key, value))
+            .or_else(|| self.field.set_key(key, value))
+            .or_else(|| self.output.set_key(key, value))
+            .or_else(|| self.dos.set_key(key, value))
+            .or_else(|| self.wannier90.set_key(key, value))
+            .or_else(|| self.hubbard.set_key(key, value))
+            .or_else(|| self.hybrid.set_key(key, value))
+            .or_else(|| self.vdw.set_key(key, value))
+    }
+
+    /// Every accepted in.ctrl key (excluding deprecated aliases).
+    pub fn known_keys() -> impl Iterator<Item = &'static str> {
+        const GROUP_KEYS: &[&[&str]] = &[
+            RunParams::KEYS,
+            BasisParams::KEYS,
+            ModelParams::KEYS,
+            ScfParams::KEYS,
+            MixingParams::KEYS,
+            GeomOptParams::KEYS,
+            FftParams::KEYS,
+            FieldParams::KEYS,
+            OutputParams::KEYS,
+            DosParams::KEYS,
+            Wannier90Params::KEYS,
+            HubbardParams::KEYS,
+            HybridParams::KEYS,
+            VdwParams::KEYS,
+        ];
+        GROUP_KEYS.iter().flat_map(|keys| keys.iter().copied())
+    }
+
+    // ---- grouped accessors ----
+
+    pub fn run(&self) -> &RunParams {
+        &self.run
+    }
+
+    pub fn basis(&self) -> &BasisParams {
+        &self.basis
+    }
+
+    pub fn model(&self) -> &ModelParams {
+        &self.model
+    }
+
+    pub fn scf(&self) -> &ScfParams {
+        &self.scf
+    }
+
+    pub fn mixing(&self) -> &MixingParams {
+        &self.mixing
+    }
+
+    pub fn geom_opt(&self) -> &GeomOptParams {
+        &self.geom_opt
+    }
+
+    pub fn fft(&self) -> &FftParams {
+        &self.fft
+    }
+
+    pub fn field(&self) -> &FieldParams {
+        &self.field
+    }
+
+    pub fn output(&self) -> &OutputParams {
+        &self.output
+    }
+
+    pub fn dos(&self) -> &DosParams {
+        &self.dos
+    }
+
+    pub fn wannier90(&self) -> &Wannier90Params {
+        &self.wannier90
+    }
+
+    pub fn hubbard(&self) -> &HubbardParams {
+        &self.hubbard
+    }
+
+    pub fn hybrid(&self) -> &HybridParams {
+        &self.hybrid
+    }
+
+    pub fn vdw(&self) -> &VdwParams {
+        &self.vdw
+    }
+
+    // ---- flat accessors (kept for existing callers) ----
+
     pub fn get_symmetry(&self) -> bool {
-        self.symmetry
+        self.run.symmetry
     }
 
     pub fn is_scf_harris(&self) -> bool {
-        self.scf_harris
+        self.scf.harris
     }
 
     pub fn get_output_atomic_density(&self) -> bool {
-        self.output_atomic_density
+        self.output.output_atomic_density
     }
 
-    //pub fn is_scf(&self) -> bool {
-    //    "scf" == self.get_task()
-    //}
-
-    //pub fn is_band(&self) -> bool {
-    //    "band" == self.get_task()
-    //}
-
     pub fn is_spin(&self) -> bool {
-        matches!(self.spin_scheme, SpinScheme::Spin)
+        matches!(self.model.spin_scheme, SpinScheme::Spin)
     }
 
     pub fn is_noncollinear(&self) -> bool {
-        matches!(self.spin_scheme, SpinScheme::Ncl)
+        matches!(self.model.spin_scheme, SpinScheme::Ncl)
     }
 
     pub fn is_collinear(&self) -> bool {
-        matches!(self.spin_scheme, SpinScheme::NonSpin | SpinScheme::Spin)
+        matches!(
+            self.model.spin_scheme,
+            SpinScheme::NonSpin | SpinScheme::Spin
+        )
     }
 
-    //pub fn is_nscf(&self) -> bool {
-    //    "nscf" == self.get_task()
-    //}
-
     pub fn get_dos_scheme(&self) -> &str {
-        &self.dos_scheme
+        &self.dos.scheme
     }
 
     pub fn get_dos_sigma(&self) -> f64 {
-        self.dos_sigma
+        self.dos.sigma
     }
 
     pub fn get_dos_ne(&self) -> usize {
-        self.dos_ne
+        self.dos.ne
     }
 
     pub fn get_kpts_scheme(&self) -> &str {
-        self.kpts_scheme.as_str()
+        self.model.kpts_scheme.as_str()
     }
 
     pub fn get_kpts_scheme_enum(&self) -> KptsScheme {
-        self.kpts_scheme
+        self.model.kpts_scheme
     }
 
     pub fn get_provenance_manifest(&self) -> &str {
-        &self.provenance_manifest
+        &self.output.provenance_manifest
     }
 
     pub fn get_provenance_check(&self) -> bool {
-        self.provenance_check
+        self.output.provenance_check
     }
 
     pub fn get_scf_min_iter(&self) -> usize {
-        self.scf_min_iter
+        self.scf.min_iter
     }
 
     pub fn get_scf_max_iter_wfc(&self) -> usize {
-        self.scf_max_iter_wfc
+        self.scf.max_iter_wfc
     }
 
     pub fn get_scf_max_iter_rand_wfc(&self) -> usize {
-        self.scf_max_iter_rand_wfc
+        self.scf.max_iter_rand_wfc
     }
 
     pub fn get_random_seed(&self) -> Option<u64> {
-        self.random_seed
+        self.run.random_seed
     }
 
     pub fn get_pot_scheme(&self) -> &str {
-        self.pot_scheme.as_str()
+        self.model.pot_scheme.as_str()
     }
 
     pub fn get_pot_scheme_enum(&self) -> PotScheme {
-        self.pot_scheme
+        self.model.pot_scheme
     }
 
     pub fn get_xc_scheme(&self) -> &str {
-        self.xc_scheme.as_str()
+        self.model.xc_scheme.as_str()
     }
 
     pub fn get_xc_scheme_enum(&self) -> XcScheme {
-        self.xc_scheme
+        self.model.xc_scheme
     }
 
     pub fn get_hse06_alpha(&self) -> f64 {
-        self.hse06_alpha
+        self.hybrid.alpha
     }
 
     pub fn get_hse06_omega(&self) -> f64 {
-        self.hse06_omega
+        self.hybrid.omega
     }
 
     pub fn get_geom_optim_cell(&self) -> bool {
-        self.geom_optim_cell
+        self.geom_opt.cell
     }
 
     pub fn get_geom_optim_scheme(&self) -> &str {
-        &self.geom_optim_scheme
+        &self.geom_opt.scheme
     }
 
     pub fn get_geom_optim_max_steps(&self) -> usize {
-        self.geom_optim_max_steps
+        self.geom_opt.max_steps
     }
 
     pub fn get_geom_optim_history_steps(&self) -> usize {
-        self.geom_optim_history_steps
+        self.geom_opt.history_steps
     }
 
     pub fn get_geom_optim_alpha(&self) -> f64 {
-        self.geom_optim_alpha
+        self.geom_opt.alpha
     }
 
     pub fn get_geom_optim_force_tolerance(&self) -> f64 {
-        self.geom_optim_force_tolerance
+        self.geom_opt.force_tolerance
     }
 
     pub fn get_geom_optim_stress_tolerance(&self) -> f64 {
-        self.geom_optim_stress_tolerance
+        self.geom_opt.stress_tolerance
     }
 
     pub fn get_smearing_scheme(&self) -> &str {
-        self.smearing_scheme.as_str()
+        self.model.smearing_scheme.as_str()
     }
 
     pub fn get_smearing_scheme_enum(&self) -> SmearingScheme {
-        self.smearing_scheme
+        self.model.smearing_scheme
     }
 
     pub fn get_temperature(&self) -> f64 {
-        self.temperature
+        self.model.temperature
     }
 
     pub fn get_scf_max_iter(&self) -> usize {
-        self.scf_max_iter
+        self.scf.max_iter
     }
 
     pub fn get_ecut(&self) -> f64 {
-        self.ecut_wfc
+        self.basis.ecut_wfc
     }
 
     pub fn get_ecutrho(&self) -> f64 {
-        self.ecut_rho
+        self.basis.resolved_ecut_rho()
     }
 
     pub fn get_nband(&self) -> usize {
-        self.nband
+        self.basis.nband
     }
 
-    pub fn get_scf_rho_mix_scheme(&self) -> &str {
-        &self.scf_rho_mix_scheme
+    pub fn get_scf_rho_mix_scheme(&self) -> MixingScheme {
+        self.mixing.scheme
     }
 
     pub fn get_scf_rho_mix_history_steps(&self) -> usize {
-        self.scf_rho_mix_history_steps
+        self.mixing.history_steps
     }
 
     pub fn get_scf_rho_mix_pulay_metric_weight(&self) -> f64 {
-        self.scf_rho_mix_pulay_metric_weight
+        self.mixing.pulay_metric_weight
     }
 
     pub fn get_scf_rho_mix_beta(&self) -> f64 {
-        self.scf_rho_mix_beta
+        self.mixing.beta
     }
 
     pub fn get_scf_rho_mix_alpha(&self) -> f64 {
-        self.scf_rho_mix_alpha
+        self.mixing.alpha
     }
 
     pub fn get_energy_epsilon(&self) -> f64 {
-        self.energy_epsilon
+        self.scf.energy_epsilon
     }
 
     pub fn get_rho_epsilon(&self) -> f64 {
-        self.rho_epsilon
+        self.scf.rho_epsilon
     }
 
     pub fn get_eigval_epsilon(&self) -> f64 {
-        self.eigval_epsilon
+        self.scf.eigval_epsilon
     }
 
     pub fn get_spin_scheme(&self) -> &str {
-        self.spin_scheme.as_str()
+        self.model.spin_scheme.as_str()
     }
 
     pub fn get_spin_scheme_enum(&self) -> SpinScheme {
-        self.spin_scheme
+        self.model.spin_scheme
     }
 
     pub fn get_task(&self) -> &str {
-        &self.task
+        &self.run.task
     }
 
     pub fn get_surface_dipole_correction(&self) -> bool {
-        self.surface_dipole_correction
+        self.field.surface_dipole_correction
     }
 
     pub fn get_electric_field_2d(&self) -> f64 {
-        self.electric_field_2d
+        self.field.electric_field_2d
     }
 
     pub fn get_electric_field_2d_vang(&self) -> f64 {
-        self.electric_field_2d * ELECTRIC_FIELD_AU_TO_VANG
+        self.field.electric_field_2d * ELECTRIC_FIELD_AU_TO_VANG
     }
 
     pub fn get_electric_field_axis(&self) -> &str {
-        self.electric_field_axis.as_str()
+        self.field.electric_field_axis.as_str()
     }
 
     pub fn get_electric_field_axis_enum(&self) -> ElectricFieldAxis {
-        self.electric_field_axis
+        self.field.electric_field_axis
     }
 
     pub fn get_electric_field_origin_frac(&self) -> f64 {
-        self.electric_field_origin_frac
+        self.field.electric_field_origin_frac
     }
 
     pub fn get_kpoint_schedule(&self) -> &str {
-        self.kpoint_schedule.as_str()
+        self.run.kpoint_schedule.as_str()
     }
 
     pub fn get_kpoint_schedule_enum(&self) -> KPointScheduleScheme {
-        self.kpoint_schedule
+        self.run.kpoint_schedule
     }
 
     pub fn get_scf_log_format(&self) -> &str {
-        self.scf_log_format.as_str()
+        self.output.scf_log_format.as_str()
     }
 
     pub fn get_scf_log_format_enum(&self) -> ScfLogFormat {
-        self.scf_log_format
+        self.output.scf_log_format
     }
 
     pub fn get_scf_log_file(&self) -> &str {
-        &self.scf_log_file
+        &self.output.scf_log_file
     }
 
     pub fn get_fft_threads(&self) -> usize {
-        self.fft_threads
+        self.fft.threads
     }
 
     pub fn get_fft_planner(&self) -> &str {
-        self.fft_planner.as_str()
+        self.fft.planner.as_str()
     }
 
     pub fn get_fft_planner_enum(&self) -> FftPlannerScheme {
-        self.fft_planner
+        self.fft.planner
     }
 
     pub fn get_fft_wisdom_file(&self) -> &str {
-        &self.fft_wisdom_file
+        &self.fft.wisdom_file
     }
 
     pub fn get_eigen_solver(&self) -> &str {
-        self.eigen_solver.as_str()
+        self.scf.eigen_solver.as_str()
     }
 
     pub fn get_eigen_solver_enum(&self) -> EigenSolverScheme {
-        self.eigen_solver
+        self.scf.eigen_solver
     }
 
     pub fn get_davidson_ndim(&self) -> usize {
-        self.davidson_ndim
+        self.scf.davidson_ndim
     }
 
     // the setting of task will override some parameters read from in.ctrl
 
     pub fn set_task(&mut self, task: &str) {
-        self.task = task.to_string();
+        self.run.task = task.to_string();
 
         match task {
             "scf" => {
-                //self.restart = false;
+                //self.run.restart = false;
             }
             "band" => {
-                self.restart = true;
-                self.save_rho = false;
-                self.save_wfc = false;
-                //self.scf_max_iter = 1;
+                self.run.restart = true;
+                self.output.save_rho = false;
+                self.output.save_wfc = false;
+                //self.scf.max_iter = 1;
             }
 
             _ => {}
@@ -1487,81 +987,80 @@ impl Control {
     }
 
     pub fn get_verbosity(&self) -> &str {
-        self.verbosity.as_str()
+        self.output.verbosity.as_str()
     }
 
     pub fn get_verbosity_enum(&self) -> VerbosityLevel {
-        self.verbosity
+        self.output.verbosity
     }
 
     pub fn verbosity_at_least(&self, level: VerbosityLevel) -> bool {
-        self.verbosity >= level
+        self.output.verbosity >= level
     }
 
     pub fn get_restart(&self) -> bool {
-        self.restart
+        self.run.restart
     }
 
     pub fn get_save_rho(&self) -> bool {
-        self.save_rho
+        self.output.save_rho
     }
 
     pub fn get_save_wfc(&self) -> bool {
-        self.save_wfc
+        self.output.save_wfc
     }
 
     pub fn get_occ_inversion(&self) -> f64 {
-        self.occ_inversion
+        self.model.occ_inversion
     }
 
     pub fn get_wannier90_export(&self) -> bool {
-        self.wannier90_export
+        self.wannier90.export
     }
 
     pub fn get_wannier90_seedname(&self) -> &str {
-        &self.wannier90_seedname
+        &self.wannier90.seedname
     }
 
     pub fn get_wannier90_num_wann(&self) -> usize {
-        self.wannier90_num_wann
+        self.wannier90.resolved_num_wann(self.basis.nband)
     }
 
     pub fn get_wannier90_num_iter(&self) -> usize {
-        self.wannier90_num_iter
+        self.wannier90.num_iter
     }
 
     pub fn get_hubbard_u_enabled(&self) -> bool {
-        self.hubbard_u_enabled
+        self.hubbard.enabled
     }
 
     pub fn get_hubbard_species(&self) -> &str {
-        &self.hubbard_species
+        &self.hubbard.species
     }
 
     pub fn get_hubbard_l(&self) -> i32 {
-        self.hubbard_l
+        self.hubbard.l
     }
 
     pub fn get_hubbard_u(&self) -> f64 {
-        self.hubbard_u
+        self.hubbard.u
     }
 
     pub fn get_hubbard_j(&self) -> f64 {
-        self.hubbard_j
+        self.hubbard.j
     }
 
     pub fn get_hubbard_u_eff(&self) -> f64 {
-        self.hubbard_u - self.hubbard_j
+        self.hubbard.u_eff()
     }
 
     pub fn get_vdw_correction(&self) -> bool {
-        self.vdw_correction
+        self.vdw.correction
     }
 
     pub fn get_vdw_damping(&self) -> &str {
-        &self.vdw_damping
+        &self.vdw.damping
     }
-
     pub fn read_file(&mut self, inpfile: &str) {
         if let Err(err) = self.try_read_file(inpfile) {
             panic!("{}", err);
@@ -1580,83 +1079,7 @@ impl Control {
     }
 
     fn reset_defaults(&mut self) {
-        self.task = "scf".to_string();
-        self.spin_scheme = SpinScheme::NonSpin;
-        self.fft_threads = 1;
-        self.fft_planner = FftPlannerScheme::Estimate;
-        self.fft_wisdom_file = String::new();
-        self.surface_dipole_correction = false;
-        self.electric_field_2d = 0.0;
-        self.electric_field_axis = ElectricFieldAxis::C;
-        self.electric_field_origin_frac = 0.5;
-        self.kpoint_schedule = KPointScheduleScheme::CostAware;
-        self.scf_log_format = ScfLogFormat::None;
-        self.scf_log_file = "out.scf.iter.jsonl".to_string();
-
-        self.geom_optim_cell = false;
-        self.geom_optim_scheme = "bfgs".to_string();
-        self.geom_optim_max_steps = 1;
-        self.geom_optim_history_steps = 4;
-        self.geom_optim_alpha = 0.8;
-        self.geom_optim_force_tolerance = 0.01; // eV / A
-        self.geom_optim_stress_tolerance = 0.05; // kbar
-
-        self.save_rho = true;
-        self.save_wfc = true;
-
-        self.ecut_wfc = 400.0 * EV_TO_HA; // eV in in.ctrl, stored as Ha
-        self.ecut_rho = 4.0 * self.ecut_wfc;
-
-        self.eigval_same_epsilon = false;
-        self.eigval_epsilon = 1.0E-6;
-        self.rho_epsilon = 1.0E-5;
-        self.energy_epsilon = EPS6;
-
-        self.eigen_solver = EigenSolverScheme::Pcg;
-        self.davidson_ndim = 6;
-
-        self.scf_rho_mix_scheme = "simple".to_string();
-        self.scf_rho_mix_alpha = 0.7;
-        self.scf_rho_mix_beta = 0.5;
-        self.scf_rho_mix_history_steps = 4;
-        self.scf_rho_mix_pulay_metric_weight = 20.0;
-
-        self.scf_harris = false;
-        self.scf_min_iter = 1;
-        self.scf_max_iter = 60;
-        self.scf_max_iter_rand_wfc = 1;
-        self.scf_max_iter_wfc = 30;
-        self.random_seed = None;
-
-        self.dos_scheme = "gauss".to_string();
-        self.dos_ne = 500;
-        self.dos_sigma = 0.1;
-
-        self.kpts_scheme = KptsScheme::Kmesh;
-        self.smearing_scheme = SmearingScheme::Mp2;
-        self.xc_scheme = XcScheme::LdaPz;
-        self.pot_scheme = PotScheme::Upf;
-        self.provenance_manifest = "run.provenance.json".to_string();
-        self.provenance_check = false;
-        self.verbosity = VerbosityLevel::Normal;
-        self.occ_inversion = 0.0;
-
-        self.wannier90_export = false;
-        self.wannier90_seedname = "dftworks".to_string();
-        self.wannier90_num_wann = 0;
-        self.wannier90_num_iter = 200;
-
-        self.hubbard_u_enabled = false;
-        self.hubbard_species = String::new();
-        self.hubbard_l = -1;
-        self.hubbard_u = 0.0;
-        self.hubbard_j = 0.0;
-
-        self.hse06_alpha = 0.25;
-        self.hse06_omega = 0.11;
-
-        self.vdw_correction = false;
-        self.vdw_damping = "bj".to_string();
+        *self = Control::default();
     }
 
     fn parse_assignment_line(
@@ -1692,9 +1115,6 @@ impl Control {
     fn try_read_lines(&mut self, lines: &[String]) -> Result<(), ControlError> {
         self.reset_defaults();
 
-        let mut ecut_rho_set = false;
-        let mut wannier90_num_wann_set = false;
-
         for (idx, raw_line) in lines.iter().enumerate() {
             let line_no = idx + 1;
             let Some((raw_key, raw_value)) = Self::parse_assignment_line(raw_line, line_no)? else {
@@ -1702,26 +1122,11 @@ impl Control {
             };
 
             let key = canonicalize_control_key(raw_key.as_str());
-            let spec =
-                find_key_spec(key).ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?;
-
-            (spec.setter)(self, &raw_value).map_err(|details| {
-                ControlError::invalid_value(line_no, key, &raw_value, details)
-            })?;
-
-            if key == "ecut_rho" {
-                ecut_rho_set = true;
-            }
-            if key == "wannier90_num_wann" {
-                wannier90_num_wann_set = true;
-            }
-        }
-
-        if !ecut_rho_set {
-            self.ecut_rho = 4.0 * self.ecut_wfc;
-        }
-        if !wannier90_num_wann_set {
-            self.wannier90_num_wann = self.nband;
+            self.set_key(key, &raw_value)
+                .ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?
+                .map_err(|details| {
+                    ControlError::invalid_value(line_no, key, &raw_value, details)
+                })?;
         }
 
         self.validate_semantic_ranges()?;
@@ -1731,52 +1136,55 @@ impl Control {
     }
 
     fn validate_semantic_ranges(&self) -> Result<(), ControlError> {
-        if self.scf_min_iter > self.scf_max_iter {
+        let num_wann = self.get_wannier90_num_wann();
+
+        if self.scf.min_iter > self.scf.max_iter {
             return Err(ControlError::validation(
                 "scf_min_iter/scf_max_iter",
                 "scf_min_iter must be <= scf_max_iter",
             ));
         }
 
-        if self.wannier90_export {
-            if self.wannier90_seedname.trim().is_empty() {
+        if self.wannier90.export {
+            if self.wannier90.seedname.trim().is_empty() {
                 return Err(ControlError::validation(
                     "wannier90_seedname",
                     "must not be empty when wannier90_export=true",
                 ));
             }
-            if self.wannier90_num_wann == 0 {
+            if num_wann == 0 {
                 return Err(ControlError::validation(
                     "wannier90_num_wann",
                     "must be > 0 when wannier90_export=true",
                 ));
             }
-            if self.nband == 0 {
+            if self.basis.nband == 0 {
                 return Err(ControlError::validation(
                     "nband",
                     "must be > 0 when wannier90_export=true",
                 ));
             }
-            if self.wannier90_num_wann > self.nband {
+            if num_wann > self.basis.nband {
                 return Err(ControlError::validation(
                     "wannier90_num_wann",
-                    format!("{} > nband ({})", self.wannier90_num_wann, self.nband),
+                    format!("{} > nband ({})", num_wann, self.basis.nband),
                 ));
             }
         }
 
-        if self.provenance_manifest.trim().is_empty() {
+        if self.output.provenance_manifest.trim().is_empty() {
             return Err(ControlError::validation(
                 "provenance_manifest",
                 "must not be empty",
             ));
         }
 
-        if self.fft_threads == 0 {
+        if self.fft.threads == 0 {
             return Err(ControlError::validation("fft_threads", "must be >= 1"));
         }
 
-        if !matches!(self.scf_log_format, ScfLogFormat::None) && self.scf_log_file.trim().is_empty()
+        if !matches!(self.output.scf_log_format, ScfLogFormat::None)
+            && self.output.scf_log_file.trim().is_empty()
         {
             return Err(ControlError::validation(
                 "scf_log_file",
@@ -1784,14 +1192,17 @@ impl Control {
             ));
         }
 
-        if self.electric_field_origin_frac < 0.0 || self.electric_field_origin_frac >= 1.0 {
+        if self.field.electric_field_origin_frac < 0.0
+            || self.field.electric_field_origin_frac >= 1.0
+        {
             return Err(ControlError::validation(
                 "electric_field_origin_frac",
                 "must be within [0, 1)",
             ));
         }
 
-        if (self.electric_field_2d.abs() > EPS16 || self.surface_dipole_correction) && self.symmetry
+        if (self.field.electric_field_2d.abs() > EPS16 || self.field.surface_dipole_correction)
+            && self.run.symmetry
         {
             return Err(ControlError::validation(
                 "symmetry/electric_field_2d/surface_dipole_correction",
@@ -1805,56 +1216,58 @@ impl Control {
     pub fn validate_capability_matrix(&self) -> Result<(), ControlError> {
         let matrix = &RUNTIME_CAPABILITY_MATRIX;
 
-        if !contains_task(matrix.tasks, self.task.as_str()) {
+        if !contains_task(matrix.tasks, self.run.task.as_str()) {
             return Err(ControlError::validation(
                 "task",
                 format!(
                     "unsupported task='{}'; supported: {}",
-                    self.task,
+                    self.run.task,
                     join_supported_tasks(matrix.tasks)
                 ),
             ));
         }
 
-        if !contains_spin_scheme(matrix.spin_schemes, self.spin_scheme) {
+        if !contains_spin_scheme(matrix.spin_schemes, self.model.spin_scheme) {
             return Err(ControlError::validation(
                 "spin_scheme",
                 format!(
                     "spin_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
-                    self.spin_scheme.as_str(),
+                    self.model.spin_scheme.as_str(),
                     join_supported_spin_schemes(matrix.spin_schemes)
                 ),
             ));
         }
 
-        if !contains_xc_scheme(matrix.xc_schemes, self.xc_scheme) {
+        if !contains_xc_scheme(matrix.xc_schemes, self.model.xc_scheme) {
             return Err(ControlError::validation(
                 "xc_scheme",
                 format!(
                     "xc_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
-                    self.xc_scheme.as_str(),
+                    self.model.xc_scheme.as_str(),
                     join_supported_xc_schemes(matrix.xc_schemes)
                 ),
             ));
         }
 
-        if !contains_eigen_solver(matrix.eigen_solvers, self.eigen_solver) {
+        if !contains_eigen_solver(matrix.eigen_solvers, self.scf.eigen_solver) {
             return Err(ControlError::validation(
                 "eigen_solver",
                 format!(
                     "eigen_solver='{}' is parsed but not implemented yet; supported: {}",
-                    self.eigen_solver.as_str(),
+                    self.scf.eigen_solver.as_str(),
                     join_supported_eigen_schemes(matrix.eigen_solvers)
                 ),
             ));
         }
 
-        if self.restart && !contains_spin_scheme(matrix.restart_spin_schemes, self.spin_scheme) {
+        if self.run.restart
+            && !contains_spin_scheme(matrix.restart_spin_schemes, self.model.spin_scheme)
+        {
             return Err(ControlError::validation(
                 "restart/spin_scheme",
                 format!(
                     "restart=true is unsupported with spin_scheme='{}'; restart supports only {}",
-                    self.spin_scheme.as_str(),
+                    self.model.spin_scheme.as_str(),
                     join_supported_spin_schemes(matrix.restart_spin_schemes)
                 ),
             ));
@@ -1866,32 +1279,32 @@ impl Control {
     fn validate_feature_compatibility(&self) -> Result<(), ControlError> {
         self.validate_capability_matrix()?;
 
-        if self.hubbard_u_enabled {
-            if self.hubbard_species.trim().is_empty() {
+        if self.hubbard.enabled {
+            if self.hubbard.species.trim().is_empty() {
                 return Err(ControlError::validation(
                     "hubbard_species",
                     "must not be empty when hubbard_u_enabled=true",
                 ));
             }
-            if self.hubbard_l < 0 {
+            if self.hubbard.l < 0 {
                 return Err(ControlError::validation(
                     "hubbard_l",
                     "must be >= 0 when hubbard_u_enabled=true",
                 ));
             }
-            if self.hubbard_u < 0.0 {
+            if self.hubbard.u < 0.0 {
                 return Err(ControlError::validation(
                     "hubbard_u",
                     "must be >= 0 eV when hubbard_u_enabled=true",
                 ));
             }
-            if self.hubbard_j < 0.0 {
+            if self.hubbard.j < 0.0 {
                 return Err(ControlError::validation(
                     "hubbard_j",
                     "must be >= 0 eV when hubbard_u_enabled=true",
                 ));
             }
-            if self.hubbard_u < self.hubbard_j {
+            if self.hubbard.u < self.hubbard.j {
                 return Err(ControlError::validation(
                     "hubbard_u/hubbard_j",
                     "requires hubbard_u >= hubbard_j",
@@ -1905,14 +1318,14 @@ impl Control {
             }
         }
 
-        if matches!(self.xc_scheme, XcScheme::Hse06) {
-            if self.hse06_alpha < 0.0 || self.hse06_alpha > 1.0 {
+        if matches!(self.model.xc_scheme, XcScheme::Hse06) {
+            if self.hybrid.alpha < 0.0 || self.hybrid.alpha > 1.0 {
                 return Err(ControlError::validation(
                     "hse06_alpha",
                     "must be within [0, 1]",
                 ));
             }
-            if self.hse06_omega <= 0.0 {
+            if self.hybrid.omega <= 0.0 {
                 return Err(ControlError::validation(
                     "hse06_omega",
                     "must be > 0 (bohr^-1)",
@@ -2105,7 +1518,7 @@ impl Control {
         println!(
             "   {:<width1$} = {:>width2$}",
             "scf_harris",
-            self.scf_harris,
+            self.scf.harris,
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );
@@ -2262,7 +1675,7 @@ impl Control {
         println!(
             "   {:<width1$} = {:>width2$}",
             "scf_rho_mix_scheme",
-            self.get_scf_rho_mix_scheme(),
+            self.get_scf_rho_mix_scheme().as_str(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );
@@ -2344,8 +1757,9 @@ impl Control {
 #[cfg(test)]
 mod tests {
     use super::{
-        Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KPointScheduleScheme,
-        KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme, VerbosityLevel, XcScheme,
+        Control, ControlError, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
+        KPointScheduleScheme, KptsScheme, MixingScheme, PotScheme, ScfLogFormat, SmearingScheme,
+        SpinScheme, VerbosityLevel, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -2395,7 +1809,7 @@ mod tests {
         let ecut_ev = control.get_ecut() * dwconsts::HA_TO_EV;
         assert!((ecut_ev - 320.0).abs() < 1.0e-12);
         assert!((control.get_ecutrho() - 4.0 * control.get_ecut()).abs() < 1.0e-12);
-        assert_eq!(control.get_scf_rho_mix_scheme(), "pulay");
+        assert_eq!(control.get_scf_rho_mix_scheme(), MixingScheme::Pulay);
     }
 
     #[test]
@@ -2641,5 +2055,422 @@ mod tests {
         let err = parse_control(&["vdw_damping = invalid"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("vdw_damping"));
         assert!(err.message.contains("expected one of: zero, bj"));
+    }
+
+    #[test]
+    fn test_known_keys_match_legacy_key_set() {
+        // Keys accepted before parameters were grouped; none may be lost or renamed.
+        let legacy = [
+            "davidson_ndim",
+            "dos_ne",
+            "dos_scheme",
+            "dos_sigma",
+            "ecut_rho",
+            "ecut_wfc",
+            "eigen_solver",
+            "eigval_epsilon",
+            "eigval_same_epsilon",
+            "electric_field_2d",
+            "electric_field_axis",
+            "electric_field_origin_frac",
+            "energy_epsilon",
+            "fft_planner",
+            "fft_threads",
+            "fft_wisdom_file",
+            "geom_optim_alpha",
+            "geom_optim_cell",
+            "geom_optim_force_tolerance",
+            "geom_optim_history_steps",
+            "geom_optim_max_steps",
+            "geom_optim_scheme",
+            "geom_optim_stress_tolerance",
+            "hse06_alpha",
+            "hse06_omega",
+            "hubbard_j",
+            "hubbard_l",
+            "hubbard_species",
+            "hubbard_u",
+            "hubbard_u_enabled",
+            "kpoint_schedule",
+            "kpts_scheme",
+            "nband",
+            "occ_inversion",
+            "output_atomic_density",
+            "pot_scheme",
+            "provenance_check",
+            "provenance_manifest",
+            "random_seed",
+            "restart",
+            "rho_epsilon",
+            "save_rho",
+            "save_wfc",
+            "scf_harris",
+            "scf_log_file",
+            "scf_log_format",
+            "scf_max_iter",
+            "scf_max_iter_rand_wfc",
+            "scf_max_iter_wfc",
+            "scf_min_iter",
+            "scf_rho_mix_alpha",
+            "scf_rho_mix_beta",
+            "scf_rho_mix_history_steps",
+            "scf_rho_mix_pulay_metric_weight",
+            "scf_rho_mix_scheme",
+            "smearing_scheme",
+            "spin_scheme",
+            "surface_dipole_correction",
+            "symmetry",
+            "task",
+            "temperature",
+            "vdw_correction",
+            "vdw_damping",
+            "verbosity",
+            "wannier90_export",
+            "wannier90_num_iter",
+            "wannier90_num_wann",
+            "wannier90_seedname",
+            "xc_scheme",
+        ];
+        let mut known: Vec<&str> = Control::known_keys().collect();
+        known.sort_unstable();
+        let mut expected = legacy.to_vec();
+        expected.sort_unstable();
+        assert_eq!(known, expected);
+    }
+
+    #[test]
+    fn test_known_keys_are_unique_across_groups() {
+        let mut known: Vec<&str> = Control::known_keys().collect();
+        let total = known.len();
+        known.sort_unstable();
+        known.dedup();
+        assert_eq!(
+            known.len(),
+            total,
+            "a key is declared in more than one group"
+        );
+    }
+
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() <= 1.0e-12 * b.abs().max(1.0)
+    }
+
+    fn ev(x: f64) -> f64 {
+        x * dwconsts::EV_TO_HA
+    }
+
+    type KeyCase = (&'static str, &'static str, fn(&Control) -> bool);
+
+    // One case per in.ctrl key: a non-default value and a check that the value
+    // reached the intended field (in stored units). The check must fail on the
+    // defaults, so a key routed to the wrong field is caught.
+    const KEY_CASES: &[KeyCase] = &[
+        ("task", "band", |c| c.get_task() == "band"),
+        ("restart", "true", |c| c.get_restart()),
+        ("symmetry", "true", |c| c.get_symmetry()),
+        ("random_seed", "42", |c| c.get_random_seed() == Some(42)),
+        ("kpoint_schedule", "dynamic", |c| {
+            c.get_kpoint_schedule_enum() == KPointScheduleScheme::Dynamic
+        }),
+        ("ecut_wfc", "500", |c| approx(c.get_ecut(), ev(500.0))),
+        ("ecut_rho", "3000", |c| approx(c.get_ecutrho(), ev(3000.0))),
+        ("nband", "13", |c| c.get_nband() == 13),
+        ("spin_scheme", "spin", |c| {
+            c.get_spin_scheme_enum() == SpinScheme::Spin
+        }),
+        ("xc_scheme", "pbe", |c| {
+            c.get_xc_scheme_enum() == XcScheme::Pbe
+        }),
+        ("pot_scheme", "upf-fr", |c| {
+            c.get_pot_scheme_enum() == PotScheme::UpfFr
+        }),
+        ("kpts_scheme", "kline", |c| {
+            c.get_kpts_scheme_enum() == KptsScheme::Kline
+        }),
+        ("smearing_scheme", "fd", |c| {
+            c.get_smearing_scheme_enum() == SmearingScheme::Fd
+        }),
+        ("temperature", "300", |c| approx(c.get_temperature(), 300.0)),
+        ("occ_inversion", "0.5", |c| {
+            approx(c.get_occ_inversion(), 0.5)
+        }),
+        ("scf_harris", "true", |c| c.is_scf_harris()),
+        ("scf_min_iter", "3", |c| c.get_scf_min_iter() == 3),
+        ("scf_max_iter", "77", |c| c.get_scf_max_iter() == 77),
+        ("scf_max_iter_rand_wfc", "3", |c| {
+            c.get_scf_max_iter_rand_wfc() == 3
+        }),
+        ("scf_max_iter_wfc", "7", |c| c.get_scf_max_iter_wfc() == 7),
+        ("rho_epsilon", "1e-7", |c| {
+            approx(c.get_rho_epsilon(), 1.0e-7)
+        }),
+        ("energy_epsilon", "1e-4", |c| {
+            approx(c.get_energy_epsilon(), ev(1.0e-4))
+        }),
+        ("eigval_epsilon", "1e-3", |c| {
+            approx(c.get_eigval_epsilon(), ev(1.0e-3))
+        }),
+        ("eigval_same_epsilon", "true", |c| {
+            c.scf().eigval_same_epsilon
+        }),
+        ("eigen_solver", "lobpcg", |c| {
+            c.get_eigen_solver_enum() == EigenSolverScheme::Lobpcg
+        }),
+        ("davidson_ndim", "9", |c| c.get_davidson_ndim() == 9),
+        ("scf_rho_mix_scheme", "broyden", |c| {
+            c.mixing().scheme == MixingScheme::Broyden
+        }),
+        ("scf_rho_mix_alpha", "0.3", |c| {
+            approx(c.get_scf_rho_mix_alpha(), 0.3)
+        }),
+        ("scf_rho_mix_beta", "0.9", |c| {
+            approx(c.get_scf_rho_mix_beta(), 0.9)
+        }),
+        ("scf_rho_mix_history_steps", "9", |c| {
+            c.get_scf_rho_mix_history_steps() == 9
+        }),
+        ("scf_rho_mix_pulay_metric_weight", "5", |c| {
+            approx(c.get_scf_rho_mix_pulay_metric_weight(), 5.0)
+        }),
+        ("geom_optim_cell", "true", |c| c.get_geom_optim_cell()),
+        ("geom_optim_scheme", "diis", |c| {
+            c.get_geom_optim_scheme() == "diis"
+        }),
+        ("geom_optim_max_steps", "9", |c| {
+            c.get_geom_optim_max_steps() == 9
+        }),
+        ("geom_optim_history_steps", "7", |c| {
+            c.get_geom_optim_history_steps() == 7
+        }),
+        ("geom_optim_alpha", "0.3", |c| {
+            approx(c.get_geom_optim_alpha(), 0.3)
+        }),
+        ("geom_optim_force_tolerance", "0.02", |c| {
+            approx(c.get_geom_optim_force_tolerance(), 0.02)
+        }),
+        ("geom_optim_stress_tolerance", "0.07", |c| {
+            approx(c.get_geom_optim_stress_tolerance(), 0.07)
+        }),
+        ("fft_threads", "4", |c| c.get_fft_threads() == 4),
+        ("fft_planner", "measure", |c| {
+            c.get_fft_planner_enum() == FftPlannerScheme::Measure
+        }),
+        ("fft_wisdom_file", "w.wis", |c| {
+            c.get_fft_wisdom_file() == "w.wis"
+        }),
+        ("surface_dipole_correction", "true", |c| {
+            c.get_surface_dipole_correction()
+        }),
+        ("electric_field_2d", "0.25", |c| {
+            approx(c.get_electric_field_2d_vang(), 0.25)
+        }),
+        ("electric_field_axis", "a", |c| {
+            c.get_electric_field_axis_enum() == ElectricFieldAxis::A
+        }),
+        ("electric_field_origin_frac", "0.2", |c| {
+            approx(c.get_electric_field_origin_frac(), 0.2)
+        }),
+        ("verbosity", "debug", |c| {
+            c.get_verbosity_enum() == VerbosityLevel::Debug
+        }),
+        ("scf_log_format", "csv", |c| {
+            c.get_scf_log_format_enum() == ScfLogFormat::Csv
+        }),
+        ("scf_log_file", "x.log", |c| c.get_scf_log_file() == "x.log"),
+        ("save_rho", "false", |c| !c.get_save_rho()),
+        ("save_wfc", "false", |c| !c.get_save_wfc()),
+        ("output_atomic_density", "true", |c| {
+            c.get_output_atomic_density()
+        }),
+        ("provenance_manifest", "p.json", |c| {
+            c.get_provenance_manifest() == "p.json"
+        }),
+        ("provenance_check", "true", |c| c.get_provenance_check()),
+        ("dos_scheme", "lorentz", |c| c.get_dos_scheme() == "lorentz"),
+        ("dos_sigma", "0.05", |c| approx(c.get_dos_sigma(), ev(0.05))),
+        ("dos_ne", "123", |c| c.get_dos_ne() == 123),
+        ("wannier90_export", "true", |c| c.get_wannier90_export()),
+        ("wannier90_seedname", "si", |c| {
+            c.get_wannier90_seedname() == "si"
+        }),
+        ("wannier90_num_wann", "5", |c| {
+            c.get_wannier90_num_wann() == 5
+        }),
+        ("wannier90_num_iter", "50", |c| {
+            c.get_wannier90_num_iter() == 50
+        }),
+        ("hubbard_u_enabled", "true", |c| c.get_hubbard_u_enabled()),
+        ("hubbard_species", "Ni", |c| c.get_hubbard_species() == "Ni"),
+        ("hubbard_l", "2", |c| c.get_hubbard_l() == 2),
+        ("hubbard_u", "5", |c| approx(c.get_hubbard_u(), ev(5.0))),
+        ("hubbard_j", "1", |c| approx(c.get_hubbard_j(), ev(1.0))),
+        ("hse06_alpha", "0.3", |c| approx(c.get_hse06_alpha(), 0.3)),
+        ("hse06_omega", "0.2", |c| approx(c.get_hse06_omega(), 0.2)),
+        ("vdw_correction", "true", |c| c.get_vdw_correction()),
+        ("vdw_damping", "zero", |c| c.get_vdw_damping() == "zero"),
+    ];
+
+    #[test]
+    fn test_key_cases_cover_every_known_key() {
+        let mut covered: Vec<&str> = KEY_CASES.iter().map(|(key, _, _)| *key).collect();
+        covered.sort_unstable();
+        let mut known: Vec<&str> = Control::known_keys().collect();
+        known.sort_unstable();
+        assert_eq!(covered, known, "add a KEY_CASES entry for each new key");
+    }
+
+    #[test]
+    fn test_every_key_round_trips_to_its_field() {
+        let defaults = Control::new();
+        for (key, value, check) in KEY_CASES {
+            assert!(
+                !check(&defaults),
+                "case for '{}' must use a non-default value",
+                key
+            );
+
+            let mut control = Control::new();
+            control
+                .set_key(key, value)
+                .unwrap_or_else(|| panic!("key '{}' is not routed", key))
+                .unwrap_or_else(|err| panic!("key '{}' rejected '{}': {}", key, value, err));
+            assert!(check(&control), "key '{}' did not reach its field", key);
+        }
+        assert!(Control::new().set_key("not_a_key", "1").is_none());
+    }
+
+    #[test]
+    fn test_ecut_rho_defaults_to_four_times_ecut_wfc() {
+        let control = parse_control(&["ecut_wfc = 500"]).unwrap();
+        assert!(approx(control.get_ecutrho(), 4.0 * control.get_ecut()));
+        assert!(approx(
+            Control::new().get_ecutrho(),
+            4.0 * Control::new().get_ecut()
+        ));
+
+        // An explicit ecut_rho wins regardless of line order.
+        for lines in [
+            ["ecut_rho = 3000", "ecut_wfc = 500"],
+            ["ecut_wfc = 500", "ecut_rho = 3000"],
+        ]
+        .iter()
+        {
+            let control = parse_control(lines).unwrap();
+            assert!(approx(control.get_ecutrho(), ev(3000.0)));
+        }
+    }
+
+    #[test]
+    fn test_wannier90_num_wann_defaults_to_nband() {
+        assert_eq!(
+            parse_control(&["nband = 12"])
+                .unwrap()
+                .get_wannier90_num_wann(),
+            12
+        );
+        let explicit = parse_control(&["nband = 12", "wannier90_num_wann = 5"]).unwrap();
+        assert_eq!(explicit.get_wannier90_num_wann(), 5);
+        let err = parse_control(&[
+            "nband = 4",
+            "wannier90_export = true",
+            "wannier90_num_wann = 8",
+        ])
+        .unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("wannier90_num_wann"));
+    }
+
+    #[test]
+    fn test_dos_sigma_default_is_one_tenth_ev() {
+        let sigma_ev = Control::new().get_dos_sigma() * dwconsts::HA_TO_EV;
+        assert!(approx(sigma_ev, 0.1));
+    }
+
+    #[test]
+    fn test_new_matches_parsed_defaults() {
+        let parsed = parse_control(&[]).unwrap();
+        assert_eq!(Control::new(), parsed);
+    }
+
+    #[test]
+    fn test_reparse_resets_previous_values() {
+        let mut control = Control::new();
+        let first: Vec<String> = [
+            "nband = 12",
+            "symmetry = true",
+            "temperature = 300",
+            "scf_rho_mix_alpha = 0.3",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        control.try_read_lines(&first).unwrap();
+        control.try_read_lines(&[]).unwrap();
+        assert_eq!(control, Control::new());
+    }
+
+    #[test]
+    fn test_grouped_accessors_expose_parsed_values() {
+        let control = parse_control(&[
+            "scf_rho_mix_scheme = broyden",
+            "scf_rho_mix_alpha = 0.3",
+            "scf_rho_mix_history_steps = 8",
+            "hubbard_u = 5.0",
+            "hubbard_j = 1.0",
+        ])
+        .unwrap();
+        assert_eq!(control.mixing().scheme, MixingScheme::Broyden);
+        assert!((control.mixing().alpha - 0.3).abs() < 1.0e-12);
+        assert_eq!(control.mixing().history_steps, 8);
+        assert!((control.hubbard().u_eff() * dwconsts::HA_TO_EV - 4.0).abs() < 1.0e-12);
+        assert_eq!(control.get_scf_rho_mix_alpha(), control.mixing().alpha);
+    }
+
+    #[test]
+    fn test_parser_rejects_unknown_mixing_scheme() {
+        let err = parse_control(&["scf_rho_mix_scheme = broydn"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
+        assert!(err.message.contains("expected one of: pulay, broyden"));
+
+        // "simple" was an undocumented alias for Pulay and is now rejected.
+        let err = parse_control(&["scf_rho_mix_scheme = simple"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
+
+        // The deprecated alias goes through the same validation.
+        let err = parse_control(&["mixing_scheme = anderson"]).unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("scf_rho_mix_scheme"));
+    }
+
+    #[test]
+    fn test_parser_accepts_mixing_scheme_case_insensitively() {
+        let control = parse_control(&["scf_rho_mix_scheme = Broyden"]).unwrap();
+        assert_eq!(control.mixing().scheme, MixingScheme::Broyden);
+        assert_eq!(control.get_scf_rho_mix_scheme(), MixingScheme::Broyden);
+    }
+
+    #[test]
+    fn test_mixing_scheme_names_round_trip() {
+        for scheme in MixingScheme::ALL {
+            // A new variant must be added here (compile error) and to ALL.
+            match scheme {
+                MixingScheme::Pulay | MixingScheme::Broyden => {}
+            }
+            assert_eq!(MixingScheme::parse(scheme.as_str()), Some(*scheme));
+            assert!(MixingScheme::accepted_values().contains(scheme.as_str()));
+        }
+        // "simple" used to be an undocumented alias for Pulay; it is no longer accepted.
+        assert_eq!(MixingScheme::parse("simple"), None);
+        assert_eq!(
+            parse_control(&[]).unwrap().get_scf_rho_mix_scheme(),
+            MixingScheme::Pulay
+        );
+    }
+
+    #[test]
+    fn test_mixing_scheme_error_lists_every_accepted_name() {
+        let err = parse_control(&["scf_rho_mix_scheme = linear"]).unwrap_err();
+        for name in MixingScheme::accepted_values().split(", ") {
+            assert!(MixingScheme::parse(name).is_some());
+            assert!(err.message.contains(name), "message omits '{}'", name);
+        }
     }
 }

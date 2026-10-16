@@ -645,6 +645,19 @@ which will give the following output:
    peak_live_bytes             : 38845753 (37.046 MiB)
 ```
 
+# `in.ctrl` parameter notes
+
+- `scf_rho_mix_scheme` accepts `pulay` (default) or `broyden`. The former name
+  `simple` is no longer accepted; it always selected Pulay, so replace it with
+  `pulay`. Unknown values are rejected when `in.ctrl` is read.
+- `scf_rho_mix_alpha` is the weight of the new output density:
+  `rho_next = (1 - alpha) * rho_in + alpha * rho_out` (default `0.7`).
+- `scf_rho_mix_beta` is parsed but currently has no effect; Kerker
+  preconditioning is not implemented.
+- `dos_sigma` is given in eV and defaults to `0.1` eV. Earlier versions
+  defaulted to 0.1 Ha (about 2.72 eV) when the key was omitted, which widened
+  the Wannier90 DOS broadening; set `dos_sigma = 2.72` to reproduce old output.
+
 # Runtime capability matrix (`pw`)
 
 Unsupported mode combinations are rejected during input validation/preflight with actionable
