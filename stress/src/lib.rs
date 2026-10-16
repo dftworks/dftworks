@@ -796,6 +796,7 @@ pub fn display_stress_by_parts(
 }
 
 pub fn vdw(control: &control::Control, crystal: &Crystal, stress_vdw: &mut Matrix<f64>) {
+    use control::VdwDampingScheme;
     use vdw::{VdwCorrection, VdwDamping, VdwMethod};
 
     stress_vdw.set_zeros();
@@ -805,9 +806,8 @@ pub fn vdw(control: &control::Control, crystal: &Crystal, stress_vdw: &mut Matri
     }
 
     let damping = match control.get_vdw_damping() {
-        "zero" => VdwDamping::Zero,
-        "bj" => VdwDamping::BJ,
-        _ => VdwDamping::BJ,
+        VdwDampingScheme::Zero => VdwDamping::Zero,
+        VdwDampingScheme::Bj => VdwDamping::BJ,
     };
 
     let xc_scheme = control.get_xc_scheme();

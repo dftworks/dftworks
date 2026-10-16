@@ -405,7 +405,7 @@ fn estimate_case(options: &CliOptions) -> Result<EstimateReport, EstimateError> 
 
         Ok(EstimateReport {
             case_dir: case_dir.display().to_string(),
-            task: control.get_task().to_string(),
+            task: control.get_task().as_str().to_string(),
             spin_scheme,
             kpoint_schedule_mode,
             mpi_world_size,

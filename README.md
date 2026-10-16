@@ -657,20 +657,30 @@ which will give the following output:
 - `dos_sigma` is given in eV and defaults to `0.1` eV. Earlier versions
   defaulted to 0.1 Ha (about 2.72 eV) when the key was omitted, which widened
   the Wannier90 DOS broadening; set `dos_sigma = 2.72` to reproduce old output.
+- Every option that takes a name (`task`, `spin_scheme`, `xc_scheme`,
+  `eigen_solver`, `geom_optim_scheme`, `dos_scheme`, `vdw_damping`, ...) is
+  checked when `in.ctrl` is read; an unknown value is an error that lists the
+  accepted names and aliases. Matching ignores case.
+- `task` accepts `scf` (default) or `band`. Both currently run the same SCF
+  path; band-structure runs are driven by `kpts_scheme = kline` with an
+  `in.kline` file (as `dwf run bands` does).
+- `eigen_solver` accepts `pcg` (default) or `lobpcg`. The names `sd`, `psd`,
+  `cg`, `arpack` and `davidson` were never implemented and are no longer
+  accepted.
+- `geom_optim_scheme` accepts `bfgs` (default) or `diis`; `dos_scheme` accepts
+  `gauss`; `vdw_damping` accepts `bj` (default) or `zero`.
 
 # Runtime capability matrix (`pw`)
 
 Unsupported mode combinations are rejected during input validation/preflight with actionable
-errors (instead of reaching late runtime panics).
+errors (instead of reaching late runtime panics). Options that take a name only accept
+implemented values, so unknown or unimplemented names fail when `in.ctrl` is read.
 
-Current supported core combinations:
+Values that parse but are not runnable yet:
 
 | Axis | Supported values |
 | --- | --- |
-| `task` | `scf`, `band` |
-| `spin_scheme` | `nonspin`, `spin` |
-| `xc_scheme` | `lda-pz`, `lsda-pz`, `pbe`, `hse06` |
-| `eigen_solver` | `pcg` |
+| `spin_scheme` | `nonspin`, `spin` (`ncl` is parsed but rejected) |
 | `restart=true` | `spin_scheme=nonspin` or `spin_scheme=spin` |
 
 Additional runtime constraint:

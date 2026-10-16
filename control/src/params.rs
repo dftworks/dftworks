@@ -103,10 +103,6 @@ pub(crate) fn parse_string(value: &str) -> Result<String, String> {
     Ok(value.trim().to_string())
 }
 
-pub(crate) fn parse_lowercase(value: &str) -> Result<String, String> {
-    Ok(value.trim().to_lowercase())
-}
-
 /// `none`/`auto`/`unset` mean "no fixed seed".
 pub(crate) fn parse_optional_seed(value: &str) -> Result<Option<u64>, String> {
     let raw = value.trim();
@@ -121,9 +117,9 @@ pub(crate) fn parse_optional_seed(value: &str) -> Result<Option<u64>, String> {
         .map_err(|_| "expected a non-negative 64-bit integer".to_string())
 }
 
-/// Turns an enum's `parse` result into a parser error listing the accepted values.
-fn expect_one_of<T>(parsed: Option<T>, accepted: &str) -> Result<T, String> {
-    parsed.ok_or_else(|| format!("expected one of: {}", accepted))
+/// Parses an enumerated value; the error lists every accepted spelling.
+pub(crate) fn parse_scheme<T: SchemeEnum>(value: &str) -> Result<T, String> {
+    T::parse(value).ok_or_else(|| format!("expected one of: {}", T::accepted_values()))
 }
 
 // ---- groups --------------------------------------------------------------
@@ -131,12 +127,11 @@ fn expect_one_of<T>(parsed: Option<T>, accepted: &str) -> Result<T, String> {
 param_group! {
     /// Run mode and global switches.
     pub struct RunParams {
-        "task" => task: String = "scf".to_string(), parse_lowercase;
+        "task" => task: Task = Task::default(), parse_scheme::<Task>;
         "restart" => restart: bool = false, parse_bool;
         "symmetry" => symmetry: bool = false, parse_bool;
         "random_seed" => random_seed: Option<u64> = None, parse_optional_seed;
-        "kpoint_schedule" => kpoint_schedule: KPointScheduleScheme = KPointScheduleScheme::CostAware,
-            |v| expect_one_of(KPointScheduleScheme::parse(v), "contiguous, cost_aware (alias: cost-aware), dynamic");
+        "kpoint_schedule" => kpoint_schedule: KPointScheduleScheme = KPointScheduleScheme::default(), parse_scheme::<KPointScheduleScheme>;
     }
 }
 
@@ -161,16 +156,11 @@ impl BasisParams {
 param_group! {
     /// Physical model: spin treatment, functional, pseudopotentials, k-points, occupations.
     pub struct ModelParams {
-        "spin_scheme" => spin_scheme: SpinScheme = SpinScheme::NonSpin,
-            |v| expect_one_of(SpinScheme::parse(v), "nonspin, spin, ncl");
-        "xc_scheme" => xc_scheme: XcScheme = XcScheme::LdaPz,
-            |v| expect_one_of(XcScheme::parse(v), "lda-pz, lsda-pz, pbe, hse06");
-        "pot_scheme" => pot_scheme: PotScheme = PotScheme::Upf,
-            |v| expect_one_of(PotScheme::parse(v), "upf, upf-fr");
-        "kpts_scheme" => kpts_scheme: KptsScheme = KptsScheme::Kmesh,
-            |v| expect_one_of(KptsScheme::parse(v), "kmesh, kline");
-        "smearing_scheme" => smearing_scheme: SmearingScheme = SmearingScheme::Mp2,
-            |v| expect_one_of(SmearingScheme::parse(v), "fd, gs, mp1, mp2, mv (aliases: cold, marzari-vanderbilt)");
+        "spin_scheme" => spin_scheme: SpinScheme = SpinScheme::default(), parse_scheme::<SpinScheme>;
+        "xc_scheme" => xc_scheme: XcScheme = XcScheme::default(), parse_scheme::<XcScheme>;
+        "pot_scheme" => pot_scheme: PotScheme = PotScheme::default(), parse_scheme::<PotScheme>;
+        "kpts_scheme" => kpts_scheme: KptsScheme = KptsScheme::default(), parse_scheme::<KptsScheme>;
+        "smearing_scheme" => smearing_scheme: SmearingScheme = SmearingScheme::default(), parse_scheme::<SmearingScheme>;
         "temperature" => temperature: f64 = 0.0, parse_f64;
         "occ_inversion" => occ_inversion: f64 = 0.0, parse_f64;
     }
@@ -190,8 +180,7 @@ param_group! {
         /// Input in eV, stored in Hartree.
         "eigval_epsilon" => eigval_epsilon: f64 = 1.0E-6, parse_ev_as_ha;
         "eigval_same_epsilon" => eigval_same_epsilon: bool = false, parse_bool;
-        "eigen_solver" => eigen_solver: EigenSolverScheme = EigenSolverScheme::Pcg,
-            |v| expect_one_of(EigenSolverScheme::parse(v), "sd, psd, cg, pcg, lobpcg, arpack, davidson");
+        "eigen_solver" => eigen_solver: EigenSolverScheme = EigenSolverScheme::default(), parse_scheme::<EigenSolverScheme>;
         "davidson_ndim" => davidson_ndim: usize = 6, parse_usize;
     }
 }
@@ -200,9 +189,7 @@ param_group! {
     /// Density mixing.
     pub struct MixingParams {
         /// `pulay` (default) or `broyden`.
-        "scf_rho_mix_scheme" => scheme: MixingScheme = MixingScheme::Pulay,
-            |v| MixingScheme::parse(v)
-                .ok_or_else(|| format!("expected one of: {}", MixingScheme::accepted_values()));
+        "scf_rho_mix_scheme" => scheme: MixingScheme = MixingScheme::default(), parse_scheme::<MixingScheme>;
         /// Weight of the new output density: rho_next = (1-alpha)*rho_in + alpha*rho_out
         /// (the mixers apply rho_in + alpha*(rho_out - rho_in)).
         "scf_rho_mix_alpha" => alpha: f64 = 0.7, parse_f64;
@@ -218,7 +205,7 @@ param_group! {
     /// Geometry optimization.
     pub struct GeomOptParams {
         "geom_optim_cell" => cell: bool = false, parse_bool;
-        "geom_optim_scheme" => scheme: String = "bfgs".to_string(), parse_string;
+        "geom_optim_scheme" => scheme: GeomOptScheme = GeomOptScheme::default(), parse_scheme::<GeomOptScheme>;
         "geom_optim_max_steps" => max_steps: usize = 1, parse_usize;
         "geom_optim_history_steps" => history_steps: usize = 4, parse_usize;
         "geom_optim_alpha" => alpha: f64 = 0.8, parse_f64;
@@ -233,8 +220,7 @@ param_group! {
     /// FFT backend policy.
     pub struct FftParams {
         "fft_threads" => threads: usize = 1, parse_usize;
-        "fft_planner" => planner: FftPlannerScheme = FftPlannerScheme::Estimate,
-            |v| expect_one_of(FftPlannerScheme::parse(v), "estimate, measure");
+        "fft_planner" => planner: FftPlannerScheme = FftPlannerScheme::default(), parse_scheme::<FftPlannerScheme>;
         "fft_wisdom_file" => wisdom_file: String = String::new(), parse_string;
     }
 }
@@ -246,8 +232,7 @@ param_group! {
         /// Input in V/Ang, stored in Ha/bohr.
         "electric_field_2d" => electric_field_2d: f64 = 0.0,
             |v| Ok(parse_f64(v)? * ELECTRIC_FIELD_VANG_TO_AU);
-        "electric_field_axis" => electric_field_axis: ElectricFieldAxis = ElectricFieldAxis::C,
-            |v| expect_one_of(ElectricFieldAxis::parse(v), "a, b, c (aliases: x,y,z or 1,2,3)");
+        "electric_field_axis" => electric_field_axis: ElectricFieldAxis = ElectricFieldAxis::default(), parse_scheme::<ElectricFieldAxis>;
         "electric_field_origin_frac" => electric_field_origin_frac: f64 = 0.5, parse_f64;
     }
 }
@@ -255,10 +240,8 @@ param_group! {
 param_group! {
     /// Logging, checkpoints, and provenance.
     pub struct OutputParams {
-        "verbosity" => verbosity: VerbosityLevel = VerbosityLevel::Normal,
-            |v| expect_one_of(VerbosityLevel::parse(v), "quiet, normal, verbose, debug");
-        "scf_log_format" => scf_log_format: ScfLogFormat = ScfLogFormat::None,
-            |v| expect_one_of(ScfLogFormat::parse(v), "none, jsonl, csv");
+        "verbosity" => verbosity: VerbosityLevel = VerbosityLevel::default(), parse_scheme::<VerbosityLevel>;
+        "scf_log_format" => scf_log_format: ScfLogFormat = ScfLogFormat::default(), parse_scheme::<ScfLogFormat>;
         "scf_log_file" => scf_log_file: String = "out.scf.iter.jsonl".to_string(), parse_string;
         "save_rho" => save_rho: bool = true, parse_bool;
         "save_wfc" => save_wfc: bool = true, parse_bool;
@@ -271,7 +254,7 @@ param_group! {
 param_group! {
     /// Density of states.
     pub struct DosParams {
-        "dos_scheme" => scheme: String = "gauss".to_string(), parse_string;
+        "dos_scheme" => scheme: DosScheme = DosScheme::default(), parse_scheme::<DosScheme>;
         /// Input in eV, stored in Hartree. Default 0.1 eV.
         "dos_sigma" => sigma: f64 = 0.1 * EV_TO_HA, parse_ev_as_ha;
         "dos_ne" => ne: usize = 500, parse_usize;
@@ -328,14 +311,6 @@ param_group! {
     /// DFT-D van der Waals correction.
     pub struct VdwParams {
         "vdw_correction" => correction: bool = false, parse_bool;
-        "vdw_damping" => damping: String = "bj".to_string(),
-            |v: &str| {
-                let damping = v.trim().to_lowercase();
-                if damping == "zero" || damping == "bj" {
-                    Ok(damping)
-                } else {
-                    Err("expected one of: zero, bj".to_string())
-                }
-            };
+        "vdw_damping" => damping: VdwDampingScheme = VdwDampingScheme::default(), parse_scheme::<VdwDampingScheme>;
     }
 }

@@ -190,6 +190,11 @@ New canonical refactoring items are added below to unblock future feature expans
 - [x] `scf_rho_mix_scheme` is validated at parse time (`pulay`, `broyden`); the `simple` name is removed
 - [x] `dos_sigma` default fixed to 0.1 eV (was 0.1 Ha)
 
+**Implementation Update (2026-10-16, #27)**
+- [x] `scheme_enum!` (`control/src/schemes.rs`) generates every enumerated in.ctrl value from one name table: `as_str`, `parse`, `ALL`, `Default`, `Display` and the accepted-values error message
+- [x] `task`, `geom_optim_scheme`, `dos_scheme` and `vdw_damping` are typed enums validated at parse time; consumers match exhaustively (no runtime panic or silent fallback)
+- [x] `eigen_solver` lists only implemented solvers (`pcg`, `lobpcg`); capability matrix keeps only `ncl`/restart checks
+
 **Acceptance Criteria**
 - `Control` loading has no `process::exit` and no parsing `unwrap()` in normal flow
 - Input error messages include key name and line number

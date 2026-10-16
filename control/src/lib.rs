@@ -8,427 +8,9 @@ use std::{
 };
 
 mod params;
+mod schemes;
 pub use params::*;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpinScheme {
-    NonSpin,
-    Spin,
-    Ncl,
-}
-
-impl Default for SpinScheme {
-    fn default() -> Self {
-        SpinScheme::NonSpin
-    }
-}
-
-impl SpinScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SpinScheme::NonSpin => "nonspin",
-            SpinScheme::Spin => "spin",
-            SpinScheme::Ncl => "ncl",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "nonspin" => Some(SpinScheme::NonSpin),
-            "spin" => Some(SpinScheme::Spin),
-            "ncl" => Some(SpinScheme::Ncl),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum VerbosityLevel {
-    Quiet,
-    Normal,
-    Verbose,
-    Debug,
-}
-
-impl Default for VerbosityLevel {
-    fn default() -> Self {
-        VerbosityLevel::Normal
-    }
-}
-
-impl VerbosityLevel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            VerbosityLevel::Quiet => "quiet",
-            VerbosityLevel::Normal => "normal",
-            VerbosityLevel::Verbose => "verbose",
-            VerbosityLevel::Debug => "debug",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "quiet" => Some(VerbosityLevel::Quiet),
-            "normal" | "medium" => Some(VerbosityLevel::Normal),
-            "verbose" | "high" => Some(VerbosityLevel::Verbose),
-            "debug" => Some(VerbosityLevel::Debug),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum XcScheme {
-    LdaPz,
-    LsdaPz,
-    Pbe,
-    Hse06,
-}
-
-impl Default for XcScheme {
-    fn default() -> Self {
-        XcScheme::LdaPz
-    }
-}
-
-impl XcScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            XcScheme::LdaPz => "lda-pz",
-            XcScheme::LsdaPz => "lsda-pz",
-            XcScheme::Pbe => "pbe",
-            XcScheme::Hse06 => "hse06",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "lda-pz" => Some(XcScheme::LdaPz),
-            "lsda-pz" => Some(XcScheme::LsdaPz),
-            "pbe" => Some(XcScheme::Pbe),
-            "hse06" => Some(XcScheme::Hse06),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SmearingScheme {
-    Fd,
-    Gs,
-    Mp1,
-    Mp2,
-    Mv,
-}
-
-impl Default for SmearingScheme {
-    fn default() -> Self {
-        SmearingScheme::Mp2
-    }
-}
-
-impl SmearingScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SmearingScheme::Fd => "fd",
-            SmearingScheme::Gs => "gs",
-            SmearingScheme::Mp1 => "mp1",
-            SmearingScheme::Mp2 => "mp2",
-            SmearingScheme::Mv => "mv",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "fd" => Some(SmearingScheme::Fd),
-            "gs" => Some(SmearingScheme::Gs),
-            "mp1" => Some(SmearingScheme::Mp1),
-            "mp2" => Some(SmearingScheme::Mp2),
-            "mv" | "cold" | "marzari-vanderbilt" | "marzari_vanderbilt" => Some(SmearingScheme::Mv),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EigenSolverScheme {
-    Sd,
-    Psd,
-    Cg,
-    Pcg,
-    Lobpcg,
-    Arpack,
-    Davidson,
-}
-
-impl Default for EigenSolverScheme {
-    fn default() -> Self {
-        EigenSolverScheme::Pcg
-    }
-}
-
-impl EigenSolverScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            EigenSolverScheme::Sd => "sd",
-            EigenSolverScheme::Psd => "psd",
-            EigenSolverScheme::Cg => "cg",
-            EigenSolverScheme::Pcg => "pcg",
-            EigenSolverScheme::Lobpcg => "lobpcg",
-            EigenSolverScheme::Arpack => "arpack",
-            EigenSolverScheme::Davidson => "davidson",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "sd" => Some(EigenSolverScheme::Sd),
-            "psd" => Some(EigenSolverScheme::Psd),
-            "cg" => Some(EigenSolverScheme::Cg),
-            "pcg" => Some(EigenSolverScheme::Pcg),
-            "lobpcg" => Some(EigenSolverScheme::Lobpcg),
-            "arpack" => Some(EigenSolverScheme::Arpack),
-            "davidson" => Some(EigenSolverScheme::Davidson),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PotScheme {
-    Upf,
-    UpfFr,
-}
-
-impl Default for PotScheme {
-    fn default() -> Self {
-        PotScheme::Upf
-    }
-}
-
-impl PotScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PotScheme::Upf => "upf",
-            PotScheme::UpfFr => "upf-fr",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "upf" => Some(PotScheme::Upf),
-            "upf-fr" => Some(PotScheme::UpfFr),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KptsScheme {
-    Kmesh,
-    Kline,
-}
-
-impl Default for KptsScheme {
-    fn default() -> Self {
-        KptsScheme::Kmesh
-    }
-}
-
-impl KptsScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            KptsScheme::Kmesh => "kmesh",
-            KptsScheme::Kline => "kline",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "kmesh" => Some(KptsScheme::Kmesh),
-            "kline" => Some(KptsScheme::Kline),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MixingScheme {
-    Pulay,
-    Broyden,
-}
-
-impl Default for MixingScheme {
-    fn default() -> Self {
-        MixingScheme::Pulay
-    }
-}
-
-impl MixingScheme {
-    pub const ALL: &'static [MixingScheme] = &[MixingScheme::Pulay, MixingScheme::Broyden];
-
-    // Accepted in.ctrl spellings; both `parse` and the error message use this table.
-    const NAMES: &'static [(&'static str, MixingScheme)] = &[
-        ("pulay", MixingScheme::Pulay),
-        ("broyden", MixingScheme::Broyden),
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            MixingScheme::Pulay => "pulay",
-            MixingScheme::Broyden => "broyden",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        let s = s.trim().to_lowercase();
-        Self::NAMES
-            .iter()
-            .find(|(name, _)| *name == s)
-            .map(|(_, scheme)| *scheme)
-    }
-
-    /// Comma-separated accepted spellings, for error messages.
-    pub fn accepted_values() -> String {
-        Self::NAMES
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FftPlannerScheme {
-    Estimate,
-    Measure,
-}
-
-impl Default for FftPlannerScheme {
-    fn default() -> Self {
-        FftPlannerScheme::Estimate
-    }
-}
-
-impl FftPlannerScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            FftPlannerScheme::Estimate => "estimate",
-            FftPlannerScheme::Measure => "measure",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "estimate" => Some(FftPlannerScheme::Estimate),
-            "measure" => Some(FftPlannerScheme::Measure),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScfLogFormat {
-    None,
-    Jsonl,
-    Csv,
-}
-
-impl Default for ScfLogFormat {
-    fn default() -> Self {
-        ScfLogFormat::None
-    }
-}
-
-impl ScfLogFormat {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ScfLogFormat::None => "none",
-            ScfLogFormat::Jsonl => "jsonl",
-            ScfLogFormat::Csv => "csv",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "none" => Some(ScfLogFormat::None),
-            "jsonl" => Some(ScfLogFormat::Jsonl),
-            "csv" => Some(ScfLogFormat::Csv),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ElectricFieldAxis {
-    A,
-    B,
-    C,
-}
-
-impl Default for ElectricFieldAxis {
-    fn default() -> Self {
-        ElectricFieldAxis::C
-    }
-}
-
-impl ElectricFieldAxis {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ElectricFieldAxis::A => "a",
-            ElectricFieldAxis::B => "b",
-            ElectricFieldAxis::C => "c",
-        }
-    }
-
-    pub fn axis_index(self) -> usize {
-        match self {
-            ElectricFieldAxis::A => 0,
-            ElectricFieldAxis::B => 1,
-            ElectricFieldAxis::C => 2,
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "a" | "x" | "1" => Some(ElectricFieldAxis::A),
-            "b" | "y" | "2" => Some(ElectricFieldAxis::B),
-            "c" | "z" | "3" => Some(ElectricFieldAxis::C),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KPointScheduleScheme {
-    Contiguous,
-    CostAware,
-    Dynamic,
-}
-
-impl Default for KPointScheduleScheme {
-    fn default() -> Self {
-        KPointScheduleScheme::CostAware
-    }
-}
-
-impl KPointScheduleScheme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            KPointScheduleScheme::Contiguous => "contiguous",
-            KPointScheduleScheme::CostAware => "cost_aware",
-            KPointScheduleScheme::Dynamic => "dynamic",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "contiguous" => Some(KPointScheduleScheme::Contiguous),
-            "cost_aware" | "cost-aware" | "costaware" => Some(KPointScheduleScheme::CostAware),
-            "dynamic" => Some(KPointScheduleScheme::Dynamic),
-            _ => None,
-        }
-    }
-}
+pub use schemes::*;
 
 /// Runtime/solver settings parsed from in.ctrl, with defaults.
 ///
@@ -453,68 +35,19 @@ pub struct Control {
     vdw: VdwParams,
 }
 
+// Values that parse but are not runnable yet. Everything else that parses is
+// supported, because the scheme enums only list implemented options.
 struct CapabilityMatrix {
-    tasks: &'static [&'static str],
     spin_schemes: &'static [SpinScheme],
-    xc_schemes: &'static [XcScheme],
-    eigen_solvers: &'static [EigenSolverScheme],
     restart_spin_schemes: &'static [SpinScheme],
 }
 
 const RUNTIME_CAPABILITY_MATRIX: CapabilityMatrix = CapabilityMatrix {
-    tasks: &["scf", "band"],
     spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
-    xc_schemes: &[
-        XcScheme::LdaPz,
-        XcScheme::LsdaPz,
-        XcScheme::Pbe,
-        XcScheme::Hse06,
-    ],
-    eigen_solvers: &[EigenSolverScheme::Pcg, EigenSolverScheme::Lobpcg],
     restart_spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
 };
 
-#[inline]
-fn contains_task(values: &[&str], value: &str) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-#[inline]
-fn contains_spin_scheme(values: &[SpinScheme], value: SpinScheme) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-#[inline]
-fn contains_xc_scheme(values: &[XcScheme], value: XcScheme) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-#[inline]
-fn contains_eigen_solver(values: &[EigenSolverScheme], value: EigenSolverScheme) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-fn join_supported_tasks(values: &[&str]) -> String {
-    values.join(", ")
-}
-
-fn join_supported_spin_schemes(values: &[SpinScheme]) -> String {
-    values
-        .iter()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn join_supported_xc_schemes(values: &[XcScheme]) -> String {
-    values
-        .iter()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn join_supported_eigen_schemes(values: &[EigenSolverScheme]) -> String {
+fn join_spin_schemes(values: &[SpinScheme]) -> String {
     values
         .iter()
         .map(|v| v.as_str())
@@ -726,8 +259,8 @@ impl Control {
         )
     }
 
-    pub fn get_dos_scheme(&self) -> &str {
-        &self.dos.scheme
+    pub fn get_dos_scheme(&self) -> DosScheme {
+        self.dos.scheme
     }
 
     pub fn get_dos_sigma(&self) -> f64 {
@@ -798,8 +331,8 @@ impl Control {
         self.geom_opt.cell
     }
 
-    pub fn get_geom_optim_scheme(&self) -> &str {
-        &self.geom_opt.scheme
+    pub fn get_geom_optim_scheme(&self) -> GeomOptScheme {
+        self.geom_opt.scheme
     }
 
     pub fn get_geom_optim_max_steps(&self) -> usize {
@@ -890,8 +423,8 @@ impl Control {
         self.model.spin_scheme
     }
 
-    pub fn get_task(&self) -> &str {
-        &self.run.task
+    pub fn get_task(&self) -> Task {
+        self.run.task
     }
 
     pub fn get_surface_dipole_correction(&self) -> bool {
@@ -968,21 +501,19 @@ impl Control {
 
     // the setting of task will override some parameters read from in.ctrl
 
-    pub fn set_task(&mut self, task: &str) {
-        self.run.task = task.to_string();
+    pub fn set_task(&mut self, task: Task) {
+        self.run.task = task;
 
         match task {
-            "scf" => {
+            Task::Scf => {
                 //self.run.restart = false;
             }
-            "band" => {
+            Task::Band => {
                 self.run.restart = true;
                 self.output.save_rho = false;
                 self.output.save_wfc = false;
                 //self.scf.max_iter = 1;
             }
-
-            _ => {}
         }
     }
 
@@ -1058,8 +589,8 @@ impl Control {
         self.vdw.correction
     }
 
-    pub fn get_vdw_damping(&self) -> &str {
-        &self.vdw.damping
+    pub fn get_vdw_damping(&self) -> VdwDampingScheme {
+        self.vdw.damping
     }
     pub fn read_file(&mut self, inpfile: &str) {
         if let Err(err) = self.try_read_file(inpfile) {
@@ -1215,60 +746,26 @@ impl Control {
 
     pub fn validate_capability_matrix(&self) -> Result<(), ControlError> {
         let matrix = &RUNTIME_CAPABILITY_MATRIX;
+        let spin_scheme = self.model.spin_scheme;
 
-        if !contains_task(matrix.tasks, self.run.task.as_str()) {
-            return Err(ControlError::validation(
-                "task",
-                format!(
-                    "unsupported task='{}'; supported: {}",
-                    self.run.task,
-                    join_supported_tasks(matrix.tasks)
-                ),
-            ));
-        }
-
-        if !contains_spin_scheme(matrix.spin_schemes, self.model.spin_scheme) {
+        if !matrix.spin_schemes.contains(&spin_scheme) {
             return Err(ControlError::validation(
                 "spin_scheme",
                 format!(
                     "spin_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
-                    self.model.spin_scheme.as_str(),
-                    join_supported_spin_schemes(matrix.spin_schemes)
+                    spin_scheme.as_str(),
+                    join_spin_schemes(matrix.spin_schemes)
                 ),
             ));
         }
 
-        if !contains_xc_scheme(matrix.xc_schemes, self.model.xc_scheme) {
-            return Err(ControlError::validation(
-                "xc_scheme",
-                format!(
-                    "xc_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
-                    self.model.xc_scheme.as_str(),
-                    join_supported_xc_schemes(matrix.xc_schemes)
-                ),
-            ));
-        }
-
-        if !contains_eigen_solver(matrix.eigen_solvers, self.scf.eigen_solver) {
-            return Err(ControlError::validation(
-                "eigen_solver",
-                format!(
-                    "eigen_solver='{}' is parsed but not implemented yet; supported: {}",
-                    self.scf.eigen_solver.as_str(),
-                    join_supported_eigen_schemes(matrix.eigen_solvers)
-                ),
-            ));
-        }
-
-        if self.run.restart
-            && !contains_spin_scheme(matrix.restart_spin_schemes, self.model.spin_scheme)
-        {
+        if self.run.restart && !matrix.restart_spin_schemes.contains(&spin_scheme) {
             return Err(ControlError::validation(
                 "restart/spin_scheme",
                 format!(
                     "restart=true is unsupported with spin_scheme='{}'; restart supports only {}",
-                    self.model.spin_scheme.as_str(),
-                    join_supported_spin_schemes(matrix.restart_spin_schemes)
+                    spin_scheme.as_str(),
+                    join_spin_schemes(matrix.restart_spin_schemes)
                 ),
             ));
         }
@@ -1757,9 +1254,9 @@ impl Control {
 #[cfg(test)]
 mod tests {
     use super::{
-        Control, ControlError, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
-        KPointScheduleScheme, KptsScheme, MixingScheme, PotScheme, ScfLogFormat, SmearingScheme,
-        SpinScheme, VerbosityLevel, XcScheme,
+        Control, ControlError, DosScheme, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
+        GeomOptScheme, KPointScheduleScheme, KptsScheme, MixingScheme, PotScheme, ScfLogFormat,
+        SchemeEnum, SmearingScheme, SpinScheme, Task, VdwDampingScheme, VerbosityLevel, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -1851,7 +1348,7 @@ mod tests {
     fn test_validation_rejects_unsupported_task_mode() {
         let err = parse_control(&["task = relax"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("task"));
-        assert!(err.message.contains("supported: scf, band"));
+        assert!(err.message.contains("expected one of: scf, band"));
     }
 
     #[test]
@@ -1926,10 +1423,13 @@ mod tests {
     }
 
     #[test]
-    fn test_validation_rejects_unimplemented_eigen_solver_modes() {
-        let err = parse_control(&["eigen_solver = davidson"]).unwrap_err();
-        assert_eq!(err.key.as_deref(), Some("eigen_solver"));
-        assert!(err.message.contains("not implemented yet"));
+    fn test_parser_rejects_unimplemented_eigen_solvers() {
+        for name in ["sd", "psd", "cg", "arpack", "davidson"].iter() {
+            let line = format!("eigen_solver = {}", name);
+            let err = parse_control(&[line.as_str()]).unwrap_err();
+            assert_eq!(err.key.as_deref(), Some("eigen_solver"));
+            assert!(err.message.contains("expected one of: pcg, lobpcg"));
+        }
     }
 
     #[test]
@@ -2040,14 +1540,14 @@ mod tests {
     fn test_parser_accepts_vdw_correction_parameters() {
         let control = parse_control(&["vdw_correction = true", "vdw_damping = zero"]).unwrap();
         assert!(control.get_vdw_correction());
-        assert_eq!(control.get_vdw_damping(), "zero");
+        assert_eq!(control.get_vdw_damping(), VdwDampingScheme::Zero);
     }
 
     #[test]
     fn test_parser_uses_vdw_defaults() {
         let control = parse_control(&["nband = 10"]).unwrap();
         assert!(!control.get_vdw_correction());
-        assert_eq!(control.get_vdw_damping(), "bj");
+        assert_eq!(control.get_vdw_damping(), VdwDampingScheme::Bj);
     }
 
     #[test]
@@ -2161,11 +1661,13 @@ mod tests {
 
     type KeyCase = (&'static str, &'static str, fn(&Control) -> bool);
 
+    const SINGLE_VALUE_KEYS: &[&str] = &["dos_scheme"];
+
     // One case per in.ctrl key: a non-default value and a check that the value
     // reached the intended field (in stored units). The check must fail on the
     // defaults, so a key routed to the wrong field is caught.
     const KEY_CASES: &[KeyCase] = &[
-        ("task", "band", |c| c.get_task() == "band"),
+        ("task", "band", |c| c.get_task() == Task::Band),
         ("restart", "true", |c| c.get_restart()),
         ("symmetry", "true", |c| c.get_symmetry()),
         ("random_seed", "42", |c| c.get_random_seed() == Some(42)),
@@ -2234,7 +1736,7 @@ mod tests {
         }),
         ("geom_optim_cell", "true", |c| c.get_geom_optim_cell()),
         ("geom_optim_scheme", "diis", |c| {
-            c.get_geom_optim_scheme() == "diis"
+            c.get_geom_optim_scheme() == GeomOptScheme::Diis
         }),
         ("geom_optim_max_steps", "9", |c| {
             c.get_geom_optim_max_steps() == 9
@@ -2286,7 +1788,9 @@ mod tests {
             c.get_provenance_manifest() == "p.json"
         }),
         ("provenance_check", "true", |c| c.get_provenance_check()),
-        ("dos_scheme", "lorentz", |c| c.get_dos_scheme() == "lorentz"),
+        ("dos_scheme", "GAUSS", |c| {
+            c.get_dos_scheme() == DosScheme::Gauss
+        }),
         ("dos_sigma", "0.05", |c| approx(c.get_dos_sigma(), ev(0.05))),
         ("dos_ne", "123", |c| c.get_dos_ne() == 123),
         ("wannier90_export", "true", |c| c.get_wannier90_export()),
@@ -2307,7 +1811,9 @@ mod tests {
         ("hse06_alpha", "0.3", |c| approx(c.get_hse06_alpha(), 0.3)),
         ("hse06_omega", "0.2", |c| approx(c.get_hse06_omega(), 0.2)),
         ("vdw_correction", "true", |c| c.get_vdw_correction()),
-        ("vdw_damping", "zero", |c| c.get_vdw_damping() == "zero"),
+        ("vdw_damping", "zero", |c| {
+            c.get_vdw_damping() == VdwDampingScheme::Zero
+        }),
     ];
 
     #[test]
@@ -2323,11 +1829,14 @@ mod tests {
     fn test_every_key_round_trips_to_its_field() {
         let defaults = Control::new();
         for (key, value, check) in KEY_CASES {
-            assert!(
-                !check(&defaults),
-                "case for '{}' must use a non-default value",
-                key
-            );
+            // Keys whose enum has a single value cannot take a non-default value.
+            if !SINGLE_VALUE_KEYS.contains(key) {
+                assert!(
+                    !check(&defaults),
+                    "case for '{}' must use a non-default value",
+                    key
+                );
+            }
 
             let mut control = Control::new();
             control
@@ -2472,5 +1981,82 @@ mod tests {
             assert!(MixingScheme::parse(name).is_some());
             assert!(err.message.contains(name), "message omits '{}'", name);
         }
+    }
+
+    fn check_scheme_table<T: SchemeEnum + PartialEq + std::fmt::Debug + std::fmt::Display>() {
+        let accepted = T::accepted_values();
+        for variant in T::ALL {
+            let name = variant.as_str();
+            assert_eq!(
+                T::parse(name),
+                Some(*variant),
+                "'{}' does not round-trip",
+                name
+            );
+            assert_eq!(
+                T::parse(&format!(" {} ", name.to_uppercase())),
+                Some(*variant)
+            );
+            assert_eq!(variant.to_string(), name);
+            assert!(
+                accepted.contains(name),
+                "'{}' missing from '{}'",
+                name,
+                accepted
+            );
+        }
+        assert_eq!(T::parse("not-a-scheme"), None);
+    }
+
+    #[test]
+    fn test_every_scheme_enum_table_is_consistent() {
+        check_scheme_table::<Task>();
+        check_scheme_table::<SpinScheme>();
+        check_scheme_table::<VerbosityLevel>();
+        check_scheme_table::<XcScheme>();
+        check_scheme_table::<SmearingScheme>();
+        check_scheme_table::<EigenSolverScheme>();
+        check_scheme_table::<PotScheme>();
+        check_scheme_table::<KptsScheme>();
+        check_scheme_table::<MixingScheme>();
+        check_scheme_table::<GeomOptScheme>();
+        check_scheme_table::<FftPlannerScheme>();
+        check_scheme_table::<ScfLogFormat>();
+        check_scheme_table::<ElectricFieldAxis>();
+        check_scheme_table::<KPointScheduleScheme>();
+        check_scheme_table::<DosScheme>();
+        check_scheme_table::<VdwDampingScheme>();
+    }
+
+    #[test]
+    fn test_scheme_error_lists_aliases() {
+        let err = parse_control(&["smearing_scheme = gaussian"]).unwrap_err();
+        assert!(err.message.contains(
+            "expected one of: fd, gs, mp1, mp2, mv (aliases: cold, marzari-vanderbilt, marzari_vanderbilt)"
+        ));
+        let err = parse_control(&["kpoint_schedule = static"]).unwrap_err();
+        assert!(err
+            .message
+            .contains("contiguous, cost_aware, dynamic (aliases: cost-aware, costaware)"));
+    }
+
+    #[test]
+    fn test_parser_rejects_unknown_string_typed_schemes() {
+        for (line, key) in [
+            ("geom_optim_scheme = lbfgs", "geom_optim_scheme"),
+            ("dos_scheme = lorentz", "dos_scheme"),
+            ("vdw_damping = d3", "vdw_damping"),
+        ]
+        .iter()
+        {
+            let err = parse_control(&[*line]).unwrap_err();
+            assert_eq!(err.key.as_deref(), Some(*key));
+            assert!(err.message.starts_with("invalid value"), "{}", err.message);
+        }
+    }
+
+    #[test]
+    fn test_scheme_display_respects_width() {
+        assert_eq!(format!("{:>6}", GeomOptScheme::Diis), "  diis");
     }
 }
