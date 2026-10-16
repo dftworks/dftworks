@@ -1,6 +1,6 @@
 //#![allow(warnings)]
 
-use control::Control;
+use control::MixingParams;
 use dwconsts::EPS30;
 use fifo::*;
 use nalgebra::DMatrix;
@@ -25,10 +25,10 @@ pub struct MixingPulay {
 }
 
 impl MixingPulay {
-    pub fn new(control: &Control) -> MixingPulay {
-        let alpha = control.get_scf_rho_mix_alpha();
-        let nhistory = control.get_scf_rho_mix_history_steps();
-        let metric_weight = control.get_scf_rho_mix_pulay_metric_weight();
+    pub fn new(params: &MixingParams) -> MixingPulay {
+        let alpha = params.alpha;
+        let nhistory = params.history_steps;
+        let metric_weight = params.pulay_metric_weight;
         let dump_history = std::env::var_os("DFTWORKS_PULAY_DUMP").is_some();
 
         MixingPulay {
