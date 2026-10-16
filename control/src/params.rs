@@ -199,8 +199,9 @@ param_group! {
 param_group! {
     /// Density mixing.
     pub struct MixingParams {
-        "scf_rho_mix_scheme" => scheme: MixingScheme = MixingScheme::Simple,
-            |v| expect_one_of(MixingScheme::parse(v), "simple, pulay, broyden");
+        "scf_rho_mix_scheme" => scheme: MixingScheme = MixingScheme::Pulay,
+            |v| MixingScheme::parse(v)
+                .ok_or_else(|| format!("expected one of: {}", MixingScheme::accepted_values()));
         /// old*alpha + new*(1-alpha)
         "scf_rho_mix_alpha" => alpha: f64 = 0.7, parse_f64;
         /// alpha * G2/(G2+beta)

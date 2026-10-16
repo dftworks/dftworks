@@ -13,7 +13,7 @@ pub trait Mixing {
 
 pub fn new(params: &MixingParams) -> Box<dyn Mixing> {
     match params.scheme {
-        MixingScheme::Simple | MixingScheme::Pulay => Box::new(MixingPulay::new(params)),
+        MixingScheme::Pulay => Box::new(MixingPulay::new(params)),
         MixingScheme::Broyden => Box::new(MixingBroyden::new(params)),
     }
 }
@@ -24,14 +24,12 @@ mod tests {
 
     #[test]
     fn test_factory_builds_from_mixing_params_alone() {
-        let pulay = MixingParams::default();
-        let broyden = MixingParams {
-            scheme: MixingScheme::Broyden,
-            ..MixingParams::default()
-        };
-
-        for params in [pulay, broyden].iter() {
-            let mut mixer = new(params);
+        for scheme in MixingScheme::ALL {
+            let params = MixingParams {
+                scheme: *scheme,
+                ..MixingParams::default()
+            };
+            let mut mixer = new(&params);
             let gs = vec![0.0, 1.0, 2.0];
             let mut inp = vec![c64::new(1.0, 0.0); 3];
             let out = vec![c64::new(1.0, 0.0); 3];

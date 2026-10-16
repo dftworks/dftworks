@@ -253,34 +253,49 @@ impl KptsScheme {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixingScheme {
-    // "simple" is the historical default name; it selects Pulay mixing.
-    Simple,
     Pulay,
     Broyden,
 }
 
 impl Default for MixingScheme {
     fn default() -> Self {
-        MixingScheme::Simple
+        MixingScheme::Pulay
     }
 }
 
 impl MixingScheme {
+    pub const ALL: &'static [MixingScheme] = &[MixingScheme::Pulay, MixingScheme::Broyden];
+
+    // Accepted in.ctrl spellings; both `parse` and the error message use this table.
+    // "simple" is the historical default name and selects Pulay mixing.
+    const NAMES: &'static [(&'static str, MixingScheme)] = &[
+        ("simple", MixingScheme::Pulay),
+        ("pulay", MixingScheme::Pulay),
+        ("broyden", MixingScheme::Broyden),
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
-            MixingScheme::Simple => "simple",
             MixingScheme::Pulay => "pulay",
             MixingScheme::Broyden => "broyden",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "simple" => Some(MixingScheme::Simple),
-            "pulay" => Some(MixingScheme::Pulay),
-            "broyden" => Some(MixingScheme::Broyden),
-            _ => None,
-        }
+        let s = s.trim().to_lowercase();
+        Self::NAMES
+            .iter()
+            .find(|(name, _)| *name == s)
+            .map(|(_, scheme)| *scheme)
+    }
+
+    /// Comma-separated accepted spellings, for error messages.
+    pub fn accepted_values() -> String {
+        Self::NAMES
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -837,8 +852,8 @@ impl Control {
         self.basis.nband
     }
 
-    pub fn get_scf_rho_mix_scheme(&self) -> &str {
-        self.mixing.scheme.as_str()
+    pub fn get_scf_rho_mix_scheme(&self) -> MixingScheme {
+        self.mixing.scheme
     }
 
     pub fn get_scf_rho_mix_history_steps(&self) -> usize {
@@ -1662,7 +1677,7 @@ impl Control {
         println!(
             "   {:<width1$} = {:>width2$}",
             "scf_rho_mix_scheme",
-            self.get_scf_rho_mix_scheme(),
+            self.get_scf_rho_mix_scheme().as_str(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );
@@ -1796,7 +1811,7 @@ mod tests {
         let ecut_ev = control.get_ecut() * dwconsts::HA_TO_EV;
         assert!((ecut_ev - 320.0).abs() < 1.0e-12);
         assert!((control.get_ecutrho() - 4.0 * control.get_ecut()).abs() < 1.0e-12);
-        assert_eq!(control.get_scf_rho_mix_scheme(), "pulay");
+        assert_eq!(control.get_scf_rho_mix_scheme(), MixingScheme::Pulay);
     }
 
     #[test]
@@ -2429,6 +2444,32 @@ mod tests {
     fn test_parser_accepts_mixing_scheme_case_insensitively() {
         let control = parse_control(&["scf_rho_mix_scheme = Broyden"]).unwrap();
         assert_eq!(control.mixing().scheme, MixingScheme::Broyden);
-        assert_eq!(control.get_scf_rho_mix_scheme(), "broyden");
+        assert_eq!(control.get_scf_rho_mix_scheme(), MixingScheme::Broyden);
+    }
+
+    #[test]
+    fn test_mixing_scheme_names_round_trip() {
+        for scheme in MixingScheme::ALL {
+            // A new variant must be added here (compile error) and to ALL.
+            match scheme {
+                MixingScheme::Pulay | MixingScheme::Broyden => {}
+            }
+            assert_eq!(MixingScheme::parse(scheme.as_str()), Some(*scheme));
+            assert!(MixingScheme::accepted_values().contains(scheme.as_str()));
+        }
+        assert_eq!(MixingScheme::parse("simple"), Some(MixingScheme::Pulay));
+        assert_eq!(
+            parse_control(&[]).unwrap().get_scf_rho_mix_scheme(),
+            MixingScheme::Pulay
+        );
+    }
+
+    #[test]
+    fn test_mixing_scheme_error_lists_every_accepted_name() {
+        let err = parse_control(&["scf_rho_mix_scheme = linear"]).unwrap_err();
+        for name in MixingScheme::accepted_values().split(", ") {
+            assert!(MixingScheme::parse(name).is_some());
+            assert!(err.message.contains(name), "message omits '{}'", name);
+        }
     }
 }
