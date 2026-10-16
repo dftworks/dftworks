@@ -555,7 +555,8 @@ impl Control {
     /// Routes one in.ctrl assignment to the group that owns `key`.
     /// Returns `None` for unknown keys.
     fn set_key(&mut self, key: &str, value: &str) -> Option<Result<(), String>> {
-        None.or_else(|| self.run.set_key(key, value))
+        self.run
+            .set_key(key, value)
             .or_else(|| self.basis.set_key(key, value))
             .or_else(|| self.model.set_key(key, value))
             .or_else(|| self.scf.set_key(key, value))
@@ -796,7 +797,7 @@ impl Control {
     }
 
     pub fn get_ecutrho(&self) -> f64 {
-        self.basis.ecut_rho
+        self.basis.resolved_ecut_rho()
     }
 
     pub fn get_nband(&self) -> usize {
@@ -976,7 +977,7 @@ impl Control {
     }
 
     pub fn get_wannier90_num_wann(&self) -> usize {
-        self.wannier90.num_wann
+        self.wannier90.resolved_num_wann(self.basis.nband)
     }
 
     pub fn get_wannier90_num_iter(&self) -> usize {
@@ -1068,9 +1069,6 @@ impl Control {
     fn try_read_lines(&mut self, lines: &[String]) -> Result<(), ControlError> {
         self.reset_defaults();
 
-        let mut ecut_rho_set = false;
-        let mut wannier90_num_wann_set = false;
-
         for (idx, raw_line) in lines.iter().enumerate() {
             let line_no = idx + 1;
             let Some((raw_key, raw_value)) = Self::parse_assignment_line(raw_line, line_no)? else {
@@ -1083,20 +1081,6 @@ impl Control {
                 .map_err(|details| {
                     ControlError::invalid_value(line_no, key, &raw_value, details)
                 })?;
-
-            if key == "ecut_rho" {
-                ecut_rho_set = true;
-            }
-            if key == "wannier90_num_wann" {
-                wannier90_num_wann_set = true;
-            }
-        }
-
-        if !ecut_rho_set {
-            self.basis.ecut_rho = 4.0 * self.basis.ecut_wfc;
-        }
-        if !wannier90_num_wann_set {
-            self.wannier90.num_wann = self.basis.nband;
         }
 
         self.validate_semantic_ranges()?;
@@ -1106,6 +1090,8 @@ impl Control {
     }
 
     fn validate_semantic_ranges(&self) -> Result<(), ControlError> {
+        let num_wann = self.get_wannier90_num_wann();
+
         if self.scf.min_iter > self.scf.max_iter {
             return Err(ControlError::validation(
                 "scf_min_iter/scf_max_iter",
@@ -1120,7 +1106,7 @@ impl Control {
                     "must not be empty when wannier90_export=true",
                 ));
             }
-            if self.wannier90.num_wann == 0 {
+            if num_wann == 0 {
                 return Err(ControlError::validation(
                     "wannier90_num_wann",
                     "must be > 0 when wannier90_export=true",
@@ -1132,10 +1118,10 @@ impl Control {
                     "must be > 0 when wannier90_export=true",
                 ));
             }
-            if self.wannier90.num_wann > self.basis.nband {
+            if num_wann > self.basis.nband {
                 return Err(ControlError::validation(
                     "wannier90_num_wann",
-                    format!("{} > nband ({})", self.wannier90.num_wann, self.basis.nband),
+                    format!("{} > nband ({})", num_wann, self.basis.nband),
                 ));
             }
         }
@@ -1725,8 +1711,9 @@ impl Control {
 #[cfg(test)]
 mod tests {
     use super::{
-        Control, ControlError, ElectricFieldAxis, FftPlannerScheme, KPointScheduleScheme,
-        KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme, VerbosityLevel, XcScheme,
+        Control, ControlError, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
+        KPointScheduleScheme, KptsScheme, PotScheme, ScfLogFormat, SmearingScheme, SpinScheme,
+        VerbosityLevel, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -2118,17 +2105,238 @@ mod tests {
         );
     }
 
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() <= 1.0e-12 * b.abs().max(1.0)
+    }
+
+    fn ev(x: f64) -> f64 {
+        x * dwconsts::EV_TO_HA
+    }
+
+    type KeyCase = (&'static str, &'static str, fn(&Control) -> bool);
+
+    // One case per in.ctrl key: a non-default value and a check that the value
+    // reached the intended field (in stored units). The check must fail on the
+    // defaults, so a key routed to the wrong field is caught.
+    const KEY_CASES: &[KeyCase] = &[
+        ("task", "band", |c| c.get_task() == "band"),
+        ("restart", "true", |c| c.get_restart()),
+        ("symmetry", "true", |c| c.get_symmetry()),
+        ("random_seed", "42", |c| c.get_random_seed() == Some(42)),
+        ("kpoint_schedule", "dynamic", |c| {
+            c.get_kpoint_schedule_enum() == KPointScheduleScheme::Dynamic
+        }),
+        ("ecut_wfc", "500", |c| approx(c.get_ecut(), ev(500.0))),
+        ("ecut_rho", "3000", |c| approx(c.get_ecutrho(), ev(3000.0))),
+        ("nband", "13", |c| c.get_nband() == 13),
+        ("spin_scheme", "spin", |c| {
+            c.get_spin_scheme_enum() == SpinScheme::Spin
+        }),
+        ("xc_scheme", "pbe", |c| {
+            c.get_xc_scheme_enum() == XcScheme::Pbe
+        }),
+        ("pot_scheme", "upf-fr", |c| {
+            c.get_pot_scheme_enum() == PotScheme::UpfFr
+        }),
+        ("kpts_scheme", "kline", |c| {
+            c.get_kpts_scheme_enum() == KptsScheme::Kline
+        }),
+        ("smearing_scheme", "fd", |c| {
+            c.get_smearing_scheme_enum() == SmearingScheme::Fd
+        }),
+        ("temperature", "300", |c| approx(c.get_temperature(), 300.0)),
+        ("occ_inversion", "0.5", |c| {
+            approx(c.get_occ_inversion(), 0.5)
+        }),
+        ("scf_harris", "true", |c| c.is_scf_harris()),
+        ("scf_min_iter", "3", |c| c.get_scf_min_iter() == 3),
+        ("scf_max_iter", "77", |c| c.get_scf_max_iter() == 77),
+        ("scf_max_iter_rand_wfc", "3", |c| {
+            c.get_scf_max_iter_rand_wfc() == 3
+        }),
+        ("scf_max_iter_wfc", "7", |c| c.get_scf_max_iter_wfc() == 7),
+        ("rho_epsilon", "1e-7", |c| {
+            approx(c.get_rho_epsilon(), 1.0e-7)
+        }),
+        ("energy_epsilon", "1e-4", |c| {
+            approx(c.get_energy_epsilon(), ev(1.0e-4))
+        }),
+        ("eigval_epsilon", "1e-3", |c| {
+            approx(c.get_eigval_epsilon(), ev(1.0e-3))
+        }),
+        ("eigval_same_epsilon", "true", |c| {
+            c.scf().eigval_same_epsilon
+        }),
+        ("eigen_solver", "lobpcg", |c| {
+            c.get_eigen_solver_enum() == EigenSolverScheme::Lobpcg
+        }),
+        ("davidson_ndim", "9", |c| c.get_davidson_ndim() == 9),
+        ("scf_rho_mix_scheme", "broyden", |c| {
+            c.get_scf_rho_mix_scheme() == "broyden"
+        }),
+        ("scf_rho_mix_alpha", "0.3", |c| {
+            approx(c.get_scf_rho_mix_alpha(), 0.3)
+        }),
+        ("scf_rho_mix_beta", "0.9", |c| {
+            approx(c.get_scf_rho_mix_beta(), 0.9)
+        }),
+        ("scf_rho_mix_history_steps", "9", |c| {
+            c.get_scf_rho_mix_history_steps() == 9
+        }),
+        ("scf_rho_mix_pulay_metric_weight", "5", |c| {
+            approx(c.get_scf_rho_mix_pulay_metric_weight(), 5.0)
+        }),
+        ("geom_optim_cell", "true", |c| c.get_geom_optim_cell()),
+        ("geom_optim_scheme", "diis", |c| {
+            c.get_geom_optim_scheme() == "diis"
+        }),
+        ("geom_optim_max_steps", "9", |c| {
+            c.get_geom_optim_max_steps() == 9
+        }),
+        ("geom_optim_history_steps", "7", |c| {
+            c.get_geom_optim_history_steps() == 7
+        }),
+        ("geom_optim_alpha", "0.3", |c| {
+            approx(c.get_geom_optim_alpha(), 0.3)
+        }),
+        ("geom_optim_force_tolerance", "0.02", |c| {
+            approx(c.get_geom_optim_force_tolerance(), 0.02)
+        }),
+        ("geom_optim_stress_tolerance", "0.07", |c| {
+            approx(c.get_geom_optim_stress_tolerance(), 0.07)
+        }),
+        ("fft_threads", "4", |c| c.get_fft_threads() == 4),
+        ("fft_planner", "measure", |c| {
+            c.get_fft_planner_enum() == FftPlannerScheme::Measure
+        }),
+        ("fft_wisdom_file", "w.wis", |c| {
+            c.get_fft_wisdom_file() == "w.wis"
+        }),
+        ("surface_dipole_correction", "true", |c| {
+            c.get_surface_dipole_correction()
+        }),
+        ("electric_field_2d", "0.25", |c| {
+            approx(c.get_electric_field_2d_vang(), 0.25)
+        }),
+        ("electric_field_axis", "a", |c| {
+            c.get_electric_field_axis_enum() == ElectricFieldAxis::A
+        }),
+        ("electric_field_origin_frac", "0.2", |c| {
+            approx(c.get_electric_field_origin_frac(), 0.2)
+        }),
+        ("verbosity", "debug", |c| {
+            c.get_verbosity_enum() == VerbosityLevel::Debug
+        }),
+        ("scf_log_format", "csv", |c| {
+            c.get_scf_log_format_enum() == ScfLogFormat::Csv
+        }),
+        ("scf_log_file", "x.log", |c| c.get_scf_log_file() == "x.log"),
+        ("save_rho", "false", |c| !c.get_save_rho()),
+        ("save_wfc", "false", |c| !c.get_save_wfc()),
+        ("output_atomic_density", "true", |c| {
+            c.get_output_atomic_density()
+        }),
+        ("provenance_manifest", "p.json", |c| {
+            c.get_provenance_manifest() == "p.json"
+        }),
+        ("provenance_check", "true", |c| c.get_provenance_check()),
+        ("dos_scheme", "lorentz", |c| c.get_dos_scheme() == "lorentz"),
+        ("dos_sigma", "0.05", |c| approx(c.get_dos_sigma(), ev(0.05))),
+        ("dos_ne", "123", |c| c.get_dos_ne() == 123),
+        ("wannier90_export", "true", |c| c.get_wannier90_export()),
+        ("wannier90_seedname", "si", |c| {
+            c.get_wannier90_seedname() == "si"
+        }),
+        ("wannier90_num_wann", "5", |c| {
+            c.get_wannier90_num_wann() == 5
+        }),
+        ("wannier90_num_iter", "50", |c| {
+            c.get_wannier90_num_iter() == 50
+        }),
+        ("hubbard_u_enabled", "true", |c| c.get_hubbard_u_enabled()),
+        ("hubbard_species", "Ni", |c| c.get_hubbard_species() == "Ni"),
+        ("hubbard_l", "2", |c| c.get_hubbard_l() == 2),
+        ("hubbard_u", "5", |c| approx(c.get_hubbard_u(), ev(5.0))),
+        ("hubbard_j", "1", |c| approx(c.get_hubbard_j(), ev(1.0))),
+        ("hse06_alpha", "0.3", |c| approx(c.get_hse06_alpha(), 0.3)),
+        ("hse06_omega", "0.2", |c| approx(c.get_hse06_omega(), 0.2)),
+        ("vdw_correction", "true", |c| c.get_vdw_correction()),
+        ("vdw_damping", "zero", |c| c.get_vdw_damping() == "zero"),
+    ];
+
     #[test]
-    fn test_every_known_key_is_dispatched() {
-        let mut control = Control::new();
-        for key in Control::known_keys() {
+    fn test_key_cases_cover_every_known_key() {
+        let mut covered: Vec<&str> = KEY_CASES.iter().map(|(key, _, _)| *key).collect();
+        covered.sort_unstable();
+        let mut known: Vec<&str> = Control::known_keys().collect();
+        known.sort_unstable();
+        assert_eq!(covered, known, "add a KEY_CASES entry for each new key");
+    }
+
+    #[test]
+    fn test_every_key_round_trips_to_its_field() {
+        let defaults = Control::new();
+        for (key, value, check) in KEY_CASES {
             assert!(
-                control.set_key(key, "").is_some(),
-                "key '{}' is not routed",
+                !check(&defaults),
+                "case for '{}' must use a non-default value",
                 key
             );
+
+            let mut control = Control::new();
+            control
+                .set_key(key, value)
+                .unwrap_or_else(|| panic!("key '{}' is not routed", key))
+                .unwrap_or_else(|err| panic!("key '{}' rejected '{}': {}", key, value, err));
+            assert!(check(&control), "key '{}' did not reach its field", key);
         }
-        assert!(control.set_key("not_a_key", "1").is_none());
+        assert!(Control::new().set_key("not_a_key", "1").is_none());
+    }
+
+    #[test]
+    fn test_ecut_rho_defaults_to_four_times_ecut_wfc() {
+        let control = parse_control(&["ecut_wfc = 500"]).unwrap();
+        assert!(approx(control.get_ecutrho(), 4.0 * control.get_ecut()));
+        assert!(approx(
+            Control::new().get_ecutrho(),
+            4.0 * Control::new().get_ecut()
+        ));
+
+        // An explicit ecut_rho wins regardless of line order.
+        for lines in [
+            ["ecut_rho = 3000", "ecut_wfc = 500"],
+            ["ecut_wfc = 500", "ecut_rho = 3000"],
+        ]
+        .iter()
+        {
+            let control = parse_control(lines).unwrap();
+            assert!(approx(control.get_ecutrho(), ev(3000.0)));
+        }
+    }
+
+    #[test]
+    fn test_wannier90_num_wann_defaults_to_nband() {
+        assert_eq!(
+            parse_control(&["nband = 12"])
+                .unwrap()
+                .get_wannier90_num_wann(),
+            12
+        );
+        let explicit = parse_control(&["nband = 12", "wannier90_num_wann = 5"]).unwrap();
+        assert_eq!(explicit.get_wannier90_num_wann(), 5);
+        let err = parse_control(&[
+            "nband = 4",
+            "wannier90_export = true",
+            "wannier90_num_wann = 8",
+        ])
+        .unwrap_err();
+        assert_eq!(err.key.as_deref(), Some("wannier90_num_wann"));
+    }
+
+    #[test]
+    fn test_dos_sigma_default_is_one_tenth_ev() {
+        let sigma_ev = Control::new().get_dos_sigma() * dwconsts::HA_TO_EV;
+        assert!(approx(sigma_ev, 0.1));
     }
 
     #[test]

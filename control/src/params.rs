@@ -145,9 +145,16 @@ param_group! {
     pub struct BasisParams {
         /// Input in eV, stored in Hartree.
         "ecut_wfc" => ecut_wfc: f64 = 400.0 * EV_TO_HA, parse_ev_as_ha;
-        /// Input in eV, stored in Hartree. Defaults to 4 * ecut_wfc when unset.
-        "ecut_rho" => ecut_rho: f64 = 4.0 * 400.0 * EV_TO_HA, parse_ev_as_ha;
+        /// Input in eV, stored in Hartree. `None` means 4 * ecut_wfc; use `resolved_ecut_rho()`.
+        "ecut_rho" => ecut_rho: Option<f64> = None, |v| parse_ev_as_ha(v).map(Some);
         "nband" => nband: usize = 0, parse_usize;
+    }
+}
+
+impl BasisParams {
+    /// Density cutoff in Hartree: the explicit `ecut_rho`, else 4 * ecut_wfc.
+    pub fn resolved_ecut_rho(&self) -> f64 {
+        self.ecut_rho.unwrap_or(4.0 * self.ecut_wfc)
     }
 }
 
@@ -261,7 +268,7 @@ param_group! {
     pub struct DosParams {
         "dos_scheme" => scheme: String = "gauss".to_string(), parse_string;
         /// Input in eV, stored in Hartree.
-        "dos_sigma" => sigma: f64 = 0.1, parse_ev_as_ha;
+        "dos_sigma" => sigma: f64 = 0.1 * EV_TO_HA, parse_ev_as_ha;
         "dos_ne" => ne: usize = 500, parse_usize;
     }
 }
@@ -271,9 +278,16 @@ param_group! {
     pub struct Wannier90Params {
         "wannier90_export" => export: bool = false, parse_bool;
         "wannier90_seedname" => seedname: String = "dftworks".to_string(), parse_string;
-        /// Defaults to nband when unset.
-        "wannier90_num_wann" => num_wann: usize = 0, parse_usize;
+        /// `None` means nband; use `resolved_num_wann()`.
+        "wannier90_num_wann" => num_wann: Option<usize> = None, |v| parse_usize(v).map(Some);
         "wannier90_num_iter" => num_iter: usize = 200, parse_usize;
+    }
+}
+
+impl Wannier90Params {
+    /// Number of Wannier functions: the explicit `wannier90_num_wann`, else `nband`.
+    pub fn resolved_num_wann(&self, nband: usize) -> usize {
+        self.num_wann.unwrap_or(nband)
     }
 }
 
