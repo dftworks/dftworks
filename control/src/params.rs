@@ -199,12 +199,15 @@ param_group! {
 param_group! {
     /// Density mixing.
     pub struct MixingParams {
+        /// `pulay` (default) or `broyden`.
         "scf_rho_mix_scheme" => scheme: MixingScheme = MixingScheme::Pulay,
             |v| MixingScheme::parse(v)
                 .ok_or_else(|| format!("expected one of: {}", MixingScheme::accepted_values()));
-        /// old*alpha + new*(1-alpha)
+        /// Weight of the new output density: rho_next = (1-alpha)*rho_in + alpha*rho_out
+        /// (the mixers apply rho_in + alpha*(rho_out - rho_in)).
         "scf_rho_mix_alpha" => alpha: f64 = 0.7, parse_f64;
-        /// alpha * G2/(G2+beta)
+        /// Intended Kerker factor alpha * G2/(G2+beta). Parsed but currently not used by
+        /// the Pulay or Broyden mixers.
         "scf_rho_mix_beta" => beta: f64 = 0.5, parse_f64;
         "scf_rho_mix_history_steps" => history_steps: usize = 4, parse_usize;
         "scf_rho_mix_pulay_metric_weight" => pulay_metric_weight: f64 = 20.0, parse_f64;
@@ -269,7 +272,7 @@ param_group! {
     /// Density of states.
     pub struct DosParams {
         "dos_scheme" => scheme: String = "gauss".to_string(), parse_string;
-        /// Input in eV, stored in Hartree.
+        /// Input in eV, stored in Hartree. Default 0.1 eV.
         "dos_sigma" => sigma: f64 = 0.1 * EV_TO_HA, parse_ev_as_ha;
         "dos_ne" => ne: usize = 500, parse_usize;
     }

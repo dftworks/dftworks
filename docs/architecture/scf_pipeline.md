@@ -308,7 +308,7 @@ let mixed = mix_density(
 **Actions:**
 - Pulay (DIIS) mixing: linear combination of previous densities (the first iteration is a plain linear step, `ρ_new = α ρ_out + (1-α) ρ_in`)
 - Broyden mixing
-- Kerker preconditioning (for metals)
+- Kerker preconditioning is not implemented yet (`scf_rho_mix_beta` is parsed but ignored)
 
 **Outputs:**
 ```rust
@@ -459,7 +459,7 @@ if !converged {
 **Common causes:**
 - Mixing parameter too large (reduce α)
 - Poor initial guess (use atomic densities)
-- Metallic system (use smearing, Kerker preconditioning)
+- Metallic system (use smearing; Kerker preconditioning is not implemented yet)
 - Magnetic instability (use spin-polarized calculation)
 
 ---
