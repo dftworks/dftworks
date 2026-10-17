@@ -264,14 +264,6 @@ impl Default for MixingScheme {
 }
 
 impl MixingScheme {
-    pub const ALL: &'static [MixingScheme] = &[MixingScheme::Pulay, MixingScheme::Broyden];
-
-    // Accepted in.ctrl spellings; both `parse` and the error message use this table.
-    const NAMES: &'static [(&'static str, MixingScheme)] = &[
-        ("pulay", MixingScheme::Pulay),
-        ("broyden", MixingScheme::Broyden),
-    ];
-
     pub fn as_str(self) -> &'static str {
         match self {
             MixingScheme::Pulay => "pulay",
@@ -280,20 +272,11 @@ impl MixingScheme {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        let s = s.trim().to_lowercase();
-        Self::NAMES
-            .iter()
-            .find(|(name, _)| *name == s)
-            .map(|(_, scheme)| *scheme)
-    }
-
-    /// Comma-separated accepted spellings, for error messages.
-    pub fn accepted_values() -> String {
-        Self::NAMES
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(", ")
+        match s.trim().to_lowercase().as_str() {
+            "pulay" => Some(MixingScheme::Pulay),
+            "broyden" => Some(MixingScheme::Broyden),
+            _ => None,
+        }
     }
 }
 
@@ -596,47 +579,6 @@ fn canonicalize_control_key(key: &str) -> &str {
 impl Control {
     pub fn new() -> Control {
         Control::default()
-    }
-
-    /// Routes one in.ctrl assignment to the group that owns `key`.
-    /// Returns `None` for unknown keys.
-    fn set_key(&mut self, key: &str, value: &str) -> Option<Result<(), String>> {
-        self.run
-            .set_key(key, value)
-            .or_else(|| self.basis.set_key(key, value))
-            .or_else(|| self.model.set_key(key, value))
-            .or_else(|| self.scf.set_key(key, value))
-            .or_else(|| self.mixing.set_key(key, value))
-            .or_else(|| self.geom_opt.set_key(key, value))
-            .or_else(|| self.fft.set_key(key, value))
-            .or_else(|| self.field.set_key(key, value))
-            .or_else(|| self.output.set_key(key, value))
-            .or_else(|| self.dos.set_key(key, value))
-            .or_else(|| self.wannier90.set_key(key, value))
-            .or_else(|| self.hubbard.set_key(key, value))
-            .or_else(|| self.hybrid.set_key(key, value))
-            .or_else(|| self.vdw.set_key(key, value))
-    }
-
-    /// Every accepted in.ctrl key (excluding deprecated aliases).
-    pub fn known_keys() -> impl Iterator<Item = &'static str> {
-        const GROUP_KEYS: &[&[&str]] = &[
-            RunParams::KEYS,
-            BasisParams::KEYS,
-            ModelParams::KEYS,
-            ScfParams::KEYS,
-            MixingParams::KEYS,
-            GeomOptParams::KEYS,
-            FftParams::KEYS,
-            FieldParams::KEYS,
-            OutputParams::KEYS,
-            DosParams::KEYS,
-            Wannier90Params::KEYS,
-            HubbardParams::KEYS,
-            HybridParams::KEYS,
-            VdwParams::KEYS,
-        ];
-        GROUP_KEYS.iter().flat_map(|keys| keys.iter().copied())
     }
 
     // ---- grouped accessors ----
@@ -1122,11 +1064,15 @@ impl Control {
             };
 
             let key = canonicalize_control_key(raw_key.as_str());
-            self.set_key(key, &raw_value)
-                .ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?
-                .map_err(|details| {
-                    ControlError::invalid_value(line_no, key, &raw_value, details)
-                })?;
+            match self.set_key(key, &raw_value) {
+                Ok(true) => {}
+                Ok(false) => return Err(ControlError::unknown_key(line_no, &raw_key)),
+                Err(details) => {
+                    return Err(ControlError::invalid_value(
+                        line_no, key, &raw_value, details,
+                    ))
+                }
+            }
         }
 
         self.validate_semantic_ranges()?;
@@ -2058,7 +2004,7 @@ mod tests {
     }
 
     #[test]
-    fn test_known_keys_match_legacy_key_set() {
+    fn test_key_cases_match_legacy_key_set() {
         // Keys accepted before parameters were grouped; none may be lost or renamed.
         let legacy = [
             "davidson_ndim",
@@ -2131,24 +2077,11 @@ mod tests {
             "wannier90_seedname",
             "xc_scheme",
         ];
-        let mut known: Vec<&str> = Control::known_keys().collect();
-        known.sort_unstable();
+        let mut covered: Vec<&str> = KEY_CASES.iter().map(|(key, _, _)| *key).collect();
+        covered.sort_unstable();
         let mut expected = legacy.to_vec();
         expected.sort_unstable();
-        assert_eq!(known, expected);
-    }
-
-    #[test]
-    fn test_known_keys_are_unique_across_groups() {
-        let mut known: Vec<&str> = Control::known_keys().collect();
-        let total = known.len();
-        known.sort_unstable();
-        known.dedup();
-        assert_eq!(
-            known.len(),
-            total,
-            "a key is declared in more than one group"
-        );
+        assert_eq!(covered, expected, "add a KEY_CASES entry for each new key");
     }
 
     fn approx(a: f64, b: f64) -> bool {
@@ -2311,15 +2244,6 @@ mod tests {
     ];
 
     #[test]
-    fn test_key_cases_cover_every_known_key() {
-        let mut covered: Vec<&str> = KEY_CASES.iter().map(|(key, _, _)| *key).collect();
-        covered.sort_unstable();
-        let mut known: Vec<&str> = Control::known_keys().collect();
-        known.sort_unstable();
-        assert_eq!(covered, known, "add a KEY_CASES entry for each new key");
-    }
-
-    #[test]
     fn test_every_key_round_trips_to_its_field() {
         let defaults = Control::new();
         for (key, value, check) in KEY_CASES {
@@ -2330,13 +2254,14 @@ mod tests {
             );
 
             let mut control = Control::new();
-            control
-                .set_key(key, value)
-                .unwrap_or_else(|| panic!("key '{}' is not routed", key))
-                .unwrap_or_else(|err| panic!("key '{}' rejected '{}': {}", key, value, err));
+            match control.set_key(key, value) {
+                Ok(true) => {}
+                Ok(false) => panic!("key '{}' is not handled", key),
+                Err(err) => panic!("key '{}' rejected '{}': {}", key, value, err),
+            }
             assert!(check(&control), "key '{}' did not reach its field", key);
         }
-        assert!(Control::new().set_key("not_a_key", "1").is_none());
+        assert_eq!(Control::new().set_key("not_a_key", "1"), Ok(false));
     }
 
     #[test]
@@ -2449,13 +2374,8 @@ mod tests {
 
     #[test]
     fn test_mixing_scheme_names_round_trip() {
-        for scheme in MixingScheme::ALL {
-            // A new variant must be added here (compile error) and to ALL.
-            match scheme {
-                MixingScheme::Pulay | MixingScheme::Broyden => {}
-            }
+        for scheme in [MixingScheme::Pulay, MixingScheme::Broyden].iter() {
             assert_eq!(MixingScheme::parse(scheme.as_str()), Some(*scheme));
-            assert!(MixingScheme::accepted_values().contains(scheme.as_str()));
         }
         // "simple" used to be an undocumented alias for Pulay; it is no longer accepted.
         assert_eq!(MixingScheme::parse("simple"), None);
@@ -2466,11 +2386,8 @@ mod tests {
     }
 
     #[test]
-    fn test_mixing_scheme_error_lists_every_accepted_name() {
+    fn test_mixing_scheme_error_lists_accepted_names() {
         let err = parse_control(&["scf_rho_mix_scheme = linear"]).unwrap_err();
-        for name in MixingScheme::accepted_values().split(", ") {
-            assert!(MixingScheme::parse(name).is_some());
-            assert!(err.message.contains(name), "message omits '{}'", name);
-        }
+        assert!(err.message.contains("expected one of: pulay, broyden"));
     }
 }

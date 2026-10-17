@@ -184,7 +184,7 @@ New canonical refactoring items are added below to unblock future feature expans
 - [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh` in `rust-dev`)
 
 **Implementation Update (2026-10-16, #26)**
-- [x] Replaced `KeySpec` + per-key setters with `param_group!` (`control/src/params.rs`): each in.ctrl key is one line (key, field, type, default, parser)
+- [x] Replaced `KeySpec` + per-key setters with plain parameter structs and one `match` over in.ctrl keys (`control/src/params.rs`); adding a key = one field + default + one match line (the `param_group!` macro used at first was removed for readability)
 - [x] Split `Control` into per-concern groups (`RunParams`, `ScfParams`, `MixingParams`, ...) exposed via `control.mixing()` etc.; flat `get_*` accessors kept
 - [x] `mixing::new` now takes `&MixingParams` instead of `&Control`
 - [x] `scf_rho_mix_scheme` is validated at parse time (`pulay`, `broyden`); the `simple` name is removed
