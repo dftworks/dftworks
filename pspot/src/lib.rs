@@ -1,24 +1,11 @@
-use atompsp;
-use atompsp::AtomPSP;
+use atompsp::{AtomPSP, AtomPSPUPF, AtomPSPUPFFR};
 use control::PotScheme;
 
 use std::{
-    any::Any,
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
-    panic::{catch_unwind, AssertUnwindSafe},
 };
-
-fn panic_payload_to_string(payload: Box<dyn Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_string()
-    } else {
-        "unknown panic".to_string()
-    }
-}
 
 #[derive(Default)]
 pub struct PSPot {
@@ -44,19 +31,16 @@ impl PSPot {
         let mut atpsp_file = HashMap::new();
 
         for (sp, spfile) in pspfiles.iter() {
-            let psp_one = catch_unwind(AssertUnwindSafe(|| {
-                let mut psp_one = atompsp::new(scheme.as_str());
-                psp_one.read_file(spfile);
-                psp_one
-            }))
-            .map_err(|payload| {
+            let context = |err: String| {
                 format!(
                     "failed to load pseudopotential '{}' for species '{}': {}",
-                    spfile,
-                    sp,
-                    panic_payload_to_string(payload)
+                    spfile, sp, err
                 )
-            })?;
+            };
+            let psp_one: Box<dyn AtomPSP> = match scheme {
+                PotScheme::Upf => Box::new(AtomPSPUPF::from_file(spfile).map_err(context)?),
+                PotScheme::UpfFr => Box::new(AtomPSPUPFFR::from_file(spfile).map_err(context)?),
+            };
 
             pots.insert(sp.clone(), psp_one);
 
