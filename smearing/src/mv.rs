@@ -19,8 +19,8 @@ impl Smearing for SmearingMV {
         let x = (electron_energy - fermi_level) / kbt;
         let x_shift = x + 1.0 / 2.0_f64.sqrt();
 
-        let occ = 0.5 * special::erfc(x_shift) + (-x_shift * x_shift).exp() / (2.0 * PI).sqrt();
-
-        occ.max(0.0).min(1.0)
+        // Not clamped to [0, 1]: f rises to about 1.083 at x = -sqrt(2) before it
+        // settles at 1, and clamping would change the number of electrons.
+        0.5 * special::erfc(x_shift) + (-x_shift * x_shift).exp() / (2.0 * PI).sqrt()
     }
 }
