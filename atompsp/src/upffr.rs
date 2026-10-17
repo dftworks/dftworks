@@ -1,179 +1,48 @@
-#![allow(warnings)]
-use crate::{check_len, parse_attr, parse_block, AtomPSP};
+use crate::upfread::{check_len, read_upf, UpfData};
+use crate::AtomPSP;
 
 use dwconsts::*;
 use types::*;
-use utility;
 
-use std::{
-    fmt,
-    fs::File,
-    io::{BufRead, BufReader},
-};
+use std::fmt;
 
-use std::collections::HashMap;
-
-use xml;
-use xml::reader::{EventReader, XmlEvent};
-
-enum UPF {
-    HEADER,
-    R,
-    RAB,
-    LOCAL,
-    BETA,
-    CHI,
-    NLCC,
-    DIJ,
-    RHOATOM,
-    NULL,
-}
-
-#[derive(Debug)]
+/// Fully relativistic UPF v2 pseudopotential (`pot_scheme = upf-fr`). The file has
+/// one projector per (l, j); each j = l -/+ 1/2 pair is combined into one
+/// scalar-relativistic projector (the `AtomPSP` getters) and one spin-orbit
+/// projector (`get_*_soc`).
 pub struct AtomPSPUPFFR {
-    element: String,
-    pseudo_type: String,
-    relativistic: bool,
-    core_correction: bool,
-    zion: f64,
-    lmax: usize,
-    lloc: i32,
+    /// the file as read: (l, j) projectors
+    upf: UpfData,
+
+    // scalar-relativistic projectors
     lbeta: Vec<usize>,
-    nbeta: usize,
-    mmax: usize,
-    rad: Vec<f64>,
-    rab: Vec<f64>,
-    vloc: Vec<f64>,
     vbeta: Vec<Vec<f64>>,
     dij: Matrix<f64>,
-    chi: HashMap<usize, Vec<f64>>,
-    rhocore: Vec<f64>,
-    rhoatom: Vec<f64>,
-    dij_j: Matrix<f64>,
-    vbeta_j: Vec<Vec<f64>>,
-    lbeta_j: Vec<usize>,
-    vjjj: Vec<f64>,
-    vlll: Vec<usize>,
-    dij_soc: Matrix<f64>,
-    vbeta_soc: Vec<Vec<f64>>,
+
+    // spin-orbit projectors (for future noncollinear runs; not used yet)
     lbeta_soc: Vec<usize>,
-}
-
-impl Default for AtomPSPUPFFR {
-    fn default() -> Self {
-        Self {
-            element: String::new(),
-            pseudo_type: String::new(),
-            relativistic: false,
-            core_correction: false,
-            zion: 0.0,
-            lmax: 0,
-            lloc: 0,
-            lbeta: Vec::new(),
-            nbeta: 0,
-            mmax: 0,
-            rad: Vec::new(),
-            rab: Vec::new(),
-            vloc: Vec::new(),
-            vbeta: Vec::new(),
-            dij: Matrix::<f64>::new(0, 0),
-            chi: HashMap::new(),
-            rhocore: Vec::new(),
-            rhoatom: Vec::new(),
-            dij_j: Matrix::<f64>::new(0, 0),
-            vbeta_j: Vec::new(),
-            lbeta_j: Vec::new(),
-            vjjj: Vec::new(),
-            vlll: Vec::new(),
-            dij_soc: Matrix::<f64>::new(0, 0),
-            vbeta_soc: Vec::new(),
-            lbeta_soc: Vec::new(),
-        }
-    }
-}
-
-impl AtomPSP for AtomPSPUPFFR {
-    fn get_nlcc(&self) -> bool {
-        self.core_correction
-    }
-
-    fn get_nbeta(&self) -> usize {
-        self.nbeta
-    }
-
-    fn get_lbeta(&self, ibeta: usize) -> usize {
-        self.lbeta[ibeta]
-    }
-
-    fn get_beta(&self, ibeta: usize) -> &[f64] {
-        &self.vbeta[ibeta]
-    }
-
-    fn get_dfact(&self, ibeta: usize) -> f64 {
-        self.dij[(ibeta, ibeta)]
-    }
-
-    fn get_zion(&self) -> f64 {
-        self.zion
-    }
-
-    fn get_lloc(&self) -> i32 {
-        self.lloc
-    }
-
-    fn get_lmax(&self) -> usize {
-        self.lmax
-    }
-
-    fn get_mmax(&self) -> usize {
-        self.mmax
-    }
-
-    fn get_rad(&self) -> &[f64] {
-        &self.rad
-    }
-
-    fn get_rab(&self) -> &[f64] {
-        &self.rab
-    }
-
-    fn get_rho(&self) -> &[f64] {
-        &self.rhoatom
-    }
-
-    fn get_rhocore(&self) -> &[f64] {
-        &self.rhocore
-    }
-
-    fn get_wfc(&self, l: usize) -> &[f64] {
-        self.chi.get(&l).unwrap()
-    }
-
-    fn has_wfc(&self, l: usize) -> bool {
-        self.chi.contains_key(&l)
-    }
-
-    fn get_wfc_channels(&self) -> Vec<usize> {
-        let mut ls: Vec<usize> = self.chi.keys().copied().collect();
-        ls.sort_unstable();
-        ls
-    }
-
-    fn get_vloc(&self) -> &[f64] {
-        &self.vloc
-    }
+    vbeta_soc: Vec<Vec<f64>>,
+    dij_soc: Matrix<f64>,
 }
 
 impl AtomPSPUPFFR {
-    /// Read a fully relativistic UPF (v2, XML) file. The (l, j) projectors are
-    /// combined into scalar-relativistic projectors (`AtomPSP` getters) and
-    /// spin-orbit projectors (`get_*_soc`).
+    /// Read a fully relativistic UPF v2 (XML) file.
     pub fn from_file(pspfile: &str) -> Result<AtomPSPUPFFR, String> {
-        let mut psp = AtomPSPUPFFR::default();
-        psp.parse_upf(pspfile)?;
-        psp.check()?;
+        let upf = read_upf(pspfile)?;
+        check_relbeta(&upf)?;
+
+        let mut psp = AtomPSPUPFFR {
+            upf,
+            lbeta: Vec::new(),
+            vbeta: Vec::new(),
+            dij: Matrix::<f64>::new(0, 0),
+            lbeta_soc: Vec::new(),
+            vbeta_soc: Vec::new(),
+            dij_soc: Matrix::<f64>::new(0, 0),
+        };
         psp.build_scalar_beta();
         psp.build_soc_beta();
+
         Ok(psp)
     }
 
@@ -193,47 +62,94 @@ impl AtomPSPUPFFR {
         self.dij_soc[(ibeta, ibeta)]
     }
 
-    fn build_soc_beta(&mut self) {
-        // build soc potential in beta from beta_j
+    fn build_scalar_beta(&mut self) {
+        let upf = &self.upf;
+        let mmax = upf.mmax;
 
-        let nbeta = self.nbeta;
+        // one scalar projector per l = 0 projector and per (l - 1/2, l + 1/2) pair
+        let mut nbeta = 0;
+        for (&l, &j) in upf.lll.iter().zip(upf.jjj.iter()) {
+            nbeta += 1;
+
+            if l > 0 && (j - (l as f64 + 0.5)).abs() < EPS5 {
+                nbeta -= 1;
+            }
+        }
+
+        self.lbeta = vec![0; nbeta];
+        self.dij = Matrix::<f64>::new(nbeta, nbeta);
+
+        let mut jbeta = 0;
+        for ibeta in 0..nbeta {
+            let l = upf.lll[jbeta];
+
+            if l == 0 {
+                self.vbeta.push(upf.beta[jbeta].clone());
+                self.dij[(ibeta, ibeta)] = upf.dij[(jbeta, jbeta)];
+                self.lbeta[ibeta] = l;
+
+                jbeta += 1;
+            } else {
+                let l_f64 = l as f64;
+                let dminus = upf.dij[(jbeta, jbeta)];
+                let dplus = upf.dij[(jbeta + 1, jbeta + 1)];
+
+                let dpm = ((l_f64 + 1.0) * dplus + l_f64 * dminus) / (2.0 * l_f64 + 1.0);
+
+                let fm = (dminus / dpm).sqrt();
+                let fp = (dplus / dpm).sqrt();
+
+                let mut beta = vec![0.0; mmax];
+                for i in 0..mmax {
+                    beta[i] = l_f64 * upf.beta[jbeta][i] * fm
+                        + (l_f64 + 1.0) * upf.beta[jbeta + 1][i] * fp;
+
+                    beta[i] /= 2.0 * l_f64 + 1.0;
+                }
+                self.vbeta.push(beta);
+
+                self.dij[(ibeta, ibeta)] = dpm;
+                self.lbeta[ibeta] = l;
+
+                // skip the (l, l - 1/2) and (l, l + 1/2) projectors
+                jbeta += 2;
+            }
+        }
+    }
+
+    fn build_soc_beta(&mut self) {
+        let upf = &self.upf;
+        let mmax = upf.mmax;
 
         let mut dij_soc = Vec::new();
 
         let mut jbeta = 0;
-
-        for ibeta in 0..nbeta {
-            let l = self.vlll[jbeta];
+        for _ in 0..self.lbeta.len() {
+            let l = upf.lll[jbeta];
 
             if l == 0 {
                 jbeta += 1;
             } else {
                 let l_f64 = l as f64;
-                let dminus = self.dij_j[(jbeta, jbeta)];
-                let dplus = self.dij_j[(jbeta + 1, jbeta + 1)];
+                let dminus = upf.dij[(jbeta, jbeta)];
+                let dplus = upf.dij[(jbeta + 1, jbeta + 1)];
 
                 let dpm = ((l_f64 + 1.0) * dplus + l_f64 * dminus) / (2.0 * l_f64 + 1.0);
 
-                self.vbeta_soc.push(vec![0.0; self.mmax]);
-
-                let vsoc: &mut Vec<f64> = self.vbeta_soc.last_mut().unwrap();
-
-                for i in 0..self.mmax {
-                    vsoc[i] = -self.vbeta_j[jbeta][i] * (dminus / dpm).sqrt()
-                        + self.vbeta_j[jbeta + 1][i] * (dplus / dpm).sqrt();
+                let mut vsoc = vec![0.0; mmax];
+                for i in 0..mmax {
+                    vsoc[i] = -upf.beta[jbeta][i] * (dminus / dpm).sqrt()
+                        + upf.beta[jbeta + 1][i] * (dplus / dpm).sqrt();
 
                     vsoc[i] *= 2.0 / (2.0 * l_f64 + 1.0);
                 }
+                self.vbeta_soc.push(vsoc);
 
                 dij_soc.push(dpm);
-
                 self.lbeta_soc.push(l);
 
-                // l, l - 1/2
-                jbeta += 1;
-
-                // l, l + 1/2
-                jbeta += 1;
+                // skip the (l, l - 1/2) and (l, l + 1/2) projectors
+                jbeta += 2;
             }
         }
 
@@ -243,271 +159,127 @@ impl AtomPSPUPFFR {
             self.dij_soc[(ibeta, ibeta)] = dij_soc[ibeta];
         }
     }
+}
 
-    fn build_scalar_beta(&mut self) {
-        // find out how many beta we need for scalar-relativistic potential
-
-        let mut nbeta = 0;
-        for (&l, &j) in self.vlll.iter().zip(self.vjjj.iter()) {
-            nbeta += 1;
-
-            if l > 0 && (j as f64 - (l as f64 + 0.5)).abs() < EPS5 {
-                //println!("l = {}, j = {}", l, j);
-                nbeta -= 1;
-            }
-        }
-
-        self.nbeta = nbeta;
-
-        self.lbeta = vec![0; self.nbeta];
-        self.dij = Matrix::<f64>::new(nbeta, nbeta);
-
-        let mut jbeta = 0;
-        for ibeta in 0..nbeta {
-            let l = self.vlll[jbeta];
-
-            // println!(" l = {}, jbeta = {}", l, jbeta);
-
-            if l == 0 {
-                self.vbeta.push(self.vbeta_j[jbeta].clone());
-                self.dij[(ibeta, ibeta)] = self.dij_j[(jbeta, jbeta)];
-                self.lbeta[ibeta] = self.vlll[jbeta];
-
-                jbeta += 1;
-            } else {
-                let l_f64 = l as f64;
-                let dminus = self.dij_j[(jbeta, jbeta)];
-                let dplus = self.dij_j[(jbeta + 1, jbeta + 1)];
-
-                let dpm = ((l_f64 + 1.0) * dplus + l_f64 * dminus) / (2.0 * l_f64 + 1.0);
-                //let dpm = 1.0;
-
-                let fm = (dminus / dpm).sqrt();
-                let fp = (dplus / dpm).sqrt();
-
-                //println!("fp = {}, fm = {}, dpm = {}", fp, fm, dpm);
-
-                self.vbeta.push(vec![0.0; self.mmax]);
-
-                for i in 0..self.mmax {
-                    self.vbeta[ibeta][i] = l_f64 * self.vbeta_j[jbeta][i] * fm
-                        + (l_f64 + 1.0) * self.vbeta_j[jbeta + 1][i] * fp;
-
-                    self.vbeta[ibeta][i] /= 2.0 * l_f64 + 1.0;
-                }
-
-                self.dij[(ibeta, ibeta)] = dpm;
-
-                self.lbeta[ibeta] = self.vlll[jbeta];
-
-                // l, l - 1/2
-                jbeta += 1;
-
-                // l, l + 1/2
-                jbeta += 1;
-            }
-        }
-
-        // println!("dij = {}", self.dij);
+// The projectors must be listed as: l = 0 with j = 1/2, or, for l > 0, j = l - 1/2
+// immediately followed by j = l + 1/2. build_scalar_beta and build_soc_beta rely on it.
+fn check_relbeta(upf: &UpfData) -> Result<(), String> {
+    if upf.lll.is_empty() && upf.nbeta > 0 {
+        return Err(
+            "no PP_RELBETA (j) data: pot_scheme = upf-fr needs a fully relativistic file"
+                .to_string(),
+        );
     }
+    check_len("PP_RELBETA lll", upf.lll.len(), upf.nbeta)?;
+    check_len("PP_RELBETA jjj", upf.jjj.len(), upf.nbeta)?;
 
-    fn parse_upf(&mut self, pspfile: &str) -> Result<(), String> {
-        let file = File::open(pspfile).map_err(|err| format!("cannot open file: {}", err))?;
-        let file = BufReader::new(file);
+    let has_j = |ibeta: usize, j: f64| (upf.jjj[ibeta] - j).abs() < EPS5;
 
-        let mut parser = xml::reader::EventReader::new(file);
+    let mut ibeta = 0;
+    while ibeta < upf.nbeta {
+        let l = upf.lll[ibeta];
+        let lf = l as f64;
 
-        let mut data_type = UPF::NULL;
-        let mut current_chi_l: Option<usize> = None;
-
-        loop {
-            match parser.next() {
-                Ok(XmlEvent::StartElement {
-                    name,
-                    attributes,
-                    namespace,
-                }) => {
-                    if name.local_name == "PP_R" {
-                        data_type = UPF::R;
-                    }
-
-                    if name.local_name == "PP_RAB" {
-                        data_type = UPF::RAB;
-                    }
-
-                    if name.local_name == "PP_LOCAL" {
-                        data_type = UPF::LOCAL;
-                    }
-
-                    if name.local_name.contains("PP_BETA") {
-                        data_type = UPF::BETA;
-                        if let Some(attr_id) = attributes
-                            .iter()
-                            .find(|attr| attr.name.local_name == "angular_momentum")
-                        {
-                            self.lbeta_j
-                                .push(parse_attr("angular_momentum", &attr_id.value)?);
-                        }
-                    }
-
-                    if name.local_name.contains("PP_CHI") {
-                        data_type = UPF::CHI;
-                        current_chi_l =
-                            match attributes.iter().find(|attr| attr.name.local_name == "l") {
-                                Some(attr) => Some(parse_attr("l", &attr.value)?),
-                                None => None,
-                            };
-                    }
-
-                    if name.local_name == "PP_NLCC" {
-                        data_type = UPF::NLCC;
-                    }
-
-                    if name.local_name == "PP_DIJ" {
-                        data_type = UPF::DIJ;
-                    }
-
-                    if name.local_name == "PP_RHOATOM" {
-                        data_type = UPF::RHOATOM;
-                    }
-
-                    if name.local_name.contains("PP_RELBETA") {
-                        if let Some(attr_id) =
-                            attributes.iter().find(|attr| attr.name.local_name == "lll")
-                        {
-                            self.vlll.push(parse_attr("lll", &attr_id.value)?);
-                        }
-
-                        if let Some(attr_id) =
-                            attributes.iter().find(|attr| attr.name.local_name == "jjj")
-                        {
-                            self.vjjj.push(parse_attr("jjj", &attr_id.value)?);
-                        }
-                    }
-
-                    if name.local_name == "PP_HEADER" {
-                        data_type = UPF::HEADER;
-
-                        for attr in attributes.iter() {
-                            let value = &attr.value;
-                            match attr.name.local_name.as_str() {
-                                "element" => self.element = value.clone(),
-                                "z_valence" => self.zion = parse_attr("z_valence", value)?,
-                                "l_max" => self.lmax = parse_attr("l_max", value)?,
-                                "l_local" => self.lloc = parse_attr("l_local", value)?,
-                                "core_correction" => {
-                                    self.core_correction = value.trim().to_lowercase() == "t"
-                                }
-                                "number_of_proj" => {
-                                    self.nbeta = parse_attr("number_of_proj", value)?
-                                }
-                                "mesh_size" => {
-                                    self.mmax = parse_attr("mesh_size", value)?;
-                                    self.rhocore = vec![0.0; self.mmax];
-                                }
-                                "relativistic" => {
-                                    self.relativistic = value.trim().to_lowercase() == "full"
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        data_type = UPF::NULL;
-                    }
-                }
-
-                Ok(XmlEvent::Characters(text)) => {
-                    match data_type {
-                        UPF::R => self.rad = parse_block("PP_R", &text, 1.0)?,
-                        UPF::RAB => self.rab = parse_block("PP_RAB", &text, 1.0)?,
-                        UPF::LOCAL => self.vloc = parse_block("PP_LOCAL", &text, RY_TO_HA)?,
-                        UPF::BETA => self.vbeta_j.push(parse_block("PP_BETA", &text, RY_TO_HA)?),
-                        UPF::CHI => {
-                            if let Some(l) = current_chi_l {
-                                let chi = parse_block("PP_CHI", &text, 1.0)?;
-                                if !chi.is_empty() {
-                                    self.chi.entry(l).or_insert(chi);
-                                }
-                            }
-                        }
-                        UPF::DIJ => self.read_dij_j(&text)?,
-                        UPF::RHOATOM => self.rhoatom = parse_block("PP_RHOATOM", &text, 1.0)?,
-                        UPF::NLCC => self.rhocore = parse_block("PP_NLCC", &text, 1.0)?,
-                        UPF::HEADER | UPF::NULL => {}
-                    }
-                    data_type = UPF::NULL;
-                }
-
-                Ok(XmlEvent::EndElement { name, .. }) => {
-                    if name.local_name == "UPF" {
-                        return Ok(());
-                    }
-                }
-
-                Ok(XmlEvent::EndDocument) => {
-                    return Err("file ends before </UPF>; expected a UPF v2 (XML) file".to_string());
-                }
-
-                Err(err) => {
-                    return Err(format!("not a valid UPF v2 (XML) file: {}", err));
-                }
-
-                _ => {}
-            }
-        }
-    }
-
-    fn read_dij_j(&mut self, str_dij: &str) -> Result<(), String> {
-        let v: Vec<f64> = parse_block("PP_DIJ", str_dij, 1.0)?
-            .iter()
-            .map(|x| x / RY_TO_HA)
-            .collect();
-        check_len("PP_DIJ", v.len(), self.nbeta * self.nbeta)?;
-
-        self.dij_j = Matrix::<f64>::from_row_slice(self.nbeta, self.nbeta, &v);
-
-        Ok(())
-    }
-
-    // Catch inconsistent files here rather than as an index panic later in the run.
-    // Runs before build_scalar_beta, while nbeta is still the number of (l, j) projectors.
-    fn check(&self) -> Result<(), String> {
-        check_len("PP_R", self.rad.len(), self.mmax)?;
-        check_len("PP_RAB", self.rab.len(), self.mmax)?;
-        check_len("PP_LOCAL", self.vloc.len(), self.mmax)?;
-        check_len("PP_BETA blocks", self.vbeta_j.len(), self.nbeta)?;
-        check_len("PP_DIJ rows", self.dij_j.nrow(), self.nbeta)?;
-        if self.vlll.is_empty() && self.nbeta > 0 {
-            return Err(
-                "no PP_RELBETA (j) data: pot_scheme = upf-fr needs a fully relativistic file"
-                    .to_string(),
-            );
-        }
-        check_len("PP_RELBETA lll", self.vlll.len(), self.nbeta)?;
-        check_len("PP_RELBETA jjj", self.vjjj.len(), self.nbeta)?;
-        for beta in self.vbeta_j.iter() {
-            check_len("PP_BETA", beta.len(), self.mmax)?;
-        }
-
-        // Every l > 0 channel must come as a (j = l - 1/2, j = l + 1/2) pair.
-        let mut ibeta = 0;
-        while ibeta < self.nbeta {
-            let l = self.vlll[ibeta];
-            if l == 0 {
-                ibeta += 1;
-                continue;
-            }
-            if ibeta + 1 >= self.nbeta || self.vlll[ibeta + 1] != l {
+        if l == 0 {
+            if !has_j(ibeta, 0.5) {
                 return Err(format!(
-                    "PP_RELBETA.{}: l = {} projector is not followed by its j = l + 1/2 partner",
+                    "PP_RELBETA.{}: l = 0 needs j = 0.5, got {}",
                     ibeta + 1,
-                    l
+                    upf.jjj[ibeta]
                 ));
             }
-            ibeta += 2;
+            ibeta += 1;
+            continue;
         }
 
-        Ok(())
+        let is_pair = ibeta + 1 < upf.nbeta
+            && upf.lll[ibeta + 1] == l
+            && has_j(ibeta, lf - 0.5)
+            && has_j(ibeta + 1, lf + 0.5);
+        if !is_pair {
+            return Err(format!(
+                "PP_RELBETA.{}: l = {} projectors must come as j = {} followed by j = {}",
+                ibeta + 1,
+                l,
+                lf - 0.5,
+                lf + 0.5
+            ));
+        }
+        ibeta += 2;
+    }
+
+    Ok(())
+}
+
+impl AtomPSP for AtomPSPUPFFR {
+    fn get_nlcc(&self) -> bool {
+        self.upf.core_correction
+    }
+
+    fn get_nbeta(&self) -> usize {
+        self.lbeta.len()
+    }
+
+    fn get_lbeta(&self, ibeta: usize) -> usize {
+        self.lbeta[ibeta]
+    }
+
+    fn get_beta(&self, ibeta: usize) -> &[f64] {
+        &self.vbeta[ibeta]
+    }
+
+    fn get_dfact(&self, ibeta: usize) -> f64 {
+        self.dij[(ibeta, ibeta)]
+    }
+
+    fn get_zion(&self) -> f64 {
+        self.upf.zion
+    }
+
+    fn get_lloc(&self) -> i32 {
+        self.upf.lloc
+    }
+
+    fn get_lmax(&self) -> usize {
+        self.upf.lmax
+    }
+
+    fn get_mmax(&self) -> usize {
+        self.upf.mmax
+    }
+
+    fn get_rad(&self) -> &[f64] {
+        &self.upf.rad
+    }
+
+    fn get_rab(&self) -> &[f64] {
+        &self.upf.rab
+    }
+
+    fn get_rho(&self) -> &[f64] {
+        &self.upf.rhoatom
+    }
+
+    fn get_rhocore(&self) -> &[f64] {
+        &self.upf.rhocore
+    }
+
+    fn get_wfc(&self, l: usize) -> &[f64] {
+        self.upf.chi.get(&l).unwrap()
+    }
+
+    fn has_wfc(&self, l: usize) -> bool {
+        self.upf.chi.contains_key(&l)
+    }
+
+    fn get_wfc_channels(&self) -> Vec<usize> {
+        let mut ls: Vec<usize> = self.upf.chi.keys().copied().collect();
+        ls.sort_unstable();
+        ls
+    }
+
+    fn get_vloc(&self) -> &[f64] {
+        &self.upf.vloc
     }
 }
 
@@ -516,10 +288,9 @@ impl fmt::Display for AtomPSPUPFFR {
         writeln!(
             f,
             " element = {:?} zion = {} lmax = {} lloc = {}",
-            self.element, self.zion, self.lmax, self.lloc
+            self.upf.element, self.upf.zion, self.upf.lmax, self.upf.lloc
         )?;
-        writeln!(f, " mmax = {} nbeta = {}", self.mmax, self.nbeta)?;
-        write!(f, "")
+        writeln!(f, " mmax = {} nbeta = {}", self.upf.mmax, self.lbeta.len())
     }
 }
 
@@ -527,10 +298,13 @@ impl fmt::Display for AtomPSPUPFFR {
 mod tests {
     use super::*;
 
+    fn si_path(name: &str) -> String {
+        format!("{}/src/{}", env!("CARGO_MANIFEST_DIR"), name)
+    }
+
     #[test]
     fn test_load_si_fr() {
-        let path = format!("{}/src/Si-fr.upf", env!("CARGO_MANIFEST_DIR"));
-        let psp = AtomPSPUPFFR::from_file(&path).unwrap();
+        let psp = AtomPSPUPFFR::from_file(&si_path("Si-fr.upf")).unwrap();
 
         // 6 (l, j) projectors: two with l = 0 and two (j = 1/2, 3/2) pairs with l = 1.
         assert_eq!(psp.get_nbeta(), 4);
@@ -544,8 +318,24 @@ mod tests {
     #[test]
     fn test_scalar_file_is_an_error() {
         // A scalar-relativistic file has no PP_RELBETA data.
-        let path = format!("{}/src/Si-sr.upf", env!("CARGO_MANIFEST_DIR"));
-        let err = AtomPSPUPFFR::from_file(&path).unwrap_err();
+        let err = AtomPSPUPFFR::from_file(&si_path("Si-sr.upf"))
+            .err()
+            .unwrap();
         assert!(err.contains("PP_RELBETA"), "{}", err);
+    }
+
+    #[test]
+    fn test_wrong_j_order_is_an_error() {
+        // Give the first l = 1 projector j = 3/2: the pair is then (3/2, 3/2).
+        let text = std::fs::read_to_string(si_path("Si-fr.upf")).unwrap();
+        let text = text.replacen("lll=\"1\" jjj=\"0.5\"", "lll=\"1\" jjj=\"1.5\"", 1);
+        let path =
+            std::env::temp_dir().join(format!("dftworks-upffr-order-{}.upf", std::process::id()));
+        std::fs::write(&path, text).unwrap();
+        let result = AtomPSPUPFFR::from_file(path.to_str().unwrap());
+        std::fs::remove_file(&path).unwrap();
+
+        let err = result.err().unwrap();
+        assert!(err.contains("PP_RELBETA.3"), "{}", err);
     }
 }
