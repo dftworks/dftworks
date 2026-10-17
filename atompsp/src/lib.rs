@@ -1,9 +1,14 @@
 mod upf;
-use upf::*;
+pub use upf::AtomPSPUPF;
 
 mod upffr;
-use upffr::*;
+pub use upffr::AtomPSPUPFFR;
 
+use std::str::FromStr;
+
+/// Read-only view of one atom's pseudopotential, whatever the file format.
+/// Each format has its own loader, `AtomPSPUPF::from_file` or
+/// `AtomPSPUPFFR::from_file`, which returns an error for a bad file.
 pub trait AtomPSP {
     fn get_nbeta(&self) -> usize;
     fn get_lbeta(&self, ibeta: usize) -> usize;
@@ -13,9 +18,6 @@ pub trait AtomPSP {
 
     /// return a vector because of multiple projectors
     fn get_dfact(&self, ibeta: usize) -> f64;
-
-    /// atomic number
-    fn get_zatom(&self) -> f64;
 
     /// valence electron number
     fn get_zion(&self) -> f64;
@@ -32,18 +34,33 @@ pub trait AtomPSP {
     fn has_wfc(&self, l: usize) -> bool;
     fn get_wfc_channels(&self) -> Vec<usize>;
     fn get_vloc(&self) -> &[f64];
-    fn read_file(&mut self, pspfile: &str);
-
-    fn get_nbeta_soc(&self) -> usize;
-    fn get_lbeta_soc(&self, ibeta: usize) -> usize;
-    fn get_beta_soc(&self, ibeta: usize) -> &[f64];
-    fn get_dfact_soc(&self, ibeta: usize) -> f64;
 }
 
-pub fn new(scheme: &str) -> Box<dyn AtomPSP> {
-    match scheme {
-        "upf" => Box::new(AtomPSPUPF::new()),
-        "upf-fr" => Box::new(AtomPSPUPFFR::new()),
-        other => panic!("unsupported pseudo potential scheme '{}'", other),
+// Parse one attribute value, e.g. z_valence="4.0" in PP_HEADER.
+fn parse_attr<T: FromStr>(name: &str, value: &str) -> Result<T, String> {
+    value
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid value '{}' for attribute '{}'", value.trim(), name))
+}
+
+// Parse the numbers inside a data block, e.g. <PP_R> ... </PP_R>, multiplied by `scale`.
+fn parse_block(tag: &str, text: &str, scale: f64) -> Result<Vec<f64>, String> {
+    text.split_whitespace()
+        .map(|x| {
+            x.parse::<f64>()
+                .map(|v| v * scale)
+                .map_err(|_| format!("invalid number '{}' in {}", x, tag))
+        })
+        .collect()
+}
+
+fn check_len(what: &str, found: usize, expected: usize) -> Result<(), String> {
+    if found != expected {
+        return Err(format!(
+            "{} has {} values, expected {}",
+            what, found, expected
+        ));
     }
+    Ok(())
 }
