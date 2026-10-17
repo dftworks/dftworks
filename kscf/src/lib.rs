@@ -2,6 +2,7 @@
 
 use atompsp::AtomPSP;
 use control::Control;
+use control::XcScheme;
 use crystal::Crystal;
 use dwconsts::*;
 use eigensolver;
@@ -30,7 +31,7 @@ use std::sync::Arc;
 mod hubbard;
 mod hybrid;
 mod subspace;
-use hubbard::HubbardPotential;
+pub use hubbard::HubbardPotential;
 use hybrid::HybridPotential;
 
 struct KscfWorkspace {
@@ -39,8 +40,9 @@ struct KscfWorkspace {
     fft_workspace: Array3<c64>,
     hubbard_beta: Vec<c64>,
     hubbard_coeff: Vec<c64>,
-    hybrid_workspace: hybrid::HybridWorkspace,
-    hybrid_prepare_workspace: hybrid::HybridPrepareWorkspace,
+    // Allocated only when the hybrid (HSE06) term is present.
+    hybrid_workspace: Option<hybrid::HybridWorkspace>,
+    hybrid_prepare_workspace: Option<hybrid::HybridPrepareWorkspace>,
     rayleigh_evecs: Matrix<c64>,
 }
 
@@ -51,6 +53,7 @@ impl KscfWorkspace {
         npw_rho: usize,
         nband: usize,
         hubbard_n_m: usize,
+        with_hybrid: bool,
     ) -> Self {
         Self {
             vunkg_3d: Array3::<c64>::new(fft_shape),
@@ -58,8 +61,16 @@ impl KscfWorkspace {
             fft_workspace: Array3::<c64>::new(fft_shape),
             hubbard_beta: vec![c64::new(0.0, 0.0); hubbard_n_m],
             hubbard_coeff: vec![c64::new(0.0, 0.0); hubbard_n_m],
-            hybrid_workspace: hybrid::HybridWorkspace::new(fft_shape, npw_rho),
-            hybrid_prepare_workspace: hybrid::HybridPrepareWorkspace::new(fft_shape, npw_rho),
+            hybrid_workspace: if with_hybrid {
+                Some(hybrid::HybridWorkspace::new(fft_shape, npw_rho))
+            } else {
+                None
+            },
+            hybrid_prepare_workspace: if with_hybrid {
+                Some(hybrid::HybridPrepareWorkspace::new(fft_shape, npw_rho))
+            } else {
+                None
+            },
             rayleigh_evecs: Matrix::<c64>::new(npw_wfc, nband),
         }
     }
@@ -122,8 +133,9 @@ pub struct KSCF<'a> {
     smearing: Box<dyn Smearing>,
     volume: f64,
     fft_shape: [usize; 3],
-    hybrid: HybridPotential,
-    hubbard: HubbardPotential,
+    // Optional Hamiltonian terms: Some only when configured in in.ctrl.
+    hybrid: Option<HybridPotential>,
+    hubbard: Option<HubbardPotential>,
     hybrid_exchange_energy: Cell<f64>,
     workspace: RefCell<KscfWorkspace>,
     sparse_solver: RefCell<Box<dyn eigensolver::EigenSolver>>,
@@ -241,16 +253,34 @@ impl<'a> KSCF<'a> {
         let smearing = smearing::new(control.get_smearing_scheme_enum());
         let volume = crystal.get_latt().volume();
 
-        let hybrid = HybridPotential::new(control, pwwfc, pwden);
-        let hubbard =
-            HubbardPotential::new(control, crystal, gvec, pspot, pwwfc, &shared_cache.kgylm);
+        // Screened exact exchange only for xc_scheme = hse06.
+        let hybrid = if matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
+            Some(HybridPotential::new(control, pwwfc, pwden))
+        } else {
+            None
+        };
+        // DFT+U only when hubbard_u_enabled = true.
+        let hubbard = if control.get_hubbard_u_enabled() {
+            Some(HubbardPotential::new(
+                control,
+                crystal,
+                gvec,
+                pspot,
+                pwwfc,
+                &shared_cache.kgylm,
+            ))
+        } else {
+            None
+        };
+        let hubbard_n_m = hubbard.as_ref().map_or(0, |h| h.n_m());
         let npw_wfc = pwwfc.get_n_plane_waves();
         let workspace = KscfWorkspace::new(
             fft_shape,
             npw_wfc,
             pwden.get_n_plane_waves(),
             control.get_nband(),
-            hubbard.n_m(),
+            hubbard_n_m,
+            hybrid.is_some(),
         );
         let sparse_solver = eigensolver::new(
             control.get_eigen_solver_enum(),
@@ -318,46 +348,31 @@ impl<'a> KSCF<'a> {
         self.occ.iter().sum()
     }
 
-    pub fn hybrid_is_enabled(&self) -> bool {
-        self.hybrid.is_enabled()
-    }
-
     pub fn get_hybrid_exchange_energy(&self) -> f64 {
         self.hybrid_exchange_energy.get()
     }
 
-    pub fn hubbard_is_enabled(&self) -> bool {
-        self.hubbard.is_enabled()
+    /// The DFT+U term, if hubbard_u_enabled = true.
+    pub fn hubbard(&self) -> Option<&HubbardPotential> {
+        self.hubbard.as_ref()
     }
 
-    pub fn hubbard_u_eff(&self) -> f64 {
-        self.hubbard.u_eff()
+    pub fn hubbard_mut(&mut self) -> Option<&mut HubbardPotential> {
+        self.hubbard.as_mut()
     }
 
-    pub fn hubbard_n_m(&self) -> usize {
-        self.hubbard.n_m()
-    }
-
-    pub fn hubbard_n_atoms(&self) -> usize {
-        self.hubbard.n_atoms()
-    }
-
-    pub fn hubbard_occ_len(&self) -> usize {
-        self.hubbard.occ_len()
-    }
-
-    pub fn hubbard_set_global_occupation(&mut self, occ_global: &[c64]) {
-        self.hubbard.set_global_occupation(occ_global);
-    }
-
+    // Adds this k-point's contribution to the +U occupation matrix (uses this
+    // k-point's occupations and weight). No-op without the +U term.
     pub fn hubbard_accumulate_occupation(&self, evecs: &Matrix<c64>, out: &mut [c64]) {
-        self.hubbard.accumulate_occupation(
-            &self.occ,
-            self.k_weight,
-            self.control.is_spin(),
-            evecs,
-            out,
-        );
+        if let Some(hubbard) = &self.hubbard {
+            hubbard.accumulate_occupation(
+                &self.occ,
+                self.k_weight,
+                self.control.is_spin(),
+                evecs,
+                out,
+            );
+        }
     }
 
     pub fn get_total_valence_occ_below(&self, evals: &[f64], energy_level: f64) -> f64 {
@@ -489,19 +504,26 @@ impl<'a> KSCF<'a> {
             )
         };
 
-        let hybrid_prepared = self.hybrid.prepare_with_workspace(
-            rgtrans,
-            self.gvec,
-            self.pwden,
-            self.volume,
-            &self.shared_cache.fft_linear_index,
-            evecs,
-            &self.occ,
-            self.control.is_spin(),
-            hybrid_prepare_workspace,
+        // Occupied orbitals for the exact-exchange operator (HSE06 only).
+        let hybrid_prepared = match (&self.hybrid, hybrid_prepare_workspace.as_mut()) {
+            (Some(hybrid), Some(prepare_ws)) => Some(hybrid.prepare_with_workspace(
+                rgtrans,
+                self.gvec,
+                self.pwden,
+                self.volume,
+                &self.shared_cache.fft_linear_index,
+                evecs,
+                &self.occ,
+                self.control.is_spin(),
+                prepare_ws,
+            )),
+            _ => None,
+        };
+        self.hybrid_exchange_energy.set(
+            hybrid_prepared
+                .as_ref()
+                .map_or(0.0, |prepared| prepared.exchange_energy()),
         );
-        self.hybrid_exchange_energy
-            .set(hybrid_prepared.exchange_energy());
 
         // Closure implementing H|psi> for eigensolver backend.
         let mut hamiltonian_on_psi = |vin: &[c64], vout: &mut [c64]| {
@@ -537,21 +559,26 @@ impl<'a> KSCF<'a> {
             }
 
             // Screened exact-exchange (HSE06 short-range) contribution.
-            self.hybrid.apply_on_psi(
-                rgtrans,
-                self.gvec,
-                self.pwden,
-                self.volume,
-                &self.shared_cache.fft_linear_index,
-                &hybrid_prepared,
-                hybrid_workspace,
-                vin,
-                vout,
-            );
+            if let (Some(hybrid), Some(prepared), Some(ws)) =
+                (&self.hybrid, &hybrid_prepared, hybrid_workspace.as_mut())
+            {
+                hybrid.apply_on_psi(
+                    rgtrans,
+                    self.gvec,
+                    self.pwden,
+                    self.volume,
+                    &self.shared_cache.fft_linear_index,
+                    prepared,
+                    ws,
+                    vin,
+                    vout,
+                );
+            }
 
-            // Hubbard (+U) contribution hook.
-            self.hubbard
-                .apply_on_psi(vin, vout, hubbard_beta, hubbard_coeff);
+            // Hubbard (+U) contribution.
+            if let Some(hubbard) = &self.hubbard {
+                hubbard.apply_on_psi(vin, vout, hubbard_beta, hubbard_coeff);
+            }
 
             // Kinetic contribution (diagonal in PW basis).
 

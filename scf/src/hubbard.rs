@@ -65,14 +65,14 @@ fn update_hubbard_for_channel<'a>(
         return 0.0;
     }
 
-    if !kscf_channel[0].hubbard_is_enabled() {
+    let Some(hubbard) = kscf_channel[0].hubbard() else {
         return 0.0;
-    }
+    };
 
-    let occ_len = kscf_channel[0].hubbard_occ_len();
-    let n_atoms = kscf_channel[0].hubbard_n_atoms();
-    let n_m = kscf_channel[0].hubbard_n_m();
-    let u_eff = kscf_channel[0].hubbard_u_eff();
+    let occ_len = hubbard.occ_len();
+    let n_atoms = hubbard.n_atoms();
+    let n_m = hubbard.n_m();
+    let u_eff = hubbard.u_eff();
 
     let mut occ_local = vec![c64::new(0.0, 0.0); occ_len];
     for (ik, kscf) in kscf_channel.iter().enumerate() {
@@ -85,7 +85,9 @@ fn update_hubbard_for_channel<'a>(
     symmetrize_occupation(&mut occ_global, n_atoms, n_m);
 
     for kscf in kscf_channel.iter_mut() {
-        kscf.hubbard_set_global_occupation(&occ_global);
+        if let Some(hubbard) = kscf.hubbard_mut() {
+            hubbard.set_global_occupation(&occ_global);
+        }
     }
 
     dudarev_energy(u_eff, n_atoms, n_m, &occ_global, spin_weight)
