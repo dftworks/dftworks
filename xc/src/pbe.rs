@@ -52,6 +52,27 @@ impl XC for XCPBE {
             _ => panic!("PBE XC called with inconsistent rho/vxc spin variants"),
         }
     }
+
+    fn stress_correction_nonspin(
+        &self,
+        gvec: &gvector::GVector,
+        pwden: &pwdensity::PWDensity,
+        rgtrans: &rgtransform::RGTransform,
+        rho: &Array3<c64>,
+    ) -> Matrix<f64> {
+        stress_correction_nonspin(gvec, pwden, rgtrans, rho)
+    }
+
+    fn stress_correction_spin(
+        &self,
+        gvec: &gvector::GVector,
+        pwden: &pwdensity::PWDensity,
+        rgtrans: &rgtransform::RGTransform,
+        rho_up: &Array3<c64>,
+        rho_dn: &Array3<c64>,
+    ) -> Matrix<f64> {
+        stress_correction_spin(gvec, pwden, rgtrans, rho_up, rho_dn)
+    }
 }
 
 fn compute_nonspin_potential(
