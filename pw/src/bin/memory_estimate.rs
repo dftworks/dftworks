@@ -366,9 +366,19 @@ fn estimate_case(options: &CliOptions) -> Result<EstimateReport, EstimateError> 
             let eigenvalues_bytes = spin_channels.saturating_mul(bytes_f64(nk_nband_local));
             let occupations_bytes = spin_channels.saturating_mul(bytes_f64(nk_nband_local));
 
+            // Per k-point KSCF workspace: 3 FFT-grid arrays, plus the hybrid
+            // buffers (9 FFT-grid arrays, 3 density-sized vectors) for HSE06 only.
+            let (hybrid_nfft_arrays, hybrid_npw_rho_vectors) =
+                if matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
+                    (9usize, 3usize)
+                } else {
+                    (0usize, 0usize)
+                };
             let kscf_workspace_elements = nk_local
-                .saturating_mul(12usize.saturating_mul(nfft))
-                .saturating_add(nk_local.saturating_mul(3usize.saturating_mul(npw_rho)))
+                .saturating_mul((3 + hybrid_nfft_arrays).saturating_mul(nfft))
+                .saturating_add(
+                    nk_local.saturating_mul(hybrid_npw_rho_vectors.saturating_mul(npw_rho)),
+                )
                 .saturating_add(npw_nband_local)
                 .saturating_add(nk_local.saturating_mul(2usize.saturating_mul(hubbard_n_m)));
             let kscf_workspace_bytes =

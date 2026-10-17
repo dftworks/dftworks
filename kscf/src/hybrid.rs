@@ -1,5 +1,4 @@
 use control::Control;
-use control::XcScheme;
 use dwconsts::{EPS20, FOURPI};
 use gvector::GVector;
 use ndarray::Array3;
@@ -29,7 +28,6 @@ fn screened_exchange_kernel_value(g: f64, omega: f64) -> f64 {
 }
 
 pub struct HybridPotential {
-    enabled: bool,
     alpha: f64,
     kernel_sr: Vec<f64>,
 }
@@ -95,15 +93,8 @@ impl HybridPrepareWorkspace {
 }
 
 impl HybridPotential {
+    // Only constructed when xc_scheme = hse06 (see KSCF::new_with_shared_cache).
     pub fn new(control: &Control, pwwfc: &PWBasis, pwden: &PWDensity) -> Self {
-        if !matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
-            return Self {
-                enabled: false,
-                alpha: 0.0,
-                kernel_sr: Vec::new(),
-            };
-        }
-
         let k_cart = pwwfc.get_k_cart();
 
         if k_cart.norm() > 1.0E-10 {
@@ -119,53 +110,7 @@ impl HybridPotential {
             .map(|&g| screened_exchange_kernel_value(g, omega))
             .collect();
 
-        Self {
-            enabled: true,
-            alpha,
-            kernel_sr,
-        }
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub fn make_workspace(&self, fft_shape: [usize; 3], npw_rho: usize) -> HybridWorkspace {
-        HybridWorkspace::new(fft_shape, npw_rho)
-    }
-
-    pub fn make_prepare_workspace(
-        &self,
-        fft_shape: [usize; 3],
-        npw_rho: usize,
-    ) -> HybridPrepareWorkspace {
-        HybridPrepareWorkspace::new(fft_shape, npw_rho)
-    }
-
-    pub fn prepare(
-        &self,
-        rgtrans: &RGTransform,
-        gvec: &GVector,
-        pwden: &PWDensity,
-        volume: f64,
-        fft_shape: [usize; 3],
-        fft_linear_index: &[usize],
-        evecs: &Matrix<c64>,
-        occ: &[f64],
-        is_spin: bool,
-    ) -> HybridPrepared {
-        let mut workspace = HybridPrepareWorkspace::new(fft_shape, pwden.get_n_plane_waves());
-        self.prepare_with_workspace(
-            rgtrans,
-            gvec,
-            pwden,
-            volume,
-            fft_linear_index,
-            evecs,
-            occ,
-            is_spin,
-            &mut workspace,
-        )
+        Self { alpha, kernel_sr }
     }
 
     pub fn prepare_with_workspace(
@@ -180,14 +125,6 @@ impl HybridPotential {
         is_spin: bool,
         workspace: &mut HybridPrepareWorkspace,
     ) -> HybridPrepared {
-        if !self.enabled {
-            return HybridPrepared {
-                occ_eff: Vec::new(),
-                psi_occ_r: Vec::new(),
-                exchange_energy: 0.0,
-            };
-        }
-
         let occ_scale = effective_occ_scale(is_spin);
 
         let mut occ_eff = Vec::<f64>::new();
@@ -291,7 +228,7 @@ impl HybridPotential {
         vin: &[c64],
         vout: &mut [c64],
     ) {
-        if !self.enabled || prepared.is_empty() {
+        if prepared.is_empty() {
             return;
         }
 

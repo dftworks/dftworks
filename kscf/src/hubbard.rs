@@ -66,7 +66,6 @@ fn build_correlated_atom_positions(crystal: &Crystal, specie: &str) -> Vec<Vecto
 }
 
 pub struct HubbardPotential {
-    enabled: bool,
     u_eff: f64,
     n_m: usize,
     projector_by_atom_m: Vec<Vec<Vec<c64>>>,
@@ -82,16 +81,7 @@ impl HubbardPotential {
         pwwfc: &PWBasis,
         kgylm: &KGYLM,
     ) -> Self {
-        if !control.get_hubbard_u_enabled() {
-            return Self {
-                enabled: false,
-                u_eff: 0.0,
-                n_m: 0,
-                projector_by_atom_m: Vec::new(),
-                d_by_atom: Vec::new(),
-            };
-        }
-
+        // Only constructed when hubbard_u_enabled = true (see KSCF::new_with_shared_cache).
         let specie = control.get_hubbard_species();
         let l = control.get_hubbard_l() as usize;
         let u_eff = control.get_hubbard_u_eff();
@@ -144,16 +134,11 @@ impl HubbardPotential {
         let d_by_atom = vec![Matrix::<c64>::new(n_m, n_m); projector_by_atom_m.len()];
 
         Self {
-            enabled: true,
             u_eff,
             n_m,
             projector_by_atom_m,
             d_by_atom,
         }
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
     }
 
     pub fn n_m(&self) -> usize {
@@ -180,10 +165,6 @@ impl HubbardPotential {
         evecs: &Matrix<c64>,
         out: &mut [c64],
     ) {
-        if !self.enabled {
-            return;
-        }
-
         assert_eq!(out.len(), self.occ_len());
         let n_m = self.n_m;
         let occ_scale = if is_spin { 1.0 } else { 0.5 };
@@ -214,10 +195,6 @@ impl HubbardPotential {
     }
 
     pub fn set_global_occupation(&mut self, occ_global: &[c64]) {
-        if !self.enabled {
-            return;
-        }
-
         assert_eq!(occ_global.len(), self.occ_len());
 
         for iat in 0..self.n_atoms() {
@@ -235,10 +212,6 @@ impl HubbardPotential {
     }
 
     pub fn apply_on_psi(&self, vin: &[c64], vout: &mut [c64], beta: &mut [c64], coeff: &mut [c64]) {
-        if !self.enabled {
-            return;
-        }
-
         assert_eq!(beta.len(), self.n_m);
         assert_eq!(coeff.len(), self.n_m);
 

@@ -33,6 +33,29 @@ pub trait XC {
         vxc: &mut VXCR,
         exc: &mut Array3<c64>,
     );
+
+    // Gradient (GGA) contribution to the XC stress, beyond the diagonal
+    // (exc - vxc*rho) term computed in the stress crate. Zero for LDA.
+    fn stress_correction_nonspin(
+        &self,
+        _gvec: &GVector,
+        _pwden: &PWDensity,
+        _rgtrans: &RGTransform,
+        _rho: &Array3<c64>,
+    ) -> Matrix<f64> {
+        Matrix::<f64>::new(3, 3)
+    }
+
+    fn stress_correction_spin(
+        &self,
+        _gvec: &GVector,
+        _pwden: &PWDensity,
+        _rgtrans: &RGTransform,
+        _rho_up: &Array3<c64>,
+        _rho_dn: &Array3<c64>,
+    ) -> Matrix<f64> {
+        Matrix::<f64>::new(3, 3)
+    }
 }
 
 pub fn new(xc_scheme: XcScheme) -> Box<dyn XC> {
@@ -59,35 +82,4 @@ pub fn new(xc_scheme: XcScheme) -> Box<dyn XC> {
     }
 
     xc
-}
-
-pub fn stress_gga_correction_nonspin(
-    xc_scheme: XcScheme,
-    gvec: &GVector,
-    pwden: &PWDensity,
-    rgtrans: &RGTransform,
-    rho: &Array3<c64>,
-) -> Matrix<f64> {
-    match xc_scheme {
-        XcScheme::Pbe | XcScheme::Hse06 => {
-            pbe::stress_correction_nonspin(gvec, pwden, rgtrans, rho)
-        }
-        XcScheme::LdaPz | XcScheme::LsdaPz => Matrix::<f64>::new(3, 3),
-    }
-}
-
-pub fn stress_gga_correction_spin(
-    xc_scheme: XcScheme,
-    gvec: &GVector,
-    pwden: &PWDensity,
-    rgtrans: &RGTransform,
-    rho_up: &Array3<c64>,
-    rho_dn: &Array3<c64>,
-) -> Matrix<f64> {
-    match xc_scheme {
-        XcScheme::Pbe | XcScheme::Hse06 => {
-            pbe::stress_correction_spin(gvec, pwden, rgtrans, rho_up, rho_dn)
-        }
-        XcScheme::LdaPz | XcScheme::LsdaPz => Matrix::<f64>::new(3, 3),
-    }
 }

@@ -341,7 +341,7 @@ pub fn xc(
         stress[(i, i)] = -(stress_exc - stress_vxc_rho);
     }
 
-    let stress_gga = xc::stress_gga_correction_nonspin(xc_scheme, gvec, pwden, rgtrans, rho_3d);
+    let stress_gga = xc::new(xc_scheme).stress_correction_nonspin(gvec, pwden, rgtrans, rho_3d);
     for i in 0..3 {
         for j in 0..3 {
             stress[(i, j)] += stress_gga[(i, j)];
@@ -376,7 +376,7 @@ pub fn xc_spin(
 
     if let RHOR::Spin(rho_up, rho_dn) = rho_3d {
         let stress_gga =
-            xc::stress_gga_correction_spin(xc_scheme, gvec, pwden, rgtrans, rho_up, rho_dn);
+            xc::new(xc_scheme).stress_correction_spin(gvec, pwden, rgtrans, rho_up, rho_dn);
         for i in 0..3 {
             for j in 0..3 {
                 stress[(i, j)] += stress_gga[(i, j)];
