@@ -268,9 +268,24 @@ For workspace/performance refactors, also run allocation trace:
 docker run --rm -v "$PWD":/usr/src/app -w /usr/src/app rust-dev bash -lc 'source $HOME/.cargo/env && cargo run -p pw --bin workspace_alloc_trace'
 ```
 
+# Dry run (`pw --dry-run`)
+
+Check a case before submitting it: in the case directory, run
+
+```bash
+pw --dry-run                    # or: mpirun -np 4 pw --dry-run
+```
+
+`pw` reads and checks every input file exactly as a real run does (same error messages, exit
+code 1 on bad input), prints the usual startup summary (control parameters, pseudopotentials,
+k-points) and the memory estimate below for the actual number of MPI ranks, then exits with
+code 0. No SCF is run and no files are written. Any other command-line argument is rejected.
+
 # Input-driven memory estimate (`memory_estimate`)
 
 Use `memory_estimate` before SCF launch to project memory footprint directly from input files.
+It computes the same estimate as `pw --dry-run` (shared code in `pw/src/memory_estimate.rs`),
+and adds `--ranks <N>` to plan for a different rank count and `--json` for machine-readable output.
 
 ```bash
 cargo run -p pw --bin memory_estimate -- --case test_example/si-oncv/scf

@@ -22,6 +22,7 @@ use vnl::VNL;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+mod memory_estimate;
 mod orchestration;
 mod provenance;
 mod restart;
@@ -499,8 +500,27 @@ impl ElectronicStepContext {
     }
 }
 
+/// `pw` accepts one optional argument, `--dry-run`. Anything else is an error,
+/// so a typo does not silently start a full calculation.
+fn parse_dry_run_flag() -> Result<bool, String> {
+    let mut dry_run = false;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--dry-run" => dry_run = true,
+            other => {
+                return Err(format!(
+                    "unknown argument '{}'; the only option is --dry-run",
+                    other
+                ))
+            }
+        }
+    }
+    Ok(dry_run)
+}
+
 fn main() {
     // Top-level program flow:
+    // 0) with --dry-run: check all inputs, print the memory estimate, and stop
     // 1) initialize MPI/runtime and read all inputs
     // 2) build per-geometry numerical context (FFT/G-vectors/k-points)
     // 3) run SCF to obtain energies, forces, and stress
@@ -515,7 +535,17 @@ fn main() {
 
     let stopwatch_main = std::time::Instant::now();
 
-    let bootstrap = match orchestration::bootstrap::load_bootstrap_inputs() {
+    let dry_run = match parse_dry_run_flag() {
+        Ok(dry_run) => dry_run,
+        Err(err) => {
+            if dwmpi::is_root() {
+                eprintln!("{}", err);
+            }
+            shutdown_and_exit(1);
+        }
+    };
+
+    let bootstrap = match orchestration::bootstrap::load_bootstrap_inputs(dry_run) {
         Ok(bootstrap) => bootstrap,
         Err(err) => {
             if dwmpi::is_root() {
@@ -533,6 +563,38 @@ fn main() {
         verbosity,
         spin_scheme,
     } = bootstrap;
+
+    // Dry run: every input file has been read and checked above, exactly as in
+    // a real run. Report the expected memory use and stop before any SCF setup.
+    if dry_run {
+        let mut exit_code = 0;
+        if dwmpi::is_root() {
+            let case_dir = std::env::current_dir()
+                .map(|dir| dir.display().to_string())
+                .unwrap_or_else(|_| ".".to_string());
+            match memory_estimate::estimate(
+                &control,
+                &crystal,
+                &pots,
+                kpts.as_ref(),
+                None,
+                &case_dir,
+            ) {
+                Ok(report) => {
+                    println!();
+                    memory_estimate::print_human_report(&report);
+                    println!();
+                    println!("   dry run: all input files checked; no SCF was run");
+                }
+                Err(err) => {
+                    eprintln!("dry run: memory estimate failed: {}", err);
+                    exit_code = 1;
+                }
+            }
+        }
+        dwmpi::bcast_scalar(&mut exit_code, dwmpi::comm_world());
+        shutdown_and_exit(exit_code);
+    }
 
     let latt0 = crystal.get_latt().clone();
     let geom_optim_mask_cell = crystal.get_cell_mask().clone();
