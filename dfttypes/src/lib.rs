@@ -3,7 +3,6 @@ use lattice::*;
 use ndarray::*;
 use pwbasis::PWBasis;
 use types::*;
-use types::*;
 
 use enum_as_inner::EnumAsInner;
 

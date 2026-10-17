@@ -66,6 +66,9 @@ pub(crate) fn build_trial_orbitals(
     Ok(all_trial_orbitals)
 }
 
+// Not called yet: reads projections from the .win file instead of the .nnkp
+// written by `wannier90.x -pp`; kept for a wannier90.x-free export path.
+#[allow(dead_code)]
 pub(crate) fn build_trial_orbitals_from_win(
     win_file: &str,
     num_wann: usize,

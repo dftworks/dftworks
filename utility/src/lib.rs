@@ -1,10 +1,7 @@
-#![allow(warnings)]
-
 use itertools::multizip;
 use ndarray::*;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use std::f64::consts;
-use types::*;
 use types::*;
 
 const ZERO_C64: c64 = c64 { re: 0.0, im: 0.0 };
@@ -266,17 +263,17 @@ pub fn cartesian_to_spherical(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
     //
     let mut theta = consts::PI / 2.0 * y.signum();
 
-    let EPS12 = 1.0E-12;
+    let eps12 = 1.0E-12;
 
-    if r > EPS12 {
+    if r > eps12 {
         theta = (z / r).acos();
     }
 
     let phi: f64;
 
-    if x > EPS12 {
+    if x > eps12 {
         phi = (y / x).atan();
-    } else if x < -EPS12 {
+    } else if x < -eps12 {
         phi = (y / x).atan() + consts::PI;
     } else {
         phi = consts::PI / 2.0 * y.signum();

@@ -1,21 +1,16 @@
-#![allow(warnings)]
 use control::{Control, KPointScheduleScheme, SpinScheme};
 use crystal::Crystal;
 use dfttypes::*;
-use dwconsts::*;
 use fftgrid::FFTGrid;
 use gvector::GVector;
 use kpts::KPTS;
 use kpts_distribution::{KPointDomain, KPointScheduleMode, KPointSchedulePlan};
-use kscf::KSCF;
 use ndarray::*;
 use num_traits::identities::Zero;
 use pspot::PSPot;
 use pwbasis::PWBasis;
 use pwdensity::*;
-use symmetry::SymmetryDriver;
 use types::Vector3f64;
-use types::*;
 use types::*;
 use vnl::VNL;
 
@@ -377,7 +372,6 @@ impl<'a> RuntimeContext<'a> {
 }
 
 struct ElectronicStepContext {
-    k_schedule_plan: KPointSchedulePlan,
     k_domain: KPointDomain,
     vpwwfc: Vec<PWBasis>,
     vvnl: Vec<VNL>,
@@ -434,7 +428,6 @@ impl ElectronicStepContext {
         }
 
         Self {
-            k_schedule_plan,
             k_domain,
             vpwwfc,
             vvnl,
@@ -560,7 +553,6 @@ fn main() {
         pots,
         kpts,
         zions,
-        verbosity,
         spin_scheme,
     } = bootstrap;
 
@@ -773,7 +765,7 @@ fn main() {
         // if not converged, get the atom positions and (lattice vectors if cell is also relaxed) for the next optim iteration
         let geom_optim_mask_ions = vec![Vector3f64::new(1.0, 1.0, 1.0); crystal.get_n_atoms()];
 
-        let mut bcell_move = control.get_geom_optim_cell();
+        let bcell_move = control.get_geom_optim_cell();
 
         geom_driver.compute_next_configuration(
             &mut crystal,
@@ -813,26 +805,14 @@ fn main() {
 }
 
 fn post_processing(
-    control: &Control,
-    vkevals: &VKEigenValue,
-    vkevecs: &VKEigenVector,
-    vkscf: &VKSCF,
+    _control: &Control,
+    _vkevals: &VKEigenValue,
+    _vkevecs: &VKEigenVector,
+    _vkscf: &VKSCF,
 ) {
     // total density of states
 
     // println!("   compute total density of states");
 
     //dos::compute_total_density_of_states(control, vkevals, vkevecs, vkscf);
-}
-
-fn matrix3x3_to_vector3(mat: &Matrix<f64>) -> Vec<Vector3f64> {
-    let mut v = vec![Vector3f64::zeros(); 3];
-
-    for i in 0..3 {
-        v[i].x = mat[(0, i)];
-        v[i].y = mat[(1, i)];
-        v[i].z = mat[(2, i)];
-    }
-
-    v
 }

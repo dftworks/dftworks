@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use crate::{CheckpointMeta, VKEigenVector, RHOR};
 use lattice::Lattice;
 use ndarray::Array3;

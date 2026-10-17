@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use symops::{classify_symmetry, detect_symmetry, DetectOptions, Structure, SymOp};
 
 pub trait SymmetryDriver {

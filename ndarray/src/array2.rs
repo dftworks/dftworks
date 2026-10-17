@@ -1,5 +1,4 @@
 // column-major memory layout
-#![allow(warnings)]
 use dwconsts::*;
 use types::c64;
 

@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use control::Control;
 use kpts::KPTS;
 use std::fs::{self, File};

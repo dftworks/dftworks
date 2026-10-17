@@ -1,13 +1,8 @@
-#![allow(warnings)]
-
 use control::{Control, SpinScheme};
 use dfttypes::*;
 use gvector::GVector;
 use kpts_distribution::KPointDomain;
-use ndarray::Array3;
 use std::path::Path;
-use types::c64;
-use types::Matrix;
 use types::MatrixExt;
 
 const RESTART_LATTICE_TOL: f64 = 1.0e-8;

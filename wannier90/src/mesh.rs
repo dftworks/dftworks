@@ -24,6 +24,9 @@ pub(crate) fn validate_k_mesh(k_mesh: [i32; 3]) -> io::Result<()> {
     Ok(())
 }
 
+// Not called yet: alternative to running `wannier90.x -pp` (see nnkp.rs
+// build_topology_from_wannier90_pp), kept for a wannier90.x-free export path.
+#[allow(dead_code)]
 pub(crate) fn read_k_shift(in_kmesh_file: &str) -> io::Result<[i32; 3]> {
     let file = std::fs::File::open(in_kmesh_file)?;
     let lines: Vec<String> = std::io::BufReader::new(file)
@@ -68,6 +71,9 @@ pub(crate) fn read_k_shift(in_kmesh_file: &str) -> io::Result<[i32; 3]> {
     ])
 }
 
+// Not called yet: alternative to running `wannier90.x -pp` (see nnkp.rs
+// build_topology_from_wannier90_pp), kept for a wannier90.x-free export path.
+#[allow(dead_code)]
 pub(crate) fn build_mesh_topology(
     kpts: &dyn KPTS,
     k_mesh: [i32; 3],

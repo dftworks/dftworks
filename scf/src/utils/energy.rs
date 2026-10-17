@@ -1,9 +1,6 @@
-#![allow(warnings)]
-
 use control::Control;
 use control::VdwDampingScheme;
 use crystal::Crystal;
-use dfttypes::*;
 use kscf::KSCF;
 use ndarray::Array3;
 use pwdensity::PWDensity;

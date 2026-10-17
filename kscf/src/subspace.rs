@@ -1,4 +1,3 @@
-use dwconsts::*;
 use nalgebra::linalg::SymmetricEigen;
 use nalgebra::DMatrix;
 use num_traits::identities::Zero;

@@ -1,8 +1,8 @@
-#![allow(warnings)]
-
 use nalgebra::DMatrix;
 use num::complex::Complex;
 
+// Lower case on purpose, to read like f64.
+#[allow(non_camel_case_types)]
 pub type c64 = Complex<f64>;
 pub type Vector3<T> = nalgebra::Vector3<T>;
 pub type Vector3f64 = Vector3<f64>;

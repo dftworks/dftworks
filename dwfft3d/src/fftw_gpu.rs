@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use std::os::raw::*;
 use std::ptr;
 use types::c64;

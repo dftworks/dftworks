@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use crate::FermiLevel;
 use dfttypes::*;
 use dwconsts::*;

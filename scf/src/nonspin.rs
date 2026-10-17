@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use super::engine::{run_scf_iteration_engine, ScfIterationAdapter};
 use super::hubbard;
 use super::utils;

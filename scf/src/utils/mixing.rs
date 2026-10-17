@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use dfttypes::*;
 use gvector::GVector;
 use mixing::Mixing;

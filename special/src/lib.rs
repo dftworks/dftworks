@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use dwconsts;
 use std::error::Error;
 use std::f64::consts;

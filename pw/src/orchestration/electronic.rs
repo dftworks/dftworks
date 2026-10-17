@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use control::SpinScheme;
 use dfttypes::*;
 use gvector::GVector;

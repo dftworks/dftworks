@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 mod ldapz;
 use ldapz::*;
 

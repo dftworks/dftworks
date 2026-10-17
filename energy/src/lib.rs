@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use atompsp::AtomPSP;
 use control::Control;
 use crystal::Crystal;
@@ -11,7 +10,6 @@ use kscf::KSCF;
 use lattice::Lattice;
 use ndarray::Array3;
 use num_traits::identities::Zero;
-use pspot::PSPot;
 use pwbasis::PWBasis;
 use pwdensity::PWDensity;
 use types::c64;
@@ -131,13 +129,9 @@ pub fn vnl_of_one_specie_one_k(
     kscf: &KSCF,
     evecs: &Matrix<c64>,
 ) -> c64 {
-    let gindex = pwwfc.get_gindex();
-
     let nbeta = atpsp.get_nbeta();
 
     let npw = pwwfc.get_n_plane_waves();
-
-    let mut sfact: Vec<c64> = vec![c64::zero(); npw];
 
     let occ = kscf.get_occ();
 

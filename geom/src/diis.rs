@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use crystal::Crystal;
 use lattice::Lattice;
 use nalgebra::Matrix3;
@@ -9,9 +8,6 @@ use optimization::OptimizationDriver;
 pub struct DIIS {
     optim: Box<dyn OptimizationDriver>,
 
-    alpha: f64,
-    nstep: usize,
-
     iter: usize,
 }
 
@@ -21,8 +17,6 @@ impl DIIS {
     pub fn new(alpha: f64, nstep: usize) -> DIIS {
         DIIS {
             optim: optimization::new("diis", alpha, nstep),
-            alpha,
-            nstep,
             iter: 0,
         }
     }
@@ -74,13 +68,6 @@ fn scatter_vec3(flat: &[f64], out: &mut [Vector3f64]) {
 
 fn matrix_to_matrix3(m: &Matrix<f64>) -> Matrix3<f64> {
     Matrix3::<f64>::from_column_slice(m.as_slice())
-}
-
-fn matrix3_to_lattice(m: &Matrix3<f64>) -> Lattice {
-    let a = [m[(0, 0)], m[(1, 0)], m[(2, 0)]];
-    let b = [m[(0, 1)], m[(1, 1)], m[(2, 1)]];
-    let c = [m[(0, 2)], m[(1, 2)], m[(2, 2)]];
-    Lattice::new(&a, &b, &c)
 }
 
 fn lattice_to_matrix3(latt: &Lattice) -> Matrix3<f64> {
@@ -172,16 +159,6 @@ fn move_ions(
     scatter_vec3(&vin, &mut atoms_frac);
 
     crystal.set_atom_positions_from_frac(&atoms_frac);
-}
-
-fn set_lattice_vectors_with_strain(crystal: &mut Crystal, latt0: &Lattice, strain: &Matrix3<f64>) {
-    let mut factor = strain.clone();
-    for i in 0..3 {
-        factor[(i, i)] += 1.0;
-    }
-    let mlatt = factor * lattice_to_matrix3(latt0);
-    let new_latt = matrix3_to_lattice(&mlatt);
-    crystal.set_lattice_vectors(&new_latt);
 }
 
 fn compute_generalized_coordinates(crystal: &Crystal, _latt0: &Lattice) -> Vec<Vector3f64> {

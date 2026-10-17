@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use itertools::multizip;
 use lattice::Lattice;
 use types::{Vector3f64, Vector3i32};

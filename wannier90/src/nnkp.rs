@@ -44,6 +44,9 @@ pub(crate) fn build_topology_from_wannier90_pp(
     Ok(topology)
 }
 
+// Not called yet: alternative to running `wannier90.x -pp` (see nnkp.rs
+// build_topology_from_wannier90_pp), kept for a wannier90.x-free export path.
+#[allow(dead_code)]
 pub(crate) fn write_nnkp_file(
     filename: &str,
     crystal: &Crystal,

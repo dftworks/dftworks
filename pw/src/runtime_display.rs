@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use crystal::Crystal;
 use dwconsts::*;
 use fftgrid::FFTGrid;

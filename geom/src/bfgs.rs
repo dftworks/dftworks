@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use crystal::Crystal;
 use lattice::Lattice;
 use nalgebra::Matrix3;
@@ -232,7 +231,7 @@ fn compute_generalized_coordinates(crystal: &Crystal, latt0: &Lattice) -> Vec<Ve
 
 fn compute_generalized_forces(
     crystal: &Crystal,
-    latt0: &Lattice,
+    _latt0: &Lattice,
     force: &[Vector3f64],
     stress: &Matrix<f64>,
 ) -> Vec<Vector3f64> {
