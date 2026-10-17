@@ -4,6 +4,7 @@ use bfgs::*;
 mod diis;
 use diis::*;
 
+use control::GeomOptScheme;
 use crystal::Crystal;
 use lattice::Lattice;
 use types::*;
@@ -21,10 +22,9 @@ pub trait GeomOptimizationDriver {
     );
 }
 
-pub fn new(scheme: &str, alpha: f64, nstep: usize) -> Box<dyn GeomOptimizationDriver> {
-    match scheme.to_lowercase().as_str() {
-        "bfgs" => Box::new(BFGS::new(alpha, nstep)),
-        "diis" => Box::new(DIIS::new(alpha, nstep)),
-        other => panic!("unsupported geom_optim_scheme '{}'", other),
+pub fn new(scheme: GeomOptScheme, alpha: f64, nstep: usize) -> Box<dyn GeomOptimizationDriver> {
+    match scheme {
+        GeomOptScheme::Bfgs => Box::new(BFGS::new(alpha, nstep)),
+        GeomOptScheme::Diis => Box::new(DIIS::new(alpha, nstep)),
     }
 }

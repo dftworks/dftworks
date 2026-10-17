@@ -489,6 +489,7 @@ dependencies = [
 name = "geom"
 version = "0.1.0"
 dependencies = [
+ "control",
  "crystal",
  "force",
  "lattice",

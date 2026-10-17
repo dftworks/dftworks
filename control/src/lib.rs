@@ -150,14 +150,11 @@ impl SmearingScheme {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Only implemented solvers are listed; add a variant together with its
+// implementation in the `eigensolver` crate.
 pub enum EigenSolverScheme {
-    Sd,
-    Psd,
-    Cg,
     Pcg,
     Lobpcg,
-    Arpack,
-    Davidson,
 }
 
 impl Default for EigenSolverScheme {
@@ -169,25 +166,15 @@ impl Default for EigenSolverScheme {
 impl EigenSolverScheme {
     pub fn as_str(self) -> &'static str {
         match self {
-            EigenSolverScheme::Sd => "sd",
-            EigenSolverScheme::Psd => "psd",
-            EigenSolverScheme::Cg => "cg",
             EigenSolverScheme::Pcg => "pcg",
             EigenSolverScheme::Lobpcg => "lobpcg",
-            EigenSolverScheme::Arpack => "arpack",
-            EigenSolverScheme::Davidson => "davidson",
         }
     }
 
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
-            "sd" => Some(EigenSolverScheme::Sd),
-            "psd" => Some(EigenSolverScheme::Psd),
-            "cg" => Some(EigenSolverScheme::Cg),
             "pcg" => Some(EigenSolverScheme::Pcg),
             "lobpcg" => Some(EigenSolverScheme::Lobpcg),
-            "arpack" => Some(EigenSolverScheme::Arpack),
-            "davidson" => Some(EigenSolverScheme::Davidson),
             _ => None,
         }
     }
@@ -251,6 +238,99 @@ impl KptsScheme {
     }
 }
 
+/// Run mode. Both modes currently run the same SCF path; band-structure runs
+/// are driven by `kpts_scheme = kline` with an `in.kline` file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Task {
+    Scf,
+    Band,
+}
+
+impl Task {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Task::Scf => "scf",
+            Task::Band => "band",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "scf" => Some(Task::Scf),
+            "band" => Some(Task::Band),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeomOptScheme {
+    Bfgs,
+    Diis,
+}
+
+impl GeomOptScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GeomOptScheme::Bfgs => "bfgs",
+            GeomOptScheme::Diis => "diis",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "bfgs" => Some(GeomOptScheme::Bfgs),
+            "diis" => Some(GeomOptScheme::Diis),
+            _ => None,
+        }
+    }
+}
+
+/// DOS broadening shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DosScheme {
+    Gauss,
+}
+
+impl DosScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DosScheme::Gauss => "gauss",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "gauss" => Some(DosScheme::Gauss),
+            _ => None,
+        }
+    }
+}
+
+/// DFT-D damping function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VdwDampingScheme {
+    Zero,
+    Bj,
+}
+
+impl VdwDampingScheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            VdwDampingScheme::Zero => "zero",
+            VdwDampingScheme::Bj => "bj",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "zero" => Some(VdwDampingScheme::Zero),
+            "bj" => Some(VdwDampingScheme::Bj),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MixingScheme {
     Pulay,
@@ -264,14 +344,6 @@ impl Default for MixingScheme {
 }
 
 impl MixingScheme {
-    pub const ALL: &'static [MixingScheme] = &[MixingScheme::Pulay, MixingScheme::Broyden];
-
-    // Accepted in.ctrl spellings; both `parse` and the error message use this table.
-    const NAMES: &'static [(&'static str, MixingScheme)] = &[
-        ("pulay", MixingScheme::Pulay),
-        ("broyden", MixingScheme::Broyden),
-    ];
-
     pub fn as_str(self) -> &'static str {
         match self {
             MixingScheme::Pulay => "pulay",
@@ -280,20 +352,11 @@ impl MixingScheme {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        let s = s.trim().to_lowercase();
-        Self::NAMES
-            .iter()
-            .find(|(name, _)| *name == s)
-            .map(|(_, scheme)| *scheme)
-    }
-
-    /// Comma-separated accepted spellings, for error messages.
-    pub fn accepted_values() -> String {
-        Self::NAMES
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(", ")
+        match s.trim().to_lowercase().as_str() {
+            "pulay" => Some(MixingScheme::Pulay),
+            "broyden" => Some(MixingScheme::Broyden),
+            _ => None,
+        }
     }
 }
 
@@ -453,74 +516,10 @@ pub struct Control {
     vdw: VdwParams,
 }
 
-struct CapabilityMatrix {
-    tasks: &'static [&'static str],
-    spin_schemes: &'static [SpinScheme],
-    xc_schemes: &'static [XcScheme],
-    eigen_solvers: &'static [EigenSolverScheme],
-    restart_spin_schemes: &'static [SpinScheme],
-}
-
-const RUNTIME_CAPABILITY_MATRIX: CapabilityMatrix = CapabilityMatrix {
-    tasks: &["scf", "band"],
-    spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
-    xc_schemes: &[
-        XcScheme::LdaPz,
-        XcScheme::LsdaPz,
-        XcScheme::Pbe,
-        XcScheme::Hse06,
-    ],
-    eigen_solvers: &[EigenSolverScheme::Pcg, EigenSolverScheme::Lobpcg],
-    restart_spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
-};
-
-#[inline]
-fn contains_task(values: &[&str], value: &str) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-#[inline]
-fn contains_spin_scheme(values: &[SpinScheme], value: SpinScheme) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-#[inline]
-fn contains_xc_scheme(values: &[XcScheme], value: XcScheme) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-#[inline]
-fn contains_eigen_solver(values: &[EigenSolverScheme], value: EigenSolverScheme) -> bool {
-    values.iter().any(|allowed| *allowed == value)
-}
-
-fn join_supported_tasks(values: &[&str]) -> String {
-    values.join(", ")
-}
-
-fn join_supported_spin_schemes(values: &[SpinScheme]) -> String {
-    values
-        .iter()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn join_supported_xc_schemes(values: &[XcScheme]) -> String {
-    values
-        .iter()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn join_supported_eigen_schemes(values: &[EigenSolverScheme]) -> String {
-    values
-        .iter()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
+// Spin schemes that parse and can run. Every other option only lists
+// implemented values, so anything that parses is supported; `ncl` parses but
+// has no runtime yet. Restart supports the same spin schemes.
+const RUNTIME_SPIN_SCHEMES: &[SpinScheme] = &[SpinScheme::NonSpin, SpinScheme::Spin];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControlError {
@@ -596,47 +595,6 @@ fn canonicalize_control_key(key: &str) -> &str {
 impl Control {
     pub fn new() -> Control {
         Control::default()
-    }
-
-    /// Routes one in.ctrl assignment to the group that owns `key`.
-    /// Returns `None` for unknown keys.
-    fn set_key(&mut self, key: &str, value: &str) -> Option<Result<(), String>> {
-        self.run
-            .set_key(key, value)
-            .or_else(|| self.basis.set_key(key, value))
-            .or_else(|| self.model.set_key(key, value))
-            .or_else(|| self.scf.set_key(key, value))
-            .or_else(|| self.mixing.set_key(key, value))
-            .or_else(|| self.geom_opt.set_key(key, value))
-            .or_else(|| self.fft.set_key(key, value))
-            .or_else(|| self.field.set_key(key, value))
-            .or_else(|| self.output.set_key(key, value))
-            .or_else(|| self.dos.set_key(key, value))
-            .or_else(|| self.wannier90.set_key(key, value))
-            .or_else(|| self.hubbard.set_key(key, value))
-            .or_else(|| self.hybrid.set_key(key, value))
-            .or_else(|| self.vdw.set_key(key, value))
-    }
-
-    /// Every accepted in.ctrl key (excluding deprecated aliases).
-    pub fn known_keys() -> impl Iterator<Item = &'static str> {
-        const GROUP_KEYS: &[&[&str]] = &[
-            RunParams::KEYS,
-            BasisParams::KEYS,
-            ModelParams::KEYS,
-            ScfParams::KEYS,
-            MixingParams::KEYS,
-            GeomOptParams::KEYS,
-            FftParams::KEYS,
-            FieldParams::KEYS,
-            OutputParams::KEYS,
-            DosParams::KEYS,
-            Wannier90Params::KEYS,
-            HubbardParams::KEYS,
-            HybridParams::KEYS,
-            VdwParams::KEYS,
-        ];
-        GROUP_KEYS.iter().flat_map(|keys| keys.iter().copied())
     }
 
     // ---- grouped accessors ----
@@ -726,8 +684,8 @@ impl Control {
         )
     }
 
-    pub fn get_dos_scheme(&self) -> &str {
-        &self.dos.scheme
+    pub fn get_dos_scheme(&self) -> DosScheme {
+        self.dos.scheme
     }
 
     pub fn get_dos_sigma(&self) -> f64 {
@@ -798,8 +756,8 @@ impl Control {
         self.geom_opt.cell
     }
 
-    pub fn get_geom_optim_scheme(&self) -> &str {
-        &self.geom_opt.scheme
+    pub fn get_geom_optim_scheme(&self) -> GeomOptScheme {
+        self.geom_opt.scheme
     }
 
     pub fn get_geom_optim_max_steps(&self) -> usize {
@@ -890,8 +848,8 @@ impl Control {
         self.model.spin_scheme
     }
 
-    pub fn get_task(&self) -> &str {
-        &self.run.task
+    pub fn get_task(&self) -> Task {
+        self.run.task
     }
 
     pub fn get_surface_dipole_correction(&self) -> bool {
@@ -968,21 +926,19 @@ impl Control {
 
     // the setting of task will override some parameters read from in.ctrl
 
-    pub fn set_task(&mut self, task: &str) {
-        self.run.task = task.to_string();
+    pub fn set_task(&mut self, task: Task) {
+        self.run.task = task;
 
         match task {
-            "scf" => {
+            Task::Scf => {
                 //self.run.restart = false;
             }
-            "band" => {
+            Task::Band => {
                 self.run.restart = true;
                 self.output.save_rho = false;
                 self.output.save_wfc = false;
                 //self.scf.max_iter = 1;
             }
-
-            _ => {}
         }
     }
 
@@ -1058,8 +1014,8 @@ impl Control {
         self.vdw.correction
     }
 
-    pub fn get_vdw_damping(&self) -> &str {
-        &self.vdw.damping
+    pub fn get_vdw_damping(&self) -> VdwDampingScheme {
+        self.vdw.damping
     }
     pub fn read_file(&mut self, inpfile: &str) {
         if let Err(err) = self.try_read_file(inpfile) {
@@ -1122,11 +1078,15 @@ impl Control {
             };
 
             let key = canonicalize_control_key(raw_key.as_str());
-            self.set_key(key, &raw_value)
-                .ok_or_else(|| ControlError::unknown_key(line_no, &raw_key))?
-                .map_err(|details| {
-                    ControlError::invalid_value(line_no, key, &raw_value, details)
-                })?;
+            match self.set_key(key, &raw_value) {
+                Ok(true) => {}
+                Ok(false) => return Err(ControlError::unknown_key(line_no, &raw_key)),
+                Err(details) => {
+                    return Err(ControlError::invalid_value(
+                        line_no, key, &raw_value, details,
+                    ))
+                }
+            }
         }
 
         self.validate_semantic_ranges()?;
@@ -1214,61 +1174,20 @@ impl Control {
     }
 
     pub fn validate_capability_matrix(&self) -> Result<(), ControlError> {
-        let matrix = &RUNTIME_CAPABILITY_MATRIX;
+        let spin_scheme = self.model.spin_scheme;
 
-        if !contains_task(matrix.tasks, self.run.task.as_str()) {
-            return Err(ControlError::validation(
-                "task",
-                format!(
-                    "unsupported task='{}'; supported: {}",
-                    self.run.task,
-                    join_supported_tasks(matrix.tasks)
-                ),
-            ));
-        }
-
-        if !contains_spin_scheme(matrix.spin_schemes, self.model.spin_scheme) {
+        if !RUNTIME_SPIN_SCHEMES.contains(&spin_scheme) {
+            let supported = RUNTIME_SPIN_SCHEMES
+                .iter()
+                .map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(ControlError::validation(
                 "spin_scheme",
                 format!(
                     "spin_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
-                    self.model.spin_scheme.as_str(),
-                    join_supported_spin_schemes(matrix.spin_schemes)
-                ),
-            ));
-        }
-
-        if !contains_xc_scheme(matrix.xc_schemes, self.model.xc_scheme) {
-            return Err(ControlError::validation(
-                "xc_scheme",
-                format!(
-                    "xc_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
-                    self.model.xc_scheme.as_str(),
-                    join_supported_xc_schemes(matrix.xc_schemes)
-                ),
-            ));
-        }
-
-        if !contains_eigen_solver(matrix.eigen_solvers, self.scf.eigen_solver) {
-            return Err(ControlError::validation(
-                "eigen_solver",
-                format!(
-                    "eigen_solver='{}' is parsed but not implemented yet; supported: {}",
-                    self.scf.eigen_solver.as_str(),
-                    join_supported_eigen_schemes(matrix.eigen_solvers)
-                ),
-            ));
-        }
-
-        if self.run.restart
-            && !contains_spin_scheme(matrix.restart_spin_schemes, self.model.spin_scheme)
-        {
-            return Err(ControlError::validation(
-                "restart/spin_scheme",
-                format!(
-                    "restart=true is unsupported with spin_scheme='{}'; restart supports only {}",
-                    self.model.spin_scheme.as_str(),
-                    join_supported_spin_schemes(matrix.restart_spin_schemes)
+                    spin_scheme.as_str(),
+                    supported
                 ),
             ));
         }
@@ -1705,7 +1624,7 @@ impl Control {
         println!(
             "   {:<width1$} = {:>width2$}",
             "geom_optim_scheme",
-            self.get_geom_optim_scheme(),
+            self.get_geom_optim_scheme().as_str(),
             width1 = OUT_WIDTH1,
             width2 = OUT_WIDTH2
         );
@@ -1757,9 +1676,9 @@ impl Control {
 #[cfg(test)]
 mod tests {
     use super::{
-        Control, ControlError, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
-        KPointScheduleScheme, KptsScheme, MixingScheme, PotScheme, ScfLogFormat, SmearingScheme,
-        SpinScheme, VerbosityLevel, XcScheme,
+        Control, ControlError, DosScheme, EigenSolverScheme, ElectricFieldAxis, FftPlannerScheme,
+        GeomOptScheme, KPointScheduleScheme, KptsScheme, MixingScheme, PotScheme, ScfLogFormat,
+        SmearingScheme, SpinScheme, Task, VdwDampingScheme, VerbosityLevel, XcScheme,
     };
 
     fn parse_control(lines: &[&str]) -> Result<Control, ControlError> {
@@ -1851,7 +1770,7 @@ mod tests {
     fn test_validation_rejects_unsupported_task_mode() {
         let err = parse_control(&["task = relax"]).unwrap_err();
         assert_eq!(err.key.as_deref(), Some("task"));
-        assert!(err.message.contains("supported: scf, band"));
+        assert!(err.message.contains("expected one of: scf, band"));
     }
 
     #[test]
@@ -1926,10 +1845,13 @@ mod tests {
     }
 
     #[test]
-    fn test_validation_rejects_unimplemented_eigen_solver_modes() {
-        let err = parse_control(&["eigen_solver = davidson"]).unwrap_err();
-        assert_eq!(err.key.as_deref(), Some("eigen_solver"));
-        assert!(err.message.contains("not implemented yet"));
+    fn test_parser_rejects_unimplemented_eigen_solvers() {
+        for name in ["sd", "psd", "cg", "arpack", "davidson"].iter() {
+            let line = format!("eigen_solver = {}", name);
+            let err = parse_control(&[line.as_str()]).unwrap_err();
+            assert_eq!(err.key.as_deref(), Some("eigen_solver"));
+            assert!(err.message.contains("expected one of: pcg, lobpcg"));
+        }
     }
 
     #[test]
@@ -2040,14 +1962,14 @@ mod tests {
     fn test_parser_accepts_vdw_correction_parameters() {
         let control = parse_control(&["vdw_correction = true", "vdw_damping = zero"]).unwrap();
         assert!(control.get_vdw_correction());
-        assert_eq!(control.get_vdw_damping(), "zero");
+        assert_eq!(control.get_vdw_damping(), VdwDampingScheme::Zero);
     }
 
     #[test]
     fn test_parser_uses_vdw_defaults() {
         let control = parse_control(&["nband = 10"]).unwrap();
         assert!(!control.get_vdw_correction());
-        assert_eq!(control.get_vdw_damping(), "bj");
+        assert_eq!(control.get_vdw_damping(), VdwDampingScheme::Bj);
     }
 
     #[test]
@@ -2058,7 +1980,7 @@ mod tests {
     }
 
     #[test]
-    fn test_known_keys_match_legacy_key_set() {
+    fn test_key_cases_match_legacy_key_set() {
         // Keys accepted before parameters were grouped; none may be lost or renamed.
         let legacy = [
             "davidson_ndim",
@@ -2131,24 +2053,11 @@ mod tests {
             "wannier90_seedname",
             "xc_scheme",
         ];
-        let mut known: Vec<&str> = Control::known_keys().collect();
-        known.sort_unstable();
+        let mut covered: Vec<&str> = KEY_CASES.iter().map(|(key, _, _)| *key).collect();
+        covered.sort_unstable();
         let mut expected = legacy.to_vec();
         expected.sort_unstable();
-        assert_eq!(known, expected);
-    }
-
-    #[test]
-    fn test_known_keys_are_unique_across_groups() {
-        let mut known: Vec<&str> = Control::known_keys().collect();
-        let total = known.len();
-        known.sort_unstable();
-        known.dedup();
-        assert_eq!(
-            known.len(),
-            total,
-            "a key is declared in more than one group"
-        );
+        assert_eq!(covered, expected, "add a KEY_CASES entry for each new key");
     }
 
     fn approx(a: f64, b: f64) -> bool {
@@ -2161,11 +2070,14 @@ mod tests {
 
     type KeyCase = (&'static str, &'static str, fn(&Control) -> bool);
 
+    // dos_scheme has a single accepted value, so its case cannot differ from the default.
+    const SINGLE_VALUE_KEYS: &[&str] = &["dos_scheme"];
+
     // One case per in.ctrl key: a non-default value and a check that the value
     // reached the intended field (in stored units). The check must fail on the
     // defaults, so a key routed to the wrong field is caught.
     const KEY_CASES: &[KeyCase] = &[
-        ("task", "band", |c| c.get_task() == "band"),
+        ("task", "band", |c| c.get_task() == Task::Band),
         ("restart", "true", |c| c.get_restart()),
         ("symmetry", "true", |c| c.get_symmetry()),
         ("random_seed", "42", |c| c.get_random_seed() == Some(42)),
@@ -2234,7 +2146,7 @@ mod tests {
         }),
         ("geom_optim_cell", "true", |c| c.get_geom_optim_cell()),
         ("geom_optim_scheme", "diis", |c| {
-            c.get_geom_optim_scheme() == "diis"
+            c.get_geom_optim_scheme() == GeomOptScheme::Diis
         }),
         ("geom_optim_max_steps", "9", |c| {
             c.get_geom_optim_max_steps() == 9
@@ -2286,7 +2198,9 @@ mod tests {
             c.get_provenance_manifest() == "p.json"
         }),
         ("provenance_check", "true", |c| c.get_provenance_check()),
-        ("dos_scheme", "lorentz", |c| c.get_dos_scheme() == "lorentz"),
+        ("dos_scheme", "GAUSS", |c| {
+            c.get_dos_scheme() == DosScheme::Gauss
+        }),
         ("dos_sigma", "0.05", |c| approx(c.get_dos_sigma(), ev(0.05))),
         ("dos_ne", "123", |c| c.get_dos_ne() == 123),
         ("wannier90_export", "true", |c| c.get_wannier90_export()),
@@ -2307,36 +2221,32 @@ mod tests {
         ("hse06_alpha", "0.3", |c| approx(c.get_hse06_alpha(), 0.3)),
         ("hse06_omega", "0.2", |c| approx(c.get_hse06_omega(), 0.2)),
         ("vdw_correction", "true", |c| c.get_vdw_correction()),
-        ("vdw_damping", "zero", |c| c.get_vdw_damping() == "zero"),
+        ("vdw_damping", "zero", |c| {
+            c.get_vdw_damping() == VdwDampingScheme::Zero
+        }),
     ];
-
-    #[test]
-    fn test_key_cases_cover_every_known_key() {
-        let mut covered: Vec<&str> = KEY_CASES.iter().map(|(key, _, _)| *key).collect();
-        covered.sort_unstable();
-        let mut known: Vec<&str> = Control::known_keys().collect();
-        known.sort_unstable();
-        assert_eq!(covered, known, "add a KEY_CASES entry for each new key");
-    }
 
     #[test]
     fn test_every_key_round_trips_to_its_field() {
         let defaults = Control::new();
         for (key, value, check) in KEY_CASES {
-            assert!(
-                !check(&defaults),
-                "case for '{}' must use a non-default value",
-                key
-            );
+            if !SINGLE_VALUE_KEYS.contains(key) {
+                assert!(
+                    !check(&defaults),
+                    "case for '{}' must use a non-default value",
+                    key
+                );
+            }
 
             let mut control = Control::new();
-            control
-                .set_key(key, value)
-                .unwrap_or_else(|| panic!("key '{}' is not routed", key))
-                .unwrap_or_else(|err| panic!("key '{}' rejected '{}': {}", key, value, err));
+            match control.set_key(key, value) {
+                Ok(true) => {}
+                Ok(false) => panic!("key '{}' is not handled", key),
+                Err(err) => panic!("key '{}' rejected '{}': {}", key, value, err),
+            }
             assert!(check(&control), "key '{}' did not reach its field", key);
         }
-        assert!(Control::new().set_key("not_a_key", "1").is_none());
+        assert_eq!(Control::new().set_key("not_a_key", "1"), Ok(false));
     }
 
     #[test]
@@ -2449,13 +2359,8 @@ mod tests {
 
     #[test]
     fn test_mixing_scheme_names_round_trip() {
-        for scheme in MixingScheme::ALL {
-            // A new variant must be added here (compile error) and to ALL.
-            match scheme {
-                MixingScheme::Pulay | MixingScheme::Broyden => {}
-            }
+        for scheme in [MixingScheme::Pulay, MixingScheme::Broyden].iter() {
             assert_eq!(MixingScheme::parse(scheme.as_str()), Some(*scheme));
-            assert!(MixingScheme::accepted_values().contains(scheme.as_str()));
         }
         // "simple" used to be an undocumented alias for Pulay; it is no longer accepted.
         assert_eq!(MixingScheme::parse("simple"), None);
@@ -2466,11 +2371,51 @@ mod tests {
     }
 
     #[test]
-    fn test_mixing_scheme_error_lists_every_accepted_name() {
+    fn test_mixing_scheme_error_lists_accepted_names() {
         let err = parse_control(&["scf_rho_mix_scheme = linear"]).unwrap_err();
-        for name in MixingScheme::accepted_values().split(", ") {
-            assert!(MixingScheme::parse(name).is_some());
-            assert!(err.message.contains(name), "message omits '{}'", name);
+        assert!(err.message.contains("expected one of: pulay, broyden"));
+    }
+
+    #[test]
+    fn test_new_scheme_names_round_trip() {
+        for v in [Task::Scf, Task::Band].iter() {
+            assert_eq!(Task::parse(v.as_str()), Some(*v));
+        }
+        for v in [GeomOptScheme::Bfgs, GeomOptScheme::Diis].iter() {
+            assert_eq!(GeomOptScheme::parse(v.as_str()), Some(*v));
+        }
+        assert_eq!(DosScheme::parse("gauss"), Some(DosScheme::Gauss));
+        for v in [VdwDampingScheme::Zero, VdwDampingScheme::Bj].iter() {
+            assert_eq!(VdwDampingScheme::parse(v.as_str()), Some(*v));
+        }
+        for v in [EigenSolverScheme::Pcg, EigenSolverScheme::Lobpcg].iter() {
+            assert_eq!(EigenSolverScheme::parse(v.as_str()), Some(*v));
+        }
+    }
+
+    #[test]
+    fn test_parser_rejects_unknown_named_values() {
+        let cases = [
+            (
+                "geom_optim_scheme = lbfgs",
+                "geom_optim_scheme",
+                "expected one of: bfgs, diis",
+            ),
+            (
+                "dos_scheme = lorentz",
+                "dos_scheme",
+                "expected one of: gauss",
+            ),
+            (
+                "vdw_damping = d3",
+                "vdw_damping",
+                "expected one of: zero, bj",
+            ),
+        ];
+        for (line, key, message) in cases.iter() {
+            let err = parse_control(&[*line]).unwrap_err();
+            assert_eq!(err.key.as_deref(), Some(*key));
+            assert!(err.message.contains(message), "{}", err.message);
         }
     }
 }

@@ -184,11 +184,15 @@ New canonical refactoring items are added below to unblock future feature expans
 - [x] Validated via Docker correctness gates (`scripts/run_phase12_regression.sh`, `scripts/run_spin_mpi_parity.sh` in `rust-dev`)
 
 **Implementation Update (2026-10-16, #26)**
-- [x] Replaced `KeySpec` + per-key setters with `param_group!` (`control/src/params.rs`): each in.ctrl key is one line (key, field, type, default, parser)
+- [x] Replaced `KeySpec` + per-key setters with plain parameter structs and one `match` over in.ctrl keys (`control/src/params.rs`); adding a key = one field + default + one match line (the `param_group!` macro used at first was removed for readability)
 - [x] Split `Control` into per-concern groups (`RunParams`, `ScfParams`, `MixingParams`, ...) exposed via `control.mixing()` etc.; flat `get_*` accessors kept
 - [x] `mixing::new` now takes `&MixingParams` instead of `&Control`
 - [x] `scf_rho_mix_scheme` is validated at parse time (`pulay`, `broyden`); the `simple` name is removed
 - [x] `dos_sigma` default fixed to 0.1 eV (was 0.1 Ha)
+
+**Implementation Update (2026-10-17, #27)**
+- [x] `task`, `geom_optim_scheme`, `dos_scheme` and `vdw_damping` are enums validated at parse time; consumers match exhaustively (no runtime panic in `geom::new`, no silent BJ fallback for vdW damping)
+- [x] `eigen_solver` lists only implemented solvers (`pcg`, `lobpcg`); the capability check keeps only the `ncl` spin restriction
 
 **Acceptance Criteria**
 - `Control` loading has no `process::exit` and no parsing `unwrap()` in normal flow

@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn test_factory_builds_from_mixing_params_alone() {
-        for scheme in MixingScheme::ALL {
+        for scheme in [MixingScheme::Pulay, MixingScheme::Broyden].iter() {
             let params = MixingParams {
                 scheme: *scheme,
                 ..MixingParams::default()

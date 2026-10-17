@@ -545,6 +545,7 @@ pub fn display(
 }
 
 pub fn vdw(control: &control::Control, crystal: &Crystal, force_vdw: &mut [Vector3f64]) {
+    use control::VdwDampingScheme;
     use vdw::{VdwCorrection, VdwDamping, VdwMethod};
 
     if !control.get_vdw_correction() {
@@ -555,9 +556,8 @@ pub fn vdw(control: &control::Control, crystal: &Crystal, force_vdw: &mut [Vecto
     }
 
     let damping = match control.get_vdw_damping() {
-        "zero" => VdwDamping::Zero,
-        "bj" => VdwDamping::BJ,
-        _ => VdwDamping::BJ,
+        VdwDampingScheme::Zero => VdwDamping::Zero,
+        VdwDampingScheme::Bj => VdwDamping::BJ,
     };
 
     let xc_scheme = control.get_xc_scheme();
