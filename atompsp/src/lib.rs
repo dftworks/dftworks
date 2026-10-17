@@ -1,10 +1,10 @@
+mod upfread;
+
 mod upf;
 pub use upf::AtomPSPUPF;
 
 mod upffr;
 pub use upffr::AtomPSPUPFFR;
-
-use std::str::FromStr;
 
 /// Read-only view of one atom's pseudopotential, whatever the file format.
 /// Each format has its own loader, `AtomPSPUPF::from_file` or
@@ -34,33 +34,4 @@ pub trait AtomPSP {
     fn has_wfc(&self, l: usize) -> bool;
     fn get_wfc_channels(&self) -> Vec<usize>;
     fn get_vloc(&self) -> &[f64];
-}
-
-// Parse one attribute value, e.g. z_valence="4.0" in PP_HEADER.
-fn parse_attr<T: FromStr>(name: &str, value: &str) -> Result<T, String> {
-    value
-        .trim()
-        .parse()
-        .map_err(|_| format!("invalid value '{}' for attribute '{}'", value.trim(), name))
-}
-
-// Parse the numbers inside a data block, e.g. <PP_R> ... </PP_R>, multiplied by `scale`.
-fn parse_block(tag: &str, text: &str, scale: f64) -> Result<Vec<f64>, String> {
-    text.split_whitespace()
-        .map(|x| {
-            x.parse::<f64>()
-                .map(|v| v * scale)
-                .map_err(|_| format!("invalid number '{}' in {}", x, tag))
-        })
-        .collect()
-}
-
-fn check_len(what: &str, found: usize, expected: usize) -> Result<(), String> {
-    if found != expected {
-        return Err(format!(
-            "{} has {} values, expected {}",
-            what, found, expected
-        ));
-    }
-    Ok(())
 }
