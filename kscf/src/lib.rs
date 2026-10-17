@@ -594,6 +594,15 @@ impl<'a> KSCF<'a> {
 
         let mut n_hpsi = 0;
 
+        // In a self-consistent run, empty bands only need a looser eigenvalue
+        // tolerance. Non-self-consistent runs (scf_max_iter <= 1, e.g. band
+        // structures) converge every band to eigval_epsilon.
+        let tol_empty = if self.control.get_scf_max_iter() <= 1 {
+            eigval_epsilon
+        } else {
+            (eigval_epsilon * 10.0).max(EPS5)
+        };
+
         loop {
             n_cg_loop += 1;
 
@@ -606,8 +615,8 @@ impl<'a> KSCF<'a> {
                 evals,
                 &self.occ,
                 eigval_epsilon,
+                tol_empty,
                 max_scf_iter_wfc,
-                self.control.get_scf_max_iter(),
             );
 
             n_band_converged = n_band_converged_this_loop;
