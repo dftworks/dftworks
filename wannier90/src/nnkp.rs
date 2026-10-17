@@ -1,9 +1,6 @@
 use crate::types::{MeshTopology, Neighbor};
-use crystal::Crystal;
-use dwconsts::BOHR_TO_ANG;
-use kpts::KPTS;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader};
 use std::process::Command;
 
 pub(crate) fn build_topology_from_wannier90_pp(
@@ -42,106 +39,6 @@ pub(crate) fn build_topology_from_wannier90_pp(
     let nnkp_filename = format!("{}.nnkp", seedname);
     let topology = parse_nnkp_topology(&nnkp_filename, nkpt)?;
     Ok(topology)
-}
-
-// Not called yet: alternative to running `wannier90.x -pp` (see nnkp.rs
-// build_topology_from_wannier90_pp), kept for a wannier90.x-free export path.
-#[allow(dead_code)]
-pub(crate) fn write_nnkp_file(
-    filename: &str,
-    crystal: &Crystal,
-    kpts: &dyn KPTS,
-    topology: &MeshTopology,
-) -> io::Result<()> {
-    let file = File::create(filename)?;
-    let mut writer = BufWriter::new(file);
-
-    let a = crystal.get_latt().get_vector_a();
-    let b = crystal.get_latt().get_vector_b();
-    let c = crystal.get_latt().get_vector_c();
-    let blatt = crystal.get_latt().reciprocal();
-    let ba = blatt.get_vector_a();
-    let bb = blatt.get_vector_b();
-    let bc = blatt.get_vector_c();
-
-    writeln!(writer, "begin real_lattice")?;
-    writeln!(
-        writer,
-        " {:22.14E} {:22.14E} {:22.14E}",
-        a.x * BOHR_TO_ANG,
-        a.y * BOHR_TO_ANG,
-        a.z * BOHR_TO_ANG
-    )?;
-    writeln!(
-        writer,
-        " {:22.14E} {:22.14E} {:22.14E}",
-        b.x * BOHR_TO_ANG,
-        b.y * BOHR_TO_ANG,
-        b.z * BOHR_TO_ANG
-    )?;
-    writeln!(
-        writer,
-        " {:22.14E} {:22.14E} {:22.14E}",
-        c.x * BOHR_TO_ANG,
-        c.y * BOHR_TO_ANG,
-        c.z * BOHR_TO_ANG
-    )?;
-    writeln!(writer, "end real_lattice")?;
-    writeln!(writer)?;
-
-    writeln!(writer, "begin recip_lattice")?;
-    writeln!(
-        writer,
-        " {:22.14E} {:22.14E} {:22.14E}",
-        ba.x / BOHR_TO_ANG,
-        ba.y / BOHR_TO_ANG,
-        ba.z / BOHR_TO_ANG
-    )?;
-    writeln!(
-        writer,
-        " {:22.14E} {:22.14E} {:22.14E}",
-        bb.x / BOHR_TO_ANG,
-        bb.y / BOHR_TO_ANG,
-        bb.z / BOHR_TO_ANG
-    )?;
-    writeln!(
-        writer,
-        " {:22.14E} {:22.14E} {:22.14E}",
-        bc.x / BOHR_TO_ANG,
-        bc.y / BOHR_TO_ANG,
-        bc.z / BOHR_TO_ANG
-    )?;
-    writeln!(writer, "end recip_lattice")?;
-    writeln!(writer)?;
-
-    writeln!(writer, "begin kpoints")?;
-    writeln!(writer, "{}", kpts.get_n_kpts())?;
-    for ik in 0..kpts.get_n_kpts() {
-        let k = kpts.get_k_frac(ik);
-        writeln!(writer, " {:18.12E} {:18.12E} {:18.12E}", k.x, k.y, k.z)?;
-    }
-    writeln!(writer, "end kpoints")?;
-    writeln!(writer)?;
-
-    writeln!(writer, "begin nnkpts")?;
-    writeln!(writer, "{}", topology.nntot)?;
-    for (ik, knn) in topology.neighbors.iter().enumerate() {
-        for nn in knn.iter() {
-            writeln!(
-                writer,
-                "{:8} {:8} {:4} {:4} {:4}",
-                ik + 1,
-                nn.ikb + 1,
-                nn.gshift[0],
-                nn.gshift[1],
-                nn.gshift[2]
-            )?;
-        }
-    }
-    writeln!(writer, "end nnkpts")?;
-
-    writer.flush()?;
-    Ok(())
 }
 
 fn parse_nnkp_topology(filename: &str, nkpt: usize) -> io::Result<MeshTopology> {
