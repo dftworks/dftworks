@@ -1,6 +1,7 @@
 [package]
 name = "dwmpi"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 
 [features]

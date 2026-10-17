@@ -1,6 +1,7 @@
 [package]
 name = "workflow"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 
 [[bin]]

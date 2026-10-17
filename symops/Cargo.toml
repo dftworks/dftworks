@@ -1,6 +1,7 @@
 [package]
 name = "symops"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 
 [dependencies]

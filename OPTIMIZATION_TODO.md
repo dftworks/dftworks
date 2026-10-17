@@ -1081,7 +1081,7 @@ Finish an item only when:
 ### E10 - Integration Tests and CI Gates
 **Priority**: P1 (Critical - prevents regressions and enables confident refactoring)
 **Status**: Open
-**Files**: `scf/`, `kscf/`, `pw/`, `tests/`, `.github/workflows/`
+**Files**: `scf/`, `kscf/`, `pw/` (integration tests in `pw/tests/`), `.github/workflows/`
 
 - Add integration test suite with reference systems (Si, Al, Fe spin, molecular)
 - Test coverage: convergence, energy consistency, force/stress accuracy, restart parity
@@ -1370,7 +1370,7 @@ Finish an item only when:
 ### E29 - CI Reproducibility and Determinism Tests
 **Priority**: P2 (Critical for long-term stability)
 **Status**: Open
-**Files**: `tests/`, `.github/workflows/`, CI configuration
+**Files**: `pw/tests/` (integration tests; the root has no package, so a root `tests/` folder is never built), `.github/workflows/`, CI configuration
 
 - Add CI replay test for E16 provenance:
   - Run fixed-seed reference SCF twice
