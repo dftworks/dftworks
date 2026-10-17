@@ -8,6 +8,9 @@ use control::{MixingParams, MixingScheme};
 use types::c64;
 
 pub trait Mixing {
+    /// One mixing step. `inp` holds the input density rho_in(G) and is replaced by
+    /// the next input density. `out` is the residual rho_out(G) - rho_in(G) of the
+    /// last SCF step, not the output density. `gs` holds |G| for each entry.
     fn compute_next_density(&mut self, gs: &[f64], inp: &mut [c64], out: &[c64]);
 }
 
