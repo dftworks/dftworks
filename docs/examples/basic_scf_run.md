@@ -10,7 +10,7 @@ shown here is taken from that case or accepted by the current `in.ctrl` parser.
 # 1. Start from the silicon example
 cp -r test_example/si-oncv/scf my-si-scf && cd my-si-scf
 ls
-# in.crystal  in.ctrl  in.kline  in.kmesh  in.magmom  in.pot  in.spin  pot/
+# in.crystal  in.ctrl  in.kmesh  in.magmom  in.pot  in.spin  pot/
 
 # 2. Run the SCF calculation (from the repository root build)
 cargo run --release --manifest-path ../Cargo.toml -p pw > out.pw.log 2>&1
