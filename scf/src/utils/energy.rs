@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 use control::Control;
+use control::VdwDampingScheme;
 use crystal::Crystal;
 use dfttypes::*;
 use kscf::KSCF;
@@ -98,9 +99,8 @@ pub fn compute_vdw_energy(control: &Control, crystal: &Crystal) -> f64 {
     }
 
     let damping = match control.get_vdw_damping() {
-        "zero" => VdwDamping::Zero,
-        "bj" => VdwDamping::BJ,
-        _ => VdwDamping::BJ, // Default to BJ if invalid
+        VdwDampingScheme::Zero => VdwDamping::Zero,
+        VdwDampingScheme::Bj => VdwDamping::BJ,
     };
 
     let xc_scheme = control.get_xc_scheme();

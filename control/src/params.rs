@@ -68,15 +68,6 @@ fn parse_optional_seed(value: &str) -> Result<Option<u64>, String> {
         .map_err(|_| "expected a non-negative 64-bit integer".to_string())
 }
 
-fn parse_vdw_damping(value: &str) -> Result<String, String> {
-    let damping = value.trim().to_lowercase();
-    if damping == "zero" || damping == "bj" {
-        Ok(damping)
-    } else {
-        Err("expected one of: zero, bj".to_string())
-    }
-}
-
 /// Turns an enum's `parse` result into a parser error listing the accepted values.
 fn expect_one_of<T>(parsed: Option<T>, accepted: &str) -> Result<T, String> {
     parsed.ok_or_else(|| format!("expected one of: {}", accepted))
@@ -87,7 +78,7 @@ fn expect_one_of<T>(parsed: Option<T>, accepted: &str) -> Result<T, String> {
 /// Run mode and global switches.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunParams {
-    pub task: String,
+    pub task: Task,
     pub restart: bool,
     pub symmetry: bool,
     pub random_seed: Option<u64>,
@@ -97,7 +88,7 @@ pub struct RunParams {
 impl Default for RunParams {
     fn default() -> Self {
         RunParams {
-            task: "scf".to_string(),
+            task: Task::Scf,
             restart: false,
             symmetry: false,
             random_seed: None,
@@ -227,7 +218,7 @@ impl Default for MixingParams {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeomOptParams {
     pub cell: bool,
-    pub scheme: String,
+    pub scheme: GeomOptScheme,
     pub max_steps: usize,
     pub history_steps: usize,
     pub alpha: f64,
@@ -241,7 +232,7 @@ impl Default for GeomOptParams {
     fn default() -> Self {
         GeomOptParams {
             cell: false,
-            scheme: "bfgs".to_string(),
+            scheme: GeomOptScheme::Bfgs,
             max_steps: 1,
             history_steps: 4,
             alpha: 0.8,
@@ -321,7 +312,7 @@ impl Default for OutputParams {
 /// Density of states.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DosParams {
-    pub scheme: String,
+    pub scheme: DosScheme,
     /// Input in eV, stored in Hartree. Default 0.1 eV.
     pub sigma: f64,
     pub ne: usize,
@@ -330,7 +321,7 @@ pub struct DosParams {
 impl Default for DosParams {
     fn default() -> Self {
         DosParams {
-            scheme: "gauss".to_string(),
+            scheme: DosScheme::Gauss,
             sigma: 0.1 * EV_TO_HA,
             ne: 500,
         }
@@ -416,15 +407,14 @@ impl Default for HybridParams {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VdwParams {
     pub correction: bool,
-    /// "zero" or "bj"
-    pub damping: String,
+    pub damping: VdwDampingScheme,
 }
 
 impl Default for VdwParams {
     fn default() -> Self {
         VdwParams {
             correction: false,
-            damping: "bj".to_string(),
+            damping: VdwDampingScheme::Bj,
         }
     }
 }
@@ -437,7 +427,7 @@ impl Control {
     pub(crate) fn set_key(&mut self, key: &str, value: &str) -> Result<bool, String> {
         match key {
             // run
-            "task" => self.run.task = value.trim().to_lowercase(),
+            "task" => self.run.task = expect_one_of(Task::parse(value), "scf, band")?,
             "restart" => self.run.restart = parse_bool(value)?,
             "symmetry" => self.run.symmetry = parse_bool(value)?,
             "random_seed" => self.run.random_seed = parse_optional_seed(value)?,
@@ -488,10 +478,8 @@ impl Control {
             "eigval_epsilon" => self.scf.eigval_epsilon = parse_ev_as_ha(value)?,
             "eigval_same_epsilon" => self.scf.eigval_same_epsilon = parse_bool(value)?,
             "eigen_solver" => {
-                self.scf.eigen_solver = expect_one_of(
-                    EigenSolverScheme::parse(value),
-                    "sd, psd, cg, pcg, lobpcg, arpack, davidson",
-                )?
+                self.scf.eigen_solver =
+                    expect_one_of(EigenSolverScheme::parse(value), "pcg, lobpcg")?
             }
             "davidson_ndim" => self.scf.davidson_ndim = parse_usize(value)?,
 
@@ -508,7 +496,9 @@ impl Control {
 
             // geometry optimization
             "geom_optim_cell" => self.geom_opt.cell = parse_bool(value)?,
-            "geom_optim_scheme" => self.geom_opt.scheme = parse_string(value)?,
+            "geom_optim_scheme" => {
+                self.geom_opt.scheme = expect_one_of(GeomOptScheme::parse(value), "bfgs, diis")?
+            }
             "geom_optim_max_steps" => self.geom_opt.max_steps = parse_usize(value)?,
             "geom_optim_history_steps" => self.geom_opt.history_steps = parse_usize(value)?,
             "geom_optim_alpha" => self.geom_opt.alpha = parse_f64(value)?,
@@ -559,7 +549,7 @@ impl Control {
             "provenance_check" => self.output.provenance_check = parse_bool(value)?,
 
             // dos
-            "dos_scheme" => self.dos.scheme = parse_string(value)?,
+            "dos_scheme" => self.dos.scheme = expect_one_of(DosScheme::parse(value), "gauss")?,
             "dos_sigma" => self.dos.sigma = parse_ev_as_ha(value)?,
             "dos_ne" => self.dos.ne = parse_usize(value)?,
 
@@ -582,7 +572,9 @@ impl Control {
 
             // vdw
             "vdw_correction" => self.vdw.correction = parse_bool(value)?,
-            "vdw_damping" => self.vdw.damping = parse_vdw_damping(value)?,
+            "vdw_damping" => {
+                self.vdw.damping = expect_one_of(VdwDampingScheme::parse(value), "zero, bj")?
+            }
 
             _ => return Ok(false),
         }

@@ -190,6 +190,10 @@ New canonical refactoring items are added below to unblock future feature expans
 - [x] `scf_rho_mix_scheme` is validated at parse time (`pulay`, `broyden`); the `simple` name is removed
 - [x] `dos_sigma` default fixed to 0.1 eV (was 0.1 Ha)
 
+**Implementation Update (2026-10-17, #27)**
+- [x] `task`, `geom_optim_scheme`, `dos_scheme` and `vdw_damping` are enums validated at parse time; consumers match exhaustively (no runtime panic in `geom::new`, no silent BJ fallback for vdW damping)
+- [x] `eigen_solver` lists only implemented solvers (`pcg`, `lobpcg`); the capability check keeps only the `ncl` spin restriction
+
 **Acceptance Criteria**
 - `Control` loading has no `process::exit` and no parsing `unwrap()` in normal flow
 - Input error messages include key name and line number
