@@ -40,7 +40,9 @@ fn validate_runtime_capabilities(control: &Control, kpts: &dyn KPTS) -> Result<(
     Ok(())
 }
 
-pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
+/// Reads and checks every input file. With `dry_run`, nothing is written
+/// (no provenance manifest).
+pub(crate) fn load_bootstrap_inputs(dry_run: bool) -> Result<BootstrapData, String> {
     let control = Control::from_file("in.ctrl")
         .map_err(|err| format!("failed to load control file: {}", err))?;
     let verbosity = control.get_verbosity_enum();
@@ -112,7 +114,7 @@ pub(crate) fn load_bootstrap_inputs() -> Result<BootstrapData, String> {
     }
 
     let mut provenance_status: i32 = 0;
-    if dwmpi::is_root() {
+    if dwmpi::is_root() && !dry_run {
         if let Err(err) = crate::provenance::emit_run_provenance_manifest(&control, kpts.as_ref()) {
             eprintln!("failed to write/verify provenance manifest: {}", err);
             provenance_status = 1;
