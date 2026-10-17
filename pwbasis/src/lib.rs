@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use gvector::GVector;
 use types::Vector3f64;
 use utility;
@@ -243,9 +242,4 @@ fn compute_kg_optimized(gvec: &GVector, k_cart: Vector3f64, gindex: &[usize], kg
             let k_plus_g = k_cart + gcart[g_idx];
             *kg_val = k_plus_g.norm();
         });
-}
-
-// Legacy function maintained for compatibility
-fn compute_kg(gvec: &GVector, xk: Vector3f64, gindex: &[usize], kg: &mut [f64]) {
-    compute_kg_optimized(gvec, xk, gindex, kg);
 }

@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use super::engine::{run_scf_iteration_engine, ScfIterationAdapter};
 use super::hartree;
 use super::hubbard;
@@ -8,7 +6,6 @@ use crate::SCF;
 use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
-use dwconsts::*;
 use ewald::Ewald;
 use fftgrid::FFTGrid;
 use gvector::GVector;
@@ -507,8 +504,6 @@ impl SCF for SCFSpin {
         let fftgrid = FFTGrid::new(crystal.get_latt(), control.get_ecutrho());
 
         let fft_shape = fftgrid.get_size();
-
-        let nfft = fftgrid.get_ntot();
 
         let [n1, n2, n3] = fft_shape;
 

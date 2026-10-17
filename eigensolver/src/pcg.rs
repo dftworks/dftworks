@@ -1,11 +1,8 @@
-//#![allow(warnings)]
-
 use crate::EigenSolver;
-use control::*;
 use dwconsts::*;
-use nalgebra::linalg::SymmetricEigen;
-use nalgebra::DVector;
 use nalgebra::Matrix2;
+#[cfg(test)]
+use nalgebra::{linalg::SymmetricEigen, DVector};
 use num_traits::identities::Zero;
 use types::c64;
 use types::*;
@@ -89,7 +86,7 @@ impl EigenSolver for EigenSolverPCG {
         let mut n_hpsi = 0;
         let mut n_band_converged = 0;
 
-        let mut omega0: f64 = 0.0;
+        let mut omega0: f64;
         let mut omega: f64 = 0.0;
 
         for iband in 0..self.nband {
@@ -115,8 +112,6 @@ impl EigenSolver for EigenSolverPCG {
             omega0 = utility::zdot_product(&self.x0, &self.h_x0).re;
 
             // calculate one state
-
-            let mut bconverged = false;
 
             for cg_iter in 0..max_iter {
                 compute_preconditioner(&self.x0, ham_diag, &mut self.precond);
@@ -189,8 +184,6 @@ impl EigenSolver for EigenSolverPCG {
                 omega = (utility::zdot_product(&self.x0, &self.h_x0)).re;
 
                 if (omega - omega0).abs() < tol2_eigval {
-                    bconverged = true;
-
                     n_band_converged += 1;
 
                     break;

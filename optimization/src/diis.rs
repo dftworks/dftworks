@@ -1,8 +1,5 @@
-#![allow(warnings)]
-
 use fifo::*;
 use nalgebra::DMatrix;
-use utility::*;
 
 pub struct DIIS {
     alpha: f64,
@@ -86,6 +83,7 @@ fn compute_coef(vout: &FIFO<Vec<f64>>) -> Vec<f64> {
     alpha
 }
 
+#[cfg(test)]
 fn df_xy(x: f64, y: f64) -> Vec<f64> {
     vec![-2.0 * x - y * y, -x * x - 2.0 * y]
 }

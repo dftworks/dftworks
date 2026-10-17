@@ -1,6 +1,4 @@
-#![allow(warnings)]
 use dwmpi;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 
 // K-point distribution helpers for MPI ranks.
@@ -51,7 +49,8 @@ fn compute_k_last(nkpt: usize, nrank: usize, rank: usize) -> usize {
     }
 }
 
-// Reference chunk implementation retained for tests/compatibility.
+// Reference chunk implementation, used by the tests.
+#[cfg(test)]
 fn get_chunks(nkpt: usize, nrank: usize) -> Vec<Vec<usize>> {
     assert!(nrank > 0);
 

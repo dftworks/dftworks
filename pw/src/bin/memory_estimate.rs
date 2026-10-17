@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 // Command-line wrapper around pw/src/memory_estimate.rs (shared with `pw --dry-run`).
 #[path = "../memory_estimate.rs"]
 mod memory_estimate;

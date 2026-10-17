@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use lattice::Lattice;
 use std::{f64::consts, fmt};
 use utility;

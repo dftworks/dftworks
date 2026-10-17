@@ -1,12 +1,9 @@
-#![allow(warnings)]
-
 use atompsp::*;
 use control::XcScheme;
 use crystal::*;
 use dfttypes::*;
 use dwconsts::*;
 use gvector::*;
-use itertools::multizip;
 use kgylm::KGYLM;
 use kscf::*;
 use lattice::*;
@@ -133,8 +130,6 @@ pub fn nlcc_xc_with_workspace(
     // NLCC stress correction from core-charge response to XC potential.
     let mut stress_c64 = [[c64 { re: 0.0, im: 0.0 }; 3]; 3];
 
-    let volume = crystal.get_latt().volume();
-
     let miller = gvec.get_miller();
     let cart = gvec.get_cart();
 
@@ -233,8 +228,6 @@ pub fn vpsloc_with_workspace(
 ) {
     // Local ionic stress from reciprocal-space local potential form factor.
     let mut stress_c64 = [[c64 { re: 0.0, im: 0.0 }; 3]; 3];
-
-    let volume = crystal.get_latt().volume();
 
     let miller = gvec.get_miller();
     let cart = gvec.get_cart();
@@ -656,23 +649,6 @@ fn matrix3_to_matrix(m3: &Matrix3<f64>, out: &mut Matrix<f64>) {
             out[(i, j)] = m3[(i, j)];
         }
     }
-}
-
-fn frac_to_cart(latt: &Lattice, mf: &Matrix<f64>, mc: &mut Matrix<f64>) {
-    let lat_t = matrix_to_matrix3(&latt.as_matrix().transpose());
-    let m_frac = matrix_to_matrix3(mf);
-    let m_cart = lat_t * m_frac * lat_t.transpose();
-    matrix3_to_matrix(&m_cart, mc);
-}
-
-fn cart_to_frac(latt: &Lattice, mc: &Matrix<f64>, mf: &mut Matrix<f64>) {
-    let lat_t = matrix_to_matrix3(&latt.as_matrix().transpose());
-    let lat_t_inv = lat_t
-        .try_inverse()
-        .expect("lattice matrix transpose is singular in cart_to_frac");
-    let m_cart = matrix_to_matrix3(mc);
-    let m_frac = lat_t_inv * m_cart * lat_t_inv.transpose();
-    matrix3_to_matrix(&m_frac, mf);
 }
 
 fn vpsloc_of_g_one_atom(atompsp: &dyn AtomPSP, pwden: &PWDensity, volume: f64, vlocg: &mut [f64]) {

@@ -1,5 +1,3 @@
-#![allow(warnings)]
-use ndarray::*;
 use std::os::raw::*;
 use types::c64;
 //https://doc.rust-lang.org/src/std/os/raw/mod.rs.html#68

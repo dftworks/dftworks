@@ -1,12 +1,9 @@
-#![allow(warnings)]
-
 use atompsp::AtomPSP;
 use control::Control;
 use control::XcScheme;
 use crystal::Crystal;
 use dwconsts::*;
 use eigensolver;
-use fftgrid::FFTGrid;
 use gvector::GVector;
 use kgylm::KGYLM;
 use ndarray::Array3;
@@ -132,7 +129,6 @@ pub struct KSCF<'a> {
     occ: Vec<f64>,
     smearing: Box<dyn Smearing>,
     volume: f64,
-    fft_shape: [usize; 3],
     // Optional Hamiltonian terms: Some only when configured in in.ctrl.
     hybrid: Option<HybridPotential>,
     hubbard: Option<HubbardPotential>,
@@ -300,7 +296,6 @@ impl<'a> KSCF<'a> {
             occ,
             smearing,
             volume,
-            fft_shape,
             hybrid,
             hubbard,
             hybrid_exchange_energy: Cell::new(0.0),
@@ -396,14 +391,9 @@ impl<'a> KSCF<'a> {
         // Counts nominal states in [lower, upper] used by inversion workflows.
         let mut ntot = 0.0;
 
-        let mut occ = 1.0;
-        if self.control.is_spin() {
-            occ = 2.0;
-        } else {
-            occ = 1.0;
-        }
+        let occ = if self.control.is_spin() { 2.0 } else { 1.0 };
 
-        for (i, &ev) in evals.iter().enumerate() {
+        for &ev in evals.iter() {
             if ev >= lower_level && ev <= upper_level {
                 ntot += occ;
             }
@@ -440,7 +430,7 @@ impl<'a> KSCF<'a> {
         rgtrans: &RGTransform,
         vloc_3d: &Array3<c64>,
         eigval_epsilon: f64,
-        geom_iter: usize,
+        _geom_iter: usize,
         scf_iter: usize,
         evals: &mut [f64],
         evecs: &mut Matrix<c64>,
@@ -590,7 +580,7 @@ impl<'a> KSCF<'a> {
 
         let mut n_cg_loop = 0;
 
-        let mut n_band_converged = 0;
+        let mut n_band_converged;
 
         let mut n_hpsi = 0;
 
@@ -623,7 +613,7 @@ impl<'a> KSCF<'a> {
             n_hpsi += n_hpsi_this_loop; // total operations of Hamiltonian on the wavefunctions
 
             // Optional Rayleigh-Ritz rotation pass.
-            if need_rayleigh_quotient(self.control, scf_iter, n_cg_loop) {
+            if need_rayleigh_quotient(n_cg_loop) {
                 rayleigh_evecs.assign(evecs);
                 subspace::rotate_wfc(&mut hamiltonian_on_psi, rayleigh_evecs, evecs, evals);
 
@@ -655,7 +645,7 @@ impl<'a> KSCF<'a> {
         }
     }
 
-    pub fn set_occ_inversion(&mut self, evals: &[f64], vb_level: f64, fermi_level: f64) {
+    pub fn set_occ_inversion(&mut self, evals: &[f64], vb_level: f64, _fermi_level: f64) {
         // Simple valence-band clipping used by occupation inversion path.
         for (occ, &ev) in multizip((self.occ.iter_mut(), evals.iter())) {
             if ev > vb_level {
@@ -726,7 +716,6 @@ fn compute_kinetic_energy(kg: &[f64]) -> Vec<f64> {
 
 fn time_to_exit_cg(control: &Control, n_cg_loop: usize, n_band_converged: usize) -> bool {
     const MAX_CG_SCF: usize = 5;
-    const MAX_CG_BAND: usize = 6;
 
     // Exit criteria for inner eigensolver loops.
     let mut b_exit = false;
@@ -748,14 +737,7 @@ fn time_to_exit_cg(control: &Control, n_cg_loop: usize, n_band_converged: usize)
     b_exit
 }
 
-fn need_rayleigh_quotient(control: &Control, scf_iter: usize, n_cg_loop: usize) -> bool {
-    // Heuristic toggle for optional subspace rotation.
-    let mut b_subspace_diag = false;
-
-    if n_cg_loop > 1 {
-        b_subspace_diag = true;
-    }
-
-    //false
-    b_subspace_diag
+fn need_rayleigh_quotient(n_cg_loop: usize) -> bool {
+    // Heuristic toggle for optional subspace rotation: from the second CG loop on.
+    n_cg_loop > 1
 }

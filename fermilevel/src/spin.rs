@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use crate::FermiLevel;
 use dfttypes::*;
 use dwconsts::*;
@@ -60,8 +58,8 @@ impl FermiLevel for FermiLevelSpin {
         &self,
         vkscf: &mut VKSCF,
         nelec: f64,
-        vevals: &VKEigenValue,
-        fermi_level: f64,
+        _vevals: &VKEigenValue,
+        _fermi_level: f64,
         occ_inversion: f64,
     ) -> Option<f64> {
         if occ_inversion < EPS10 {
@@ -105,24 +103,6 @@ fn get_initial_fermi_level(nelec: f64, vevals: &Vec<Vec<f64>>) -> f64 {
     dwmpi::bcast_scalar(&mut fermi, dwmpi::comm_world());
 
     fermi
-}
-
-pub fn get_total_electrons(vkscf: &mut [KSCF], vevals: &Vec<Vec<f64>>, fermi: f64) -> f64 {
-    let mut ntot_local = 0.0;
-
-    for (ik, kscf) in vkscf.iter_mut().enumerate() {
-        let evals = &vevals[ik];
-
-        kscf.compute_occ(fermi, evals);
-
-        ntot_local += kscf.get_total_occ() * kscf.get_k_weight();
-    }
-
-    let mut ntot = 0.0;
-    dwmpi::reduce_scalar_sum(&ntot_local, &mut ntot, dwmpi::comm_world());
-    dwmpi::bcast_scalar(&mut ntot, dwmpi::comm_world());
-
-    ntot
 }
 
 fn get_total_electrons_spin(

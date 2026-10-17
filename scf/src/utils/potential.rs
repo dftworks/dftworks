@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use crate::hartree;
 use control::*;
 use crystal::Crystal;
@@ -7,7 +5,6 @@ use dfttypes::*;
 use dwconsts::*;
 use gvector::*;
 use itertools::multizip;
-use kpts::KPTS;
 use ndarray::*;
 use num_traits::Zero;
 use pwdensity::*;
@@ -162,52 +159,6 @@ pub fn add_external_potential_to_vlocg(vextg: &[c64], vlocg: &mut [c64]) {
     for (vloc, vext) in vlocg.iter_mut().zip(vextg.iter()) {
         *vloc += *vext;
     }
-}
-
-pub fn display_parallel_runtime_info() {
-    if !dwmpi::is_root() {
-        return;
-    }
-
-    let rayon_threads = rayon::current_num_threads();
-    let rayon_env = std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "unset".to_string());
-    let host_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(0);
-    let mpi_ranks = dwmpi::get_comm_world_size();
-
-    println!(
-        "     {:<width1$} = {:>4} (RAYON_NUM_THREADS={}, host_threads={}, mpi_ranks={})",
-        "rayon_threads",
-        rayon_threads,
-        rayon_env,
-        host_threads,
-        mpi_ranks,
-        width1 = OUT_WIDTH1
-    );
-}
-
-pub fn validate_hse06_runtime_constraints(
-    control: &Control,
-    kpts: &dyn KPTS,
-) -> Result<(), String> {
-    if !matches!(control.get_xc_scheme_enum(), XcScheme::Hse06) {
-        return Ok(());
-    }
-
-    if kpts.get_n_kpts() != 1 {
-        return Err("xc_scheme='hse06' currently supports only a single Gamma k-point".to_string());
-    }
-
-    let k0 = kpts.get_k_frac(0);
-    if k0.norm() > 1.0E-10 {
-        return Err(
-            "xc_scheme='hse06' currently supports only Gamma point (in.kmesh must map to k=(0,0,0))"
-                .to_string(),
-        );
-    }
-
-    Ok(())
 }
 
 pub fn display_external_field_runtime_note(control: &Control) {

@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use atompsp::*;
 use crystal::*;
 use dwconsts::*;

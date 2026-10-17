@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use dfttypes::*;
 use ndarray::Array3;
 use types::c64;

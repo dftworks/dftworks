@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use crystal::*;
 use dwconsts::*;
 use gvector::*;

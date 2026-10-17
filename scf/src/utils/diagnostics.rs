@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use control::{Control, VerbosityLevel};
 use crystal::Crystal;
 use dfttypes::*;
@@ -54,7 +52,7 @@ pub fn display_eigen_values(
                     print_eigen_values(evals, occ);
                 }
 
-                std::io::stdout().flush();
+                let _ = std::io::stdout().flush();
             }
         }
 
@@ -79,7 +77,7 @@ pub fn display_eigen_values(
             print_eigen_values(evals, occ);
         }
 
-        std::io::stdout().flush();
+        let _ = std::io::stdout().flush();
     }
 }
 
@@ -135,7 +133,7 @@ pub fn display_spin_eigen_values(
                     }
                 }
 
-                std::io::stdout().flush();
+                let _ = std::io::stdout().flush();
             }
         }
 
@@ -168,7 +166,7 @@ pub fn display_spin_eigen_values(
                     print_spin_eigen_values(evals_up, occ_up, evals_dn, occ_dn);
                 }
 
-                std::io::stdout().flush();
+                let _ = std::io::stdout().flush();
             }
         }
     }

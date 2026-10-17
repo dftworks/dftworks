@@ -9,7 +9,6 @@ pub(crate) struct BootstrapData {
     pub pots: PSPot,
     pub kpts: Box<dyn KPTS>,
     pub zions: Vec<f64>,
-    pub verbosity: VerbosityLevel,
     pub spin_scheme: SpinScheme,
 }
 
@@ -138,7 +137,6 @@ pub(crate) fn load_bootstrap_inputs(dry_run: bool) -> Result<BootstrapData, Stri
         pots,
         kpts,
         zions,
-        verbosity,
         spin_scheme,
     })
 }

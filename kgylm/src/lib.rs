@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use dwconsts::*;
 use gvector::GVector;
 use pwbasis::PWBasis;

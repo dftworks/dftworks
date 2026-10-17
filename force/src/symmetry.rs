@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use control::Control;
 use crystal::Crystal;
 use lattice::Lattice;

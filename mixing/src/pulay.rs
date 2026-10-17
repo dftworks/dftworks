@@ -1,5 +1,3 @@
-//#![allow(warnings)]
-
 use control::MixingParams;
 use dwconsts::EPS30;
 use fifo::*;

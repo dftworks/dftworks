@@ -50,9 +50,11 @@ pub enum VdwDamping {
 pub struct VdwCorrection {
     method: VdwMethod,
     damping: VdwDamping,
-    xc_scheme: String,
     s6: f64, // Global scaling factor for C6
-    s8: f64, // Global scaling factor for C8
+    // Global scaling factor for C8. Not used yet: energy, forces and stress
+    // include only the C6/r^6 term of D3.
+    #[allow(dead_code)]
+    s8: f64,
     a1: f64, // Damping parameter 1
     a2: f64, // Damping parameter 2
 }
@@ -77,7 +79,6 @@ impl VdwCorrection {
         VdwCorrection {
             method,
             damping,
-            xc_scheme: xc_scheme.to_lowercase(),
             s6,
             s8,
             a1,

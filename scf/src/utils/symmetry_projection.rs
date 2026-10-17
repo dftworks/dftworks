@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use control::Control;
 use crystal::Crystal;
 use dfttypes::*;
@@ -134,7 +132,7 @@ pub fn compute_stress(
     symdrv: &dyn SymmetryDriver,
     stress_total: &mut Matrix<f64>,
 ) {
-    let mut stress_kin_local = stress::kinetic(
+    let stress_kin_local = stress::kinetic(
         crystal,
         &vkscf.as_non_spin().unwrap(),
         &vkevecs.as_non_spin().unwrap(),
@@ -150,7 +148,7 @@ pub fn compute_stress(
 
     dwmpi::bcast_slice(stress_kin.as_mut_slice(), dwmpi::comm_world());
 
-    let mut stress_vnl_local = stress::vnl(
+    let stress_vnl_local = stress::vnl(
         crystal,
         &vkscf.as_non_spin().unwrap(),
         &vkevecs.as_non_spin().unwrap(),
