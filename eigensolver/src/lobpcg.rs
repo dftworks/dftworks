@@ -49,8 +49,8 @@ impl EigenSolverLOBPCG {
 
 impl EigenSolver for EigenSolverLOBPCG {
     fn compute(
-        &mut self, ham_on_psi: &mut dyn FnMut(&[c64], &mut [c64]), ham_diag: &[f64], evecs: &mut Matrix<c64>, evals: &mut [f64], occ: &[f64], tol_eigval: f64, max_cg_loop: usize,
-        max_scf_iter: usize,
+        &mut self, ham_on_psi: &mut dyn FnMut(&[c64], &mut [c64]), ham_diag: &[f64], evecs: &mut Matrix<c64>, evals: &mut [f64], occ: &[f64], tol_occupied: f64, tol_empty: f64,
+        max_iter: usize,
     ) -> (usize, usize) {
         let npw = self.npw;
         let nb = self.nband;
@@ -82,7 +82,7 @@ impl EigenSolver for EigenSolverLOBPCG {
         let mut n_band_converged = 0;
         let mut has_p = false;
 
-        for _iter in 0..max_cg_loop {
+        for _iter in 0..max_iter {
             lambda_old.copy_from_slice(&lambda);
 
             // --- Compute preconditioned residuals W_i = T^{-1} (H X_i - lambda_i X_i) ---
@@ -225,13 +225,7 @@ impl EigenSolver for EigenSolverLOBPCG {
             // --- Check convergence ---
             n_band_converged = 0;
             for i in 0..nb {
-                let tol2 = if max_scf_iter <= 1 {
-                    tol_eigval
-                } else if occ[i] > EPS3 {
-                    tol_eigval
-                } else {
-                    (tol_eigval * 10.0).max(EPS5)
-                };
+                let tol2 = if occ[i] > EPS3 { tol_occupied } else { tol_empty };
                 if (lambda[i] - lambda_old[i]).abs() < tol2 {
                     n_band_converged += 1;
                 }
@@ -404,15 +398,14 @@ fn test_sparse_solver_lobpcg() {
         utility::make_normalized_rand_vector(evecs.get_mut_col(i));
     }
 
-    let max_cg_loop = 100;
-    let max_scf_iter = 1;
+    let max_iter = 100;
 
     let mut solver = EigenSolverLOBPCG::new(n, nev);
-    let (nconv, niter) = solver.compute(&mut m_dot_v, &h_diag, &mut evecs, &mut evals, &occ, EPS5, max_cg_loop, max_scf_iter);
+    let (nconv, niter) = solver.compute(&mut m_dot_v, &h_diag, &mut evecs, &mut evals, &occ, EPS5, EPS5, max_iter);
 
     println!("eigenvalues converged = {}, niter = {}", nconv, niter);
 
-    let (nconv, niter) = solver.compute(&mut m_dot_v, &h_diag, &mut evecs, &mut evals, &occ, EPS10, max_cg_loop, max_scf_iter);
+    let (nconv, niter) = solver.compute(&mut m_dot_v, &h_diag, &mut evecs, &mut evals, &occ, EPS10, EPS10, max_iter);
 
     println!("eigenvalues converged = {}, niter = {}", nconv, niter);
 
