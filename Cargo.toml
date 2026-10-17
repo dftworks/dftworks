@@ -62,3 +62,9 @@ members = [
 	"workflow",
 	"test_mpi"
 ]
+
+# Shared by all crates (`version.workspace = true` etc. in each Cargo.toml).
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Junwen Li <junwen.li@dftworks.com>"]

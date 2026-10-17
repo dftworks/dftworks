@@ -4,18 +4,17 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Helper to get the project root directory
+/// Repository root (this file lives in pw/tests/)
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("pw crate is inside the repository")
+        .to_path_buf()
 }
 
-/// Helper to get the pw binary path
+/// The pw binary that Cargo builds for this test run
 fn pw_binary() -> PathBuf {
-    let mut path = project_root();
-    path.push("target");
-    path.push("debug");
-    path.push("pw");
-    path
+    PathBuf::from(env!("CARGO_BIN_EXE_pw"))
 }
 
 #[test]
@@ -30,8 +29,7 @@ fn test_phase12_reference_exists() {
     );
 
     // Verify reference file has expected structure
-    let content = std::fs::read_to_string(&reference_file)
-        .expect("Failed to read reference file");
+    let content = std::fs::read_to_string(&reference_file).expect("Failed to read reference file");
 
     let lines: Vec<&str> = content.lines().collect();
     assert!(
@@ -83,26 +81,31 @@ fn test_scf_template_exists() {
 }
 
 #[test]
-#[ignore] // Only run with --ignored flag (requires building pw first)
+#[ignore] // Runs two SCF calculations; use `cargo test -p pw --test integration_test -- --ignored`
 fn test_determinism_fixed_seed() {
     // This test verifies that with a fixed random seed, results are deterministic
     // Run the same calculation twice and verify identical outputs
 
     let pw_bin = pw_binary();
-    if !pw_bin.exists() {
-        eprintln!("pw binary not found, skipping determinism test");
-        eprintln!("Run: cargo build -p pw");
-        return;
-    }
 
+    // Start from an empty directory: leftovers from an earlier, failed run would
+    // change what the first run prints.
     let test_dir = std::env::temp_dir().join("dftworks-determinism-test");
+    std::fs::remove_dir_all(&test_dir).ok();
     std::fs::create_dir_all(&test_dir).expect("Failed to create test directory");
 
     // Copy SCF template
     let mut scf_template = project_root();
     scf_template.push("test_example/si-oncv/scf");
 
-    for file in &["in.ctrl", "in.crystal", "in.kmesh", "in.pot", "in.spin", "in.magmom"] {
+    for file in &[
+        "in.ctrl",
+        "in.crystal",
+        "in.kmesh",
+        "in.pot",
+        "in.spin",
+        "in.magmom",
+    ] {
         let src = scf_template.join(file);
         let dst = test_dir.join(file);
         std::fs::copy(src, dst).expect("Failed to copy template file");
@@ -122,8 +125,7 @@ fn test_determinism_fixed_seed() {
 
     // Modify in.ctrl to set random_seed and use nonspin for speed
     let ctrl_path = test_dir.join("in.ctrl");
-    let ctrl_content = std::fs::read_to_string(&ctrl_path)
-        .expect("Failed to read in.ctrl");
+    let ctrl_content = std::fs::read_to_string(&ctrl_path).expect("Failed to read in.ctrl");
 
     let mut modified_ctrl = String::new();
     let mut found_seed = false;
@@ -149,8 +151,7 @@ fn test_determinism_fixed_seed() {
         modified_ctrl.push_str("spin_scheme = nonspin\n");
     }
 
-    std::fs::write(&ctrl_path, modified_ctrl)
-        .expect("Failed to write modified in.ctrl");
+    std::fs::write(&ctrl_path, modified_ctrl).expect("Failed to write modified in.ctrl");
 
     // Run first calculation
     let output1 = Command::new(&pw_bin)
@@ -164,14 +165,20 @@ fn test_determinism_fixed_seed() {
         String::from_utf8_lossy(&output1.stderr)
     );
 
-    let log1 = std::fs::read_to_string(test_dir.join("out.log"))
-        .expect("Failed to read first out.log");
+    let log1 = String::from_utf8_lossy(&output1.stdout).to_string();
 
     // Clean output files but keep inputs
     for entry in std::fs::read_dir(&test_dir).expect("Failed to read test directory") {
         let entry = entry.expect("Failed to read entry");
         let path = entry.path();
-        if path.is_file() && path.file_name().unwrap().to_str().unwrap().starts_with("out.") {
+        if path.is_file()
+            && path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("out.")
+        {
             std::fs::remove_file(path).expect("Failed to remove output file");
         }
     }
@@ -188,53 +195,29 @@ fn test_determinism_fixed_seed() {
         String::from_utf8_lossy(&output2.stderr)
     );
 
-    let log2 = std::fs::read_to_string(test_dir.join("out.log"))
-        .expect("Failed to read second out.log");
+    let log2 = String::from_utf8_lossy(&output2.stdout).to_string();
 
-    // Parse final SCF energy from both logs
-    let energy1 = parse_final_scf_energy(&log1);
-    let energy2 = parse_final_scf_energy(&log2);
-
-    match (energy1, energy2) {
-        (Some(e1), Some(e2)) => {
-            let diff = (e1 - e2).abs();
-            assert!(
-                diff < 1e-10,
-                "Determinism test failed: energies differ by {} Ry (E1={}, E2={})",
-                diff,
-                e1,
-                e2
-            );
-        }
-        _ => {
-            eprintln!("Warning: Could not parse final energies from logs");
-            eprintln!("This may indicate the calculation didn't converge");
-        }
-    }
+    // Every line except timings and the timestamp must be identical.
+    let results1 = result_lines(&log1);
+    let results2 = result_lines(&log2);
+    assert!(
+        results1
+            .iter()
+            .any(|line| line.contains("scf_convergence_success")),
+        "first pw run did not converge"
+    );
+    assert_eq!(
+        results1, results2,
+        "Determinism test failed: pw output differs between two runs with random_seed = 42"
+    );
 
     // Cleanup
     std::fs::remove_dir_all(&test_dir).ok();
 }
 
-fn parse_final_scf_energy(log: &str) -> Option<f64> {
-    for line in log.lines().rev() {
-        if line.contains("scf_energy") && line.contains("Ry") {
-            if let Some(parts) = line.split_whitespace().last() {
-                if let Ok(energy) = parts.parse::<f64>() {
-                    return Some(energy);
-                }
-            }
-        }
-
-        // Also try parsing from iteration table (last iteration)
-        if line.trim().chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 {
-                if let Ok(energy) = parts[parts.len() - 2].parse::<f64>() {
-                    return Some(energy);
-                }
-            }
-        }
-    }
-    None
+/// pw output without the lines that change from run to run (timings, timestamp).
+fn result_lines(log: &str) -> Vec<&str> {
+    log.lines()
+        .filter(|line| !line.contains("time") && !line.contains("seconds"))
+        .collect()
 }
