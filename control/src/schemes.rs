@@ -6,21 +6,47 @@
 //
 // The canonical spelling is what `as_str` returns and what the startup
 // display prints; aliases are accepted on input only. `parse`, `ALL` and the
-// "expected one of" message are all generated from the same list, so they
-// cannot drift apart. Matching is case-insensitive and ignores surrounding
-// whitespace.
+// "expected one of" message all come from the same list, so they cannot drift
+// apart. Matching is case-insensitive and ignores surrounding whitespace, so
+// spellings must be lowercase and unique within an enum (checked by tests).
 
-/// Common interface of the generated enums, used by `params::parse_scheme`.
-pub trait SchemeEnum: Sized + Copy + 'static {
+/// Common interface of the generated enums. The macro supplies the data
+/// (`ALL`, `NAMES`, `as_str`); parsing and the accepted-values message are
+/// written once here.
+pub trait SchemeEnum: Sized + Copy + PartialEq + 'static {
     /// Every variant, in declaration order.
     const ALL: &'static [Self];
 
+    /// Accepted spellings as `(spelling, variant, is_canonical)`.
+    const NAMES: &'static [(&'static str, Self, bool)];
+
     fn as_str(self) -> &'static str;
 
-    fn parse(s: &str) -> Option<Self>;
+    fn parse(s: &str) -> Option<Self> {
+        let s = s.trim().to_lowercase();
+        Self::NAMES
+            .iter()
+            .find(|(name, _, _)| *name == s)
+            .map(|(_, variant, _)| *variant)
+    }
 
     /// Canonical spellings, plus aliases when there are any, for error messages.
-    fn accepted_values() -> String;
+    fn accepted_values() -> String {
+        let pick = |canonical: bool| {
+            Self::NAMES
+                .iter()
+                .filter(|(_, _, is_canonical)| *is_canonical == canonical)
+                .map(|(name, _, _)| *name)
+                .collect::<Vec<_>>()
+        };
+        let names = pick(true).join(", ");
+        let aliases = pick(false);
+        match aliases.len() {
+            0 => names,
+            1 => format!("{} (alias: {})", names, aliases[0]),
+            _ => format!("{} (aliases: {})", names, aliases.join(", ")),
+        }
+    }
 }
 
 macro_rules! scheme_enum {
@@ -44,44 +70,10 @@ macro_rules! scheme_enum {
         }
 
         impl $name {
-            pub const ALL: &'static [$name] = &[$( $name::$variant ),+];
-
-            // (spelling, variant, is_canonical)
-            const NAMES: &'static [(&'static str, $name, bool)] = &[
-                $(
-                    ($canonical, $name::$variant, true),
-                    $( ($alias, $name::$variant, false), )*
-                )+
-            ];
-
+            // Inherent so callers outside `control` need not import `SchemeEnum`.
             pub fn as_str(self) -> &'static str {
                 match self {
                     $( $name::$variant => $canonical, )+
-                }
-            }
-
-            pub fn parse(s: &str) -> Option<Self> {
-                let s = s.trim().to_lowercase();
-                Self::NAMES
-                    .iter()
-                    .find(|(name, _, _)| *name == s)
-                    .map(|(_, variant, _)| *variant)
-            }
-
-            pub fn accepted_values() -> String {
-                let pick = |canonical: bool| {
-                    Self::NAMES
-                        .iter()
-                        .filter(|(_, _, is_canonical)| *is_canonical == canonical)
-                        .map(|(name, _, _)| *name)
-                        .collect::<Vec<_>>()
-                };
-                let names = pick(true).join(", ");
-                let aliases = pick(false);
-                match aliases.len() {
-                    0 => names,
-                    1 => format!("{} (alias: {})", names, aliases[0]),
-                    _ => format!("{} (aliases: {})", names, aliases.join(", ")),
                 }
             }
         }
@@ -94,18 +86,17 @@ macro_rules! scheme_enum {
         }
 
         impl SchemeEnum for $name {
-            const ALL: &'static [Self] = $name::ALL;
+            const ALL: &'static [Self] = &[$( $name::$variant ),+];
+
+            const NAMES: &'static [(&'static str, Self, bool)] = &[
+                $(
+                    ($canonical, $name::$variant, true),
+                    $( ($alias, $name::$variant, false), )*
+                )+
+            ];
 
             fn as_str(self) -> &'static str {
                 $name::as_str(self)
-            }
-
-            fn parse(s: &str) -> Option<Self> {
-                $name::parse(s)
-            }
-
-            fn accepted_values() -> String {
-                $name::accepted_values()
             }
         }
     };

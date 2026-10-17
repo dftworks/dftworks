@@ -35,25 +35,10 @@ pub struct Control {
     vdw: VdwParams,
 }
 
-// Values that parse but are not runnable yet. Everything else that parses is
-// supported, because the scheme enums only list implemented options.
-struct CapabilityMatrix {
-    spin_schemes: &'static [SpinScheme],
-    restart_spin_schemes: &'static [SpinScheme],
-}
-
-const RUNTIME_CAPABILITY_MATRIX: CapabilityMatrix = CapabilityMatrix {
-    spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
-    restart_spin_schemes: &[SpinScheme::NonSpin, SpinScheme::Spin],
-};
-
-fn join_spin_schemes(values: &[SpinScheme]) -> String {
-    values
-        .iter()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
+// Spin schemes that parse and can run. Everything else that parses is
+// supported, because the scheme enums only list implemented options; `ncl`
+// parses but has no runtime yet. Restart supports the same schemes.
+const RUNTIME_SPIN_SCHEMES: &[SpinScheme] = &[SpinScheme::NonSpin, SpinScheme::Spin];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControlError {
@@ -745,27 +730,20 @@ impl Control {
     }
 
     pub fn validate_capability_matrix(&self) -> Result<(), ControlError> {
-        let matrix = &RUNTIME_CAPABILITY_MATRIX;
         let spin_scheme = self.model.spin_scheme;
 
-        if !matrix.spin_schemes.contains(&spin_scheme) {
+        if !RUNTIME_SPIN_SCHEMES.contains(&spin_scheme) {
+            let supported = RUNTIME_SPIN_SCHEMES
+                .iter()
+                .map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(ControlError::validation(
                 "spin_scheme",
                 format!(
                     "spin_scheme='{}' is parsed but runtime support is not enabled yet; supported: {}",
                     spin_scheme.as_str(),
-                    join_spin_schemes(matrix.spin_schemes)
-                ),
-            ));
-        }
-
-        if self.run.restart && !matrix.restart_spin_schemes.contains(&spin_scheme) {
-            return Err(ControlError::validation(
-                "restart/spin_scheme",
-                format!(
-                    "restart=true is unsupported with spin_scheme='{}'; restart supports only {}",
-                    spin_scheme.as_str(),
-                    join_spin_schemes(matrix.restart_spin_schemes)
+                    supported
                 ),
             ));
         }
@@ -2006,6 +1984,44 @@ mod tests {
             );
         }
         assert_eq!(T::parse("not-a-scheme"), None);
+
+        // Every spelling, aliases included, is unique, lowercase and reaches its own
+        // variant; each variant has exactly one canonical spelling, equal to as_str.
+        let mut seen = Vec::new();
+        for (name, variant, is_canonical) in T::NAMES {
+            assert!(
+                !seen.contains(name),
+                "spelling '{}' is declared twice",
+                name
+            );
+            seen.push(*name);
+            assert_eq!(
+                *name,
+                name.trim().to_lowercase(),
+                "'{}' can never match",
+                name
+            );
+            assert_eq!(
+                T::parse(name),
+                Some(*variant),
+                "'{}' resolves to another variant",
+                name
+            );
+            if *is_canonical {
+                assert_eq!(*name, variant.as_str());
+            }
+        }
+        for variant in T::ALL {
+            let canonical = T::NAMES
+                .iter()
+                .filter(|(_, v, is_canonical)| v == variant && *is_canonical)
+                .count();
+            assert_eq!(
+                canonical, 1,
+                "{:?} needs exactly one canonical spelling",
+                variant
+            );
+        }
     }
 
     #[test]

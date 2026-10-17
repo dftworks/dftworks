@@ -21,6 +21,7 @@ pub fn new(params: &MixingParams) -> Box<dyn Mixing> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use control::SchemeEnum;
 
     #[test]
     fn test_factory_builds_from_mixing_params_alone() {

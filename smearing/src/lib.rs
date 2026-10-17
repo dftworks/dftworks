@@ -32,7 +32,7 @@ pub fn new(smearing_scheme: SmearingScheme) -> Box<dyn Smearing> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use control::SmearingScheme;
+    use control::{SchemeEnum, SmearingScheme};
 
     #[test]
     fn test_mv_smearing_limits() {
