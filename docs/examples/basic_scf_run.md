@@ -207,8 +207,9 @@ save_rho = false
 ```
 
 ```
-# in.kline: "line <points per segment>", then one segment per line (start, end)
-line 20
+# in.kline: "npts <points per segment>", then one segment per line:
+#   <label1> k1x k1y k1z <label2> k2x k2y k2z   (fractional coordinates)
+npts 20
 G 0.0 0.0 0.0 X 0.0 0.5 0.5
 X 0.0 0.5 0.5 W 0.25 0.75 0.5
 W 0.25 0.75 0.5 L 0.5 0.5 0.5
